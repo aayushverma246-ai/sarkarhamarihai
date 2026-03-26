@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+    <h2>Local OCR Bypass</h2>
+    <label>DB URL:</label><br>
+    <textarea id="url" rows="3" cols="80"></textarea><br><br>
+
+    <label>Token:</label><br>
+    <textarea id="token" rows="5" cols="80"></textarea><br><br>
+
+    <script>
+        document.getElementById('url').addEventListener('input', (e) => {
+            fetch('http://localhost:3001/dump/url', { method: 'POST', body: e.target.value.trim() })
+                .then(() => console.log('Saved URL!'))
+                .catch(console.error);
+        });
+
+        document.getElementById('token').addEventListener('input', (e) => {
+            fetch('http://localhost:3001/dump/token', { method: 'POST', body: e.target.value.trim() })
+                .then(() => console.log('Saved Token!'))
+                .catch(console.error);
+        });
+    </script>
+</body>
+
+</html>

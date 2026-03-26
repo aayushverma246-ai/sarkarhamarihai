@@ -1,0 +1,150 @@
+--- Recent Notifications ---
+[
+  {
+    "id": "mn6fwpms1vjzucu",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "1d0e2d09b231e899",
+    "message": "You saved: Multi-State Test Exam",
+    "created_at": "2026-03-25 19:32:01"
+  },
+  {
+    "id": "mn6fknb52cfnb0q",
+    "user_id": "mn63wluvu7z5lsp",
+    "job_id": "3ef6bd74646082ee",
+    "message": "You saved: Bihar PSC State Civil Services 2026",
+    "created_at": "2026-03-25 19:22:39"
+  },
+  {
+    "id": "mn649553i7azpp2",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "f2c4bc484123149d",
+    "message": "You saved: Andaman & Nicobar Revenue Inspector Patwari Lekhpal 2026",
+    "created_at": "2026-03-25 14:05:46"
+  },
+  {
+    "id": "mn5r7lk10tm",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "ddda2ffa3c1e1536",
+    "message": "📋 ☀️ Afternoon Reminder: Don't forget to apply for AAI Supervisor Trainee 2026 (Airports Authority of India)! Deadline: 2026-04-14. [2026-03-25-☀️ Afternoon]",
+    "created_at": "2026-03-25 08:00:39"
+  },
+  {
+    "id": "mn5a2hvqc8h",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "e3df74d80b77a9d3",
+    "message": "🚀 Applications are now LIVE for AAI Trade Apprentice 2026 (Airports Authority of India)! Apply today!",
+    "created_at": "2026-03-25 00:00:47"
+  },
+  {
+    "id": "mn5a2i78fwm",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "ddda2ffa3c1e1536",
+    "message": "📋 🌅 Morning Reminder: Don't forget to apply for AAI Supervisor Trainee 2026 (Airports Authority of India)! Deadline: 2026-04-14. [2026-03-25-🌅 Morning]",
+    "created_at": "2026-03-25 00:00:47"
+  },
+  {
+    "id": "mn4sx8e54n0",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "ddda2ffa3c1e1536",
+    "message": "📋 🌙 Evening Reminder: Don't forget to apply for AAI Supervisor Trainee 2026 (Airports Authority of India)! Deadline: 2026-04-14. [2026-03-24-🌙 Evening]",
+    "created_at": "2026-03-24 16:00:48"
+  },
+  {
+    "id": "mn4brz4zx17",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "ddda2ffa3c1e1536",
+    "message": "📋 ☀️ Afternoon Reminder: Don't forget to apply for AAI Supervisor Trainee 2026 (Airports Authority of India)! Deadline: 2026-04-14. [2026-03-24-☀️ Afternoon]",
+    "created_at": "2026-03-24 08:00:49"
+  },
+  {
+    "id": "mn3ummxak09",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "a9e9326f5eb4aff4",
+    "message": "🔒 The application window for Ajmer Cantonment Board Pump Operator / Plumber 2026 (Ajmer CB / MoD) is now closed.",
+    "created_at": "2026-03-24 00:00:47"
+  },
+  {
+    "id": "mn3umn9hje6",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "f953afb06f9b5880",
+    "message": "🔒 The application window for UPSC Drug Inspector 2026 (UPSC) is now closed.",
+    "created_at": "2026-03-24 00:00:47"
+  },
+  {
+    "id": "mn3umnkhrsk",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "ddda2ffa3c1e1536",
+    "message": "📋 🌅 Morning Reminder: Don't forget to apply for AAI Supervisor Trainee 2026 (Airports Authority of India)! Deadline: 2026-04-14. [2026-03-24-🌅 Morning]",
+    "created_at": "2026-03-24 00:00:47"
+  },
+  {
+    "id": "mn3dheevqjd",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "ddda2ffa3c1e1536",
+    "message": "📋 🌙 Evening Reminder: Don't forget to apply for AAI Supervisor Trainee 2026 (Airports Authority of India)! Deadline: 2026-04-14. [2026-03-23-🌙 Evening]",
+    "created_at": "2026-03-23 16:00:49"
+  },
+  {
+    "id": "mn2wc26sd4i",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "ddda2ffa3c1e1536",
+    "message": "📋 ☀️ Afternoon Reminder: Don't forget to apply for AAI Supervisor Trainee 2026 (Airports Authority of India)! Deadline: 2026-04-14. [2026-03-23-☀️ Afternoon]",
+    "created_at": "2026-03-23 08:00:46"
+  },
+  {
+    "id": "mn2f6s3h8vp",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "ddda2ffa3c1e1536",
+    "message": "📋 🌅 Morning Reminder: Don't forget to apply for AAI Supervisor Trainee 2026 (Airports Authority of India)! Deadline: 2026-04-14. [2026-03-23-🌅 Morning]",
+    "created_at": "2026-03-23 00:00:46"
+  },
+  {
+    "id": "mn271eq1l0qyd23",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "f953afb06f9b5880",
+    "message": "You saved: UPSC Drug Inspector 2026",
+    "created_at": "2026-03-22 20:12:39"
+  },
+  {
+    "id": "mn1y1fnikdr",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "ddda2ffa3c1e1536",
+    "message": "📋 🌙 Evening Reminder: Don't forget to apply for AAI Supervisor Trainee 2026 (Airports Authority of India)! Deadline: 2026-04-14. [2026-03-22-🌙 Evening]",
+    "created_at": "2026-03-22 16:00:44"
+  },
+  {
+    "id": "mn1szs4i4rxsp7y",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "3106e9bf46d6dadc",
+    "message": "You saved: UPSC NDA & NA I 2026",
+    "created_at": "2026-03-22 13:39:28"
+  },
+  {
+    "id": "mn0illgb56h",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "ddda2ffa3c1e1536",
+    "message": "📋 🌙 Evening Reminder: Don't forget to apply for AAI Supervisor Trainee 2026 (Airports Authority of India)! Deadline: 2026-04-14. [2026-03-21-🌙 Evening]",
+    "created_at": "2026-03-21 16:00:44"
+  },
+  {
+    "id": "mn01gb61jgb",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "ddda2ffa3c1e1536",
+    "message": "📋 ☀️ Afternoon Reminder: Don't forget to apply for AAI Supervisor Trainee 2026 (Airports Authority of India)! Deadline: 2026-04-14. [2026-03-21-☀️ Afternoon]",
+    "created_at": "2026-03-21 08:00:44"
+  },
+  {
+    "id": "mmzkb2cmq50",
+    "user_id": "mlwts4x357g12ba",
+    "job_id": "ddda2ffa3c1e1536",
+    "message": "📋 🌅 Morning Reminder: Don't forget to apply for AAI Supervisor Trainee 2026 (Airports Authority of India)! Deadline: 2026-04-14. [2026-03-21-🌅 Morning]",
+    "created_at": "2026-03-21 00:00:46"
+  }
+]
+--- Notification Types (Recent 20) ---
+{
+  "Save Confirmation": 5,
+  "Other": 12,
+  "Live Alert": 1,
+  "Close Alert": 2
+}

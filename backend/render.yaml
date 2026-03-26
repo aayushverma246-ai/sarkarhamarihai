@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: sarkarhamarhai-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    nodeVersion: 22.11.0
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DB_PATH
+        value: /opt/render/project/src/data/sarkar.db
+      - key: NODE_ENV
+        value: production
+    disk:
+      name: sarkar-db
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

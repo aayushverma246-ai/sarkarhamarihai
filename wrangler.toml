@@ -1,0 +1,15 @@
+name = "sarkar-hamari-hai"
+main = "cloudflare/worker.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[site]
+bucket = "./dist"
+
+[vars]
+# These are public env vars. Put secrets in Cloudflare Dashboard → Workers → Settings → Variables.
+# TURSO_DATABASE_URL = "libsql://your-db.turso.io"
+
+[[routes]]
+pattern = "/api/*"
+zone_name = ""   # fill in your domain if using custom domain

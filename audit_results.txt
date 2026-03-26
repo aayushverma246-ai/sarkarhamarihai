@@ -1,0 +1,50 @@
+Total Jobs in DB: 5106
+--- Computed Status Counts (IST) ---
+{
+  "UPCOMING": 2313,
+  "LIVE": 1241,
+  "RECENTLY_CLOSED": 941,
+  "CLOSED": 611,
+  "TotalComputed": 5106
+}
+--- Jobs by State ---
+{
+  "All India": 4061,
+  "Andhra Pradesh": 29,
+  "Arunachal Pradesh": 29,
+  "Assam": 29,
+  "Bihar": 30,
+  "Chhattisgarh": 29,
+  "Goa": 29,
+  "Gujarat": 29,
+  "Haryana": 29,
+  "Himachal Pradesh": 29,
+  "Jharkhand": 29,
+  "Karnataka": 29,
+  "Kerala": 29,
+  "Madhya Pradesh": 29,
+  "Maharashtra": 29,
+  "Manipur": 29,
+  "Meghalaya": 29,
+  "Mizoram": 29,
+  "Nagaland": 29,
+  "Odisha": 29,
+  "Punjab": 29,
+  "Rajasthan": 29,
+  "Sikkim": 29,
+  "Tamil Nadu": 29,
+  "Telangana": 29,
+  "Tripura": 29,
+  "Uttar Pradesh": 29,
+  "Uttarakhand": 29,
+  "West Bengal": 29,
+  "Andaman & Nicobar": 29,
+  "Chandigarh": 29,
+  "Delhi": 29,
+  "Jammu & Kashmir": 29,
+  "Ladakh": 29,
+  "Lakshadweep": 29,
+  "Puducherry": 29,
+  "Dadra & Nagar Haveli": 29
+}
+--- Closed Exams in Last 30 Days: 941 ---
