@@ -8,16 +8,22 @@ const { initDb } = require('./backend/src/db');
 const { seedDatabase } = require('./backend/src/seed');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // CORS Configuration
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// Basic Request Logging
-app.use((req, res, next) => {
-    if (req.path !== '/api/health') {
-        console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+// Basic Request Logging & Lazy DB Init
+let dbInitialized = false;
+app.use(async (req, res, next) => {
+    if (!dbInitialized) {
+        try {
+            await initDb();
+            dbInitialized = true;
+        } catch (err) {
+            console.error('Lazy DB Init Failed:', err);
+        }
     }
     next();
 });
@@ -46,11 +52,156 @@ app.get('/api/cron/notifications', async (req, res) => {
     res.json({ success: true, type: 'notifications', sent });
 });
 app.get('/api/cron/daily', dailyTask);
-// Health Check
-app.get('/api/health', (req, res) => res.json({
-    status: 'monolithic_v5_final_automation_ready_AI_TRACKER_PROBE_v1',
-    ts: new Date().toISOString()
-}));
+
+// Seed endpoint - triggers database population
+app.get('/api/seed', async (req, res) => {
+    const secret = req.query.secret || req.headers['x-seed-secret'];
+    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1')) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    try {
+        console.log('Starting database seed...');
+        await seedDatabase();
+        const db = require('./backend/src/db').getDb();
+        const result = await db.execute('SELECT COUNT(*) as cnt FROM jobs');
+        const jobCount = result.rows[0]?.cnt || 0;
+        res.json({ 
+            success: true, 
+            message: 'Database seeded successfully',
+            jobCount,
+            ts: new Date().toISOString()
+        });
+    } catch (err) {
+        console.error('Seed error:', err);
+        res.status(500).json({ error: 'Seed failed', details: err.message });
+    }
+});
+
+// Category standardization endpoint - stepped for Vercel timeout limits
+// Call with ?step=1, ?step=2, etc. to process in phases
+app.get('/api/fix-categories', async (req, res) => {
+    const secret = req.query.secret || req.headers['x-seed-secret'];
+    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1')) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const step = parseInt(req.query.step) || 1;
+    try {
+        const db = require('./backend/src/db').getDb();
+        
+        const allRules = {
+            1: [
+                ['%upsc%', 'UPSC'], ['%civil services%', 'UPSC'], ['%ias%', 'UPSC'], ['%ips%', 'UPSC'],
+                ['%ssc %', 'SSC'], ['%staff selection%', 'SSC'], ['%selection post%', 'SSC'],
+                ['%railway%', 'Railway'], ['%rrb%', 'Railway'], ['%loco pilot%', 'Railway'], ['%track maintainer%', 'Railway'],
+                ['%bank%', 'Banking'], ['%ibps%', 'Banking'], ['%rbi %', 'Banking'], ['%nabard%', 'Banking'],
+            ],
+            2: [
+                ['%police%', 'Police & Security'], ['%constable%', 'Police & Security'], ['%sub inspector%', 'Police & Security'],
+                ['%capf%', 'Police & Security'], ['%crpf%', 'Police & Security'], ['%bsf%', 'Police & Security'],
+                ['%cisf%', 'Police & Security'], ['%itbp%', 'Police & Security'],
+                ['%defence%', 'Defence'], ['%army%', 'Defence'], ['%navy%', 'Defence'], ['%air force%', 'Defence'],
+                ['%dockyard%', 'Defence'], ['%ordnance%', 'Defence'], ['%bro %', 'Defence'], ['%gref%', 'Defence'],
+                ['%drdo%', 'Defence'], ['%nda %', 'Defence'], ['%cds %', 'Defence'],
+            ],
+            3: [
+                ['%teacher%', 'Teaching & Education'], ['%tet %', 'Teaching & Education'], ['%ctet%', 'Teaching & Education'],
+                ['%tgt%', 'Teaching & Education'], ['%pgt%', 'Teaching & Education'], ['%school%', 'Teaching & Education'],
+                ['%university%', 'Teaching & Education'], ['%iit %', 'Teaching & Education'], ['%nit %', 'Teaching & Education'],
+                ['%iim %', 'Teaching & Education'], ['%anganwadi%', 'Teaching & Education'], ['%mid-day%', 'Teaching & Education'],
+                ['%court%', 'Judiciary & Law'], ['%judiciary%', 'Judiciary & Law'], ['%nyayalaya%', 'Judiciary & Law'],
+                ['%lok sabha%', 'Judiciary & Law'], ['%rajya sabha%', 'Judiciary & Law'],
+                ['%forest%', 'Forest & Environment'], ['%wildlife%', 'Forest & Environment'],
+            ],
+            4: [
+                ['%health%', 'Healthcare'], ['%nurse%', 'Healthcare'], ['%nhm%', 'Healthcare'],
+                ['%hospital%', 'Healthcare'], ['%aiims%', 'Healthcare'], ['%medical%', 'Healthcare'], ['%asha %', 'Healthcare'],
+                ['%insurance%', 'Insurance'], ['%lic %', 'Insurance'], ['%esic%', 'Insurance'],
+                ['%csir%', 'Research & Science'], ['%icar%', 'Research & Science'], ['%scientist%', 'Research & Science'],
+                ['%telecom%', 'Telecom'], ['%bsnl%', 'Telecom'],
+                ['%shipping%', 'Shipping & Ports'], ['%cochin shipyard%', 'Shipping & Ports'],
+                ['%agriculture%', 'Agriculture'], ['%dairy%', 'Agriculture'], ['%cooperative%', 'Agriculture'],
+                ['%jee %', 'Entrance Exam'], ['%neet%', 'Entrance Exam'], ['%gate %', 'Entrance Exam'],
+                ['%cuet%', 'Entrance Exam'], ['%clat%', 'Entrance Exam'],
+                ['%ongc%', 'PSU'], ['%bhel%', 'PSU'], ['%sail%', 'PSU'], ['%iocl%', 'PSU'],
+                ['%oil india%', 'PSU'], ['%gail%', 'PSU'], ['%coal%', 'PSU'], ['%power grid%', 'PSU'],
+            ],
+            5: [
+                ['%psc%', 'State Government'], ['%patwari%', 'State Government'], ['%lekhpal%', 'State Government'],
+                ['%panchayat%', 'State Government'], ['%zilla%', 'State Government'], ['%municipal%', 'State Government'],
+                ['%electricity%', 'State Government'], ['%transport%', 'State Government'],
+                ['%vidhan sabha%', 'State Government'], ['%district%', 'State Government'],
+                ['%safai%', 'State Government'], ['%rozgar%', 'State Government'], ['%revenue%', 'State Government'],
+            ],
+        };
+        
+        const rules = allRules[step] || [];
+        let totalUpdated = 0;
+        
+        for (const [pattern, newCat] of rules) {
+            const r = await db.execute({
+                sql: `UPDATE jobs SET job_category = ? WHERE (job_category = 'CENTRAL' OR job_category = 'STATE') AND (LOWER(job_name) LIKE ? OR LOWER(organization) LIKE ?)`,
+                args: [newCat, pattern, pattern]
+            });
+            totalUpdated += r.rowsAffected;
+        }
+        
+        // On step 6: final cleanup
+        if (step === 6) {
+            const r1 = await db.execute("UPDATE jobs SET job_category = 'Central Government' WHERE job_category = 'CENTRAL'");
+            const r2 = await db.execute("UPDATE jobs SET job_category = 'State Government' WHERE job_category = 'STATE'");
+            totalUpdated += r1.rowsAffected + r2.rowsAffected;
+            await db.execute({ sql: "INSERT INTO seed_meta (key, value) VALUES ('seed_version', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", args: ['17'] });
+        }
+
+        const after = await db.execute('SELECT job_category, COUNT(*) as cnt FROM jobs GROUP BY job_category ORDER BY job_category');
+        
+        res.json({
+            success: true,
+            step,
+            nextStep: step < 6 ? step + 1 : 'DONE',
+            totalUpdated,
+            categories: after.rows,
+            ts: new Date().toISOString()
+        });
+    } catch (err) {
+        console.error('Fix categories error:', err);
+        res.status(500).json({ error: 'Fix failed', step, details: err.message });
+    }
+});
+
+
+// Health Check with DB verification
+app.get('/api/health', async (req, res) => {
+    try {
+        const db = require('./backend/src/db').getDb();
+        const result = await db.execute('SELECT COUNT(*) as cnt FROM jobs');
+        const jobCount = result.rows[0]?.cnt || 0;
+        res.json({
+            status: 'healthy',
+            database: 'connected',
+            jobCount,
+            ts: new Date().toISOString()
+        });
+    } catch (err) {
+        res.status(500).json({
+            status: 'unhealthy',
+            database: 'error',
+            error: err.message,
+            ts: new Date().toISOString()
+        });
+    }
+});
+
+// Quick test endpoint - returns first 10 jobs directly
+app.get('/api/test-jobs', async (req, res) => {
+    try {
+        const db = require('./backend/src/db').getDb();
+        const result = await db.execute('SELECT id, job_name, organization FROM jobs LIMIT 10');
+        res.json({ count: result.rows.length, jobs: result.rows });
+    } catch (err) {
+        res.status(500).json({ error: err.message, stack: err.stack });
+    }
+});
 
 // API Router Mounts
 app.use('/api/auth', require('./backend/src/routes/auth'));
@@ -77,8 +228,11 @@ app.get('*', (req, res) => {
 // Initialize DB and start server
 async function start() {
     try {
+        // Fast init ONLY (skips migrations/seeding in prod)
         await initDb();
-        await seedDatabase();
+        
+        // Removed: seedDatabase(); // SEEDING MUST BE MANUAL (npm run seed)
+        // This fixes the 'Authenticating...' hang caused by 15,000 job updates on every cold start.
 
         app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);

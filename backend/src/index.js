@@ -23,6 +23,7 @@ app.use('/api/cron', require('./routes/cron').router);     // Added cron routes
 app.use('/api/syllabus', require('./routes/syllabus')); // Added syllabus matching route
 app.use('/api/tracker', require('./routes/tracker')); // Tracker feature routes
 app.use('/api/ai', require('./routes/ai')); // NEW AI rebuild route
+app.use('/api/exam', require('./routes/exam')); // NEW Exam dynamic stats routes
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));

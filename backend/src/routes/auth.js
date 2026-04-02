@@ -98,6 +98,45 @@ router.post('/login', async (req, res) => {
     }
 });
 
+// POST /api/auth/guest
+router.post('/guest', async (req, res) => {
+    try {
+        const guestEmail = 'guest@sarkar.app';
+        const db = getDb();
+        
+        // 1. Try to fetch existing guest
+        let user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [guestEmail] })).rows[0];
+        
+        // 2. If missing, create immediately
+        if (!user) {
+            const id = 'guest_user_' + Date.now();
+            const password_hash = await bcrypt.hash('guestpass2026', 10);
+            await db.execute({
+                sql: `INSERT INTO users (id, email, password_hash, full_name, age, category, state,
+                    qualification_type, qualification_status, current_year, current_semester, expected_graduation_year)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (email) DO NOTHING`,
+                args: [
+                    id, guestEmail, password_hash,
+                    'Guest User', 25, 'General', 'All India',
+                    'Graduation', 'Completed', 0, 0, 0
+                ]
+            });
+            // Fetch the newly inserted (or conflicted) user
+            user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [guestEmail] })).rows[0];
+        }
+
+        if (!user) {
+            throw new Error("Failed to provision guest user");
+        }
+
+        const token = signToken(user);
+        return res.json({ token, user: safeUser(user) });
+    } catch (err) {
+        console.error('Guest login error:', err);
+        return res.status(500).json({ error: 'Server error during guest authentication' });
+    }
+});
+
 // GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
     const db = getDb();

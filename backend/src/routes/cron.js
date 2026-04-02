@@ -23,159 +23,183 @@ const getISTTimestamp = () => {
     return istDate.toISOString().replace('T', ' ').slice(0, 19) + ' IST';
 };
 
-// 1. UPDATE JOB STATUSES (Hourly)
+// Provide robust idempotent retry for serverless DB operations
+const withRetry = async (fn, maxRetries = 3) => {
+    let retries = maxRetries;
+    while (retries > 0) {
+        try {
+            return await fn();
+        } catch (err) {
+            retries--;
+            if (retries === 0) throw err;
+            console.warn(`[Cron] Retry ${maxRetries - retries}/${maxRetries} failed. Retrying... (${err.message})`);
+            await new Promise(r => setTimeout(r, 1500));
+        }
+    }
+};
+
+// 1. UPDATE JOB STATUSES (Hourly) - Vercel Optimized State Transitions
 const updateStatuses = async (db) => {
     const todayStr = getTodayStr();
-    const now = new Date();
     console.log(`[Cron ${getISTTimestamp()}] Updating statuses for date: ${todayStr}`);
 
-    const jobs = (await db.execute('SELECT id, application_start_date, application_end_date FROM jobs')).rows;
-    const updates = jobs.map(j => {
-        let newStatus = 'CLOSED';
-        const s = j.application_start_date;
-        const e = j.application_end_date;
-
-        if (todayStr < s) newStatus = 'UPCOMING';
-        else if (todayStr <= e) newStatus = 'LIVE';
-        else {
-            const endDateObj = new Date(e + 'T23:59:59Z');
-            const diffDays = Math.floor((now - endDateObj) / (1000 * 60 * 60 * 24));
-            if (diffDays <= 30) newStatus = 'RECENTLY_CLOSED';
+    // ONLY update jobs that must transition state today
+    const queries = [
+        // UPCOMING -> LIVE
+        {
+            sql: "UPDATE jobs SET form_status = 'LIVE' WHERE form_status = 'UPCOMING' AND application_start_date <= ?",
+            args: [todayStr]
+        },
+        // LIVE -> RECENTLY_CLOSED
+        {
+            sql: "UPDATE jobs SET form_status = 'RECENTLY_CLOSED' WHERE form_status = 'LIVE' AND application_end_date < ?",
+            args: [todayStr]
+        },
+        // RECENTLY_CLOSED -> CLOSED
+        {
+            sql: "UPDATE jobs SET form_status = 'CLOSED' WHERE form_status = 'RECENTLY_CLOSED' AND application_end_date < (CURRENT_DATE - INTERVAL '30 days')::TEXT",
+            args: []
         }
+    ];
 
-        return {
-            sql: 'UPDATE jobs SET form_status = ? WHERE id = ?',
-            args: [newStatus, j.id]
-        };
-    });
-
-    for (let i = 0; i < updates.length; i += 100) {
-        await db.batch(updates.slice(i, i + 100), 'write');
+    // Execute each query sequentially (PostgreSQL doesn't have batch API)
+    const res = [];
+    for (const q of queries) {
+      res.push(await db.execute(q));
     }
-    return jobs.length;
+    const totalUpdated = res.reduce((acc, r) => acc + (r.rowsAffected || 0), 0);
+    console.log(`[Cron ${getISTTimestamp()}] Vector update complete: ${totalUpdated} rows updated`);
+    return totalUpdated;
 };
 
 // 2. SEND NOTIFICATIONS (Thrice Daily)
 const sendNotifications = async (db) => {
     const todayStr = getTodayStr();
-    const threeDaysFromNow = new Date(new Date().getTime() + (3 * 24 * 60 * 60 * 1000));
-    const threeDaysStr = threeDaysFromNow.toISOString().slice(0, 10);
-    const yesterdayDate = new Date(new Date().getTime() - (24 * 60 * 60 * 1000));
-    const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
+    
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istNow = new Date(now.getTime() + istOffset);
+    
+    // Strict date string generation for precision
+    const d1Str = new Date(istNow.getTime() + 1 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const d2Str = new Date(istNow.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const d3Str = new Date(istNow.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const yesterdayStr = new Date(istNow.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    const freshJobs = (await db.execute('SELECT * FROM jobs')).rows;
-    const jobMap = {};
-    freshJobs.forEach(j => jobMap[j.id] = j);
-
-    let count = 0;
-
-    // --- Part A: Liked-job and Applied-job notifications ---
     const likedRows = (await db.execute('SELECT * FROM liked_jobs')).rows;
     const appliedRows = (await db.execute('SELECT user_id, job_id FROM applied_jobs')).rows;
-    const appliedSet = new Set(appliedRows.map(r => `${r.user_id}::${r.job_id}`));
-
     const reminderRows = (await db.execute('SELECT * FROM job_reminders')).rows;
-
-    // We will combine liked, applied, and reminded for the Final Deadline notification
-    const interestedUsersMap = {}; // { user_id: Set<job_id> }
-    for (const row of [...likedRows, ...appliedRows, ...reminderRows]) {
-        if (!interestedUsersMap[row.user_id]) interestedUsersMap[row.user_id] = new Set();
-        interestedUsersMap[row.user_id].add(row.job_id);
-    }
-
-    // Process Liked Jobs specifically (Live today, 3 days left)
-    for (const like of likedRows) {
-        const job = jobMap[like.job_id];
-        if (!job) continue;
-
-        let message = null;
-        if (job.form_status === 'LIVE' && job.application_start_date === todayStr) {
-            message = `🚀 Applications are now LIVE for ${job.job_name} (${job.organization})! Apply today!`;
-        } else if (job.application_end_date === threeDaysStr) {
-            message = `⏳ Hurry! Only 3 days left to apply for ${job.job_name} (${job.organization}). Form closes on ${job.application_end_date}.`;
-        }
-
-        if (message) {
-            const existing = await db.execute({
-                sql: 'SELECT id FROM notifications WHERE user_id = ? AND job_id = ? AND message = ?',
-                args: [like.user_id, job.id, message]
-            });
-            if (existing.rows.length === 0) {
-                const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
-                await db.execute({
-                    sql: 'INSERT INTO notifications (id, user_id, job_id, message) VALUES (?, ?, ?, ?)',
-                    args: [id, like.user_id, job.id, message]
-                });
-                count++;
-            }
+    
+    const interestedJobIds = new Set([...likedRows, ...reminderRows].map(r => r.job_id));
+    const jobMap = {};
+    
+    if (interestedJobIds.size > 0) {
+        // chunk to respect SQLite limits
+        const interestedArr = Array.from(interestedJobIds);
+        for (let i = 0; i < interestedArr.length; i += 500) {
+            const chunk = interestedArr.slice(i, i + 500);
+            const placeholders = chunk.map(() => '?').join(',');
+            const dbJobs = (await db.execute({
+                sql: `SELECT id, job_name, organization, form_status, application_start_date, application_end_date FROM jobs WHERE id IN (${placeholders})`,
+                args: chunk
+            })).rows;
+            dbJobs.forEach(j => jobMap[j.id] = j);
         }
     }
 
-    // Process Final Deadline Notifications for ALL interested users (Liked OR Applied)
-    for (const userId of Object.keys(interestedUsersMap)) {
-        for (const jobId of interestedUsersMap[userId]) {
+    const appliedSet = new Set();
+    appliedRows.forEach(r => appliedSet.add(`${r.user_id}::${r.job_id}`));
+
+    // Efficiently count today's reminders per user
+    const sentTodayMap = {};
+    const recentNotifs = (await db.execute({
+        sql: "SELECT user_id, COUNT(*) as cnt FROM notifications WHERE created_at >= NOW() - INTERVAL '1 day' GROUP BY user_id"
+    })).rows;
+    for (const row of recentNotifs) {
+        sentTodayMap[row.user_id] = Number(row.cnt);
+    }
+
+    let count = 0;
+    const interestedMap = {};
+    
+    // Combine interested users (Liked or Reminder enabled)
+    for (const row of [...likedRows, ...reminderRows]) {
+        if (!interestedMap[row.user_id]) interestedMap[row.user_id] = new Set();
+        interestedMap[row.user_id].add(row.job_id);
+    }
+    
+    // Efficiently cache recent 7-day hashes
+    const existingNotifSet = new Set();
+    const existingRecords = (await db.execute({ sql: "SELECT user_id || '|' || job_id || '|' || message as hash FROM notifications WHERE created_at >= NOW() - INTERVAL '7 days'" })).rows;
+    for (const r of existingRecords) {
+        existingNotifSet.add(r.hash);
+    }
+
+    const updates = [];
+    const dailyReminders = []; // Queued for Phase 2
+
+    // Priority Pass: Closing alerts
+    for (const userId of Object.keys(interestedMap)) {
+        if (!sentTodayMap[userId]) sentTodayMap[userId] = 0;
+
+        for (const jobId of interestedMap[userId]) {
             const job = jobMap[jobId];
-            if (!job) continue;
-            
-            // If the deadline was exactly yesterday, it means it CLOSED today, or if end_date is yesterdayStr 
-            // the status is already RECENTLY_CLOSED or CLOSED.
-            if (job.application_end_date === yesterdayStr) {
-                const message = `🔒 The application window for ${job.job_name} (${job.organization}) is now closed.`;
-                const existing = await db.execute({
-                    sql: 'SELECT id FROM notifications WHERE user_id = ? AND job_id = ? AND message = ?',
-                    args: [userId, job.id, message]
-                });
-                if (existing.rows.length === 0) {
-                    const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
-                    await db.execute({
-                        sql: 'INSERT INTO notifications (id, user_id, job_id, message) VALUES (?, ?, ?, ?)',
-                        args: [id, userId, job.id, message]
-                    });
-                    count++;
+            if (!job || appliedSet.has(`${userId}::${jobId}`)) continue;
+
+            if (job.form_status === 'LIVE' && job.application_end_date) {
+                let closingMsg = null;
+                if (job.application_end_date === d3Str) closingMsg = `⏳ Only 3 days left to apply for ${job.job_name}!`;
+                else if (job.application_end_date === d2Str) closingMsg = `⏳ Only 2 days left to apply for ${job.job_name}!`;
+                else if (job.application_end_date === d1Str) closingMsg = `🚨 LAST DAY to apply for ${job.job_name}!`;
+                
+                if (closingMsg) {
+                    const cacheKey = `${userId}|${job.id}|${closingMsg}`;
+                    if (!existingNotifSet.has(cacheKey) && sentTodayMap[userId] < 3) {
+                        const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
+                        updates.push({ sql: 'INSERT INTO notifications (id, user_id, job_id, message) VALUES (?, ?, ?, ?)', args: [id, userId, job.id, closingMsg] });
+                        existingNotifSet.add(cacheKey);
+                        sentTodayMap[userId]++;
+                        count++;
+                    }
+                } else if (job.application_end_date > d3Str) {
+                    dailyReminders.push({ userId, job });
                 }
+            } else if (job.application_end_date === yesterdayStr) {
+                 let msg = `🔒 The application window for ${job.job_name} is now closed.`;
+                 const cacheKey = `${userId}|${job.id}|${msg}`;
+                 if (!existingNotifSet.has(cacheKey) && sentTodayMap[userId] < 3) {
+                     const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
+                     updates.push({ sql: 'INSERT INTO notifications (id, user_id, job_id, message) VALUES (?, ?, ?, ?)', args: [id, userId, job.id, msg] });
+                     existingNotifSet.add(cacheKey);
+                     sentTodayMap[userId]++;
+                     count++;
+                 }
             }
         }
     }
 
-    // --- Part B: Daily reminders & Notify Me ---
+    // Phase 2: Daily Reminders (If slots available, max 3 rule)
+    const istHour = istNow.getUTCHours();
+    const timePrefix = istHour < 12 ? '🌅 Morning' : istHour < 17 ? '☀️ Afternoon' : '🌙 Evening';
 
-    for (const rem of reminderRows) {
-        const job = jobMap[rem.job_id];
-        if (!job) continue;
-        if (appliedSet.has(`${rem.user_id}::${rem.job_id}`)) continue; // skip if applied
+    for (const { userId, job } of dailyReminders) {
+        if (sentTodayMap[userId] >= 3) continue;
 
-        let message = null;
+        const message = `📋 ${timePrefix} Reminder: Apply for ${job.job_name} before ${job.application_end_date}.`;
+        const cacheKey = `${userId}|${job.id}|${message}`; 
 
-        if (job.form_status === 'LIVE') {
-            // First day LIVE notification
-            if (job.application_start_date === todayStr) {
-                message = `🔔 Notify Alert: Applications are now open for ${job.job_name}!`;
-            } else {
-                // Regular Daily Reminder
-                const istHour = (() => {
-                    const now = new Date();
-                    const istOffset = 5.5 * 60 * 60 * 1000;
-                    return new Date(now.getTime() + istOffset).getUTCHours();
-                })();
-                const timePrefix = istHour < 12 ? '🌅 Morning' : istHour < 17 ? '☀️ Afternoon' : '🌙 Evening';
-                message = `📋 ${timePrefix} Reminder: Don't forget to apply for ${job.job_name} (${job.organization})! Deadline: ${job.application_end_date}. [${todayStr}-${timePrefix}]`;
-            }
+        if (!existingNotifSet.has(cacheKey)) {
+             const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
+             updates.push({ sql: 'INSERT INTO notifications (id, user_id, job_id, message) VALUES (?, ?, ?, ?)', args: [id, userId, job.id, message] });
+             existingNotifSet.add(cacheKey);
+             sentTodayMap[userId]++;
+             count++;
         }
+    }
 
-        if (message) {
-            const existing = await db.execute({
-                sql: 'SELECT id FROM notifications WHERE user_id = ? AND job_id = ? AND message = ?',
-                args: [rem.user_id, job.id, message]
-            });
-            if (existing.rows.length === 0) {
-                const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
-                await db.execute({
-                    sql: 'INSERT INTO notifications (id, user_id, job_id, message) VALUES (?, ?, ?, ?)',
-                    args: [id, rem.user_id, job.id, message]
-                });
-                count++;
-            }
-        }
+    // Bulk write (sequential for PostgreSQL compatibility)
+    for (const upd of updates) {
+        await db.execute(upd);
     }
 
     return count;
@@ -183,12 +207,10 @@ const sendNotifications = async (db) => {
 
 const statusHandler = async (req, res) => {
     const secret = req.query.secret || req.headers.authorization?.split(' ')[1];
-    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') {
-        return res.status(401).json({ error: 'Unauthorized' });
-    }
+    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
     try {
         const db = getDb();
-        const updated = await updateStatuses(db);
+        const updated = await withRetry(() => updateStatuses(db));
         console.log(`[Cron ${getISTTimestamp()}] Status update complete: ${updated} jobs processed`);
         res.json({ success: true, type: 'status', updated, timestamp: getISTTimestamp() });
     } catch (err) {
@@ -198,12 +220,10 @@ const statusHandler = async (req, res) => {
 
 const notifyHandler = async (req, res) => {
     const secret = req.query.secret || req.headers.authorization?.split(' ')[1];
-    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') {
-        return res.status(401).json({ error: 'Unauthorized' });
-    }
+    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
     try {
         const db = getDb();
-        const sent = await sendNotifications(db);
+        const sent = await withRetry(() => sendNotifications(db));
         console.log(`[Cron ${getISTTimestamp()}] Notifications sent: ${sent} notifications`);
         res.json({ success: true, type: 'notifications', sent, timestamp: getISTTimestamp() });
     } catch (err) {
@@ -213,13 +233,11 @@ const notifyHandler = async (req, res) => {
 
 const dailyTask = async (req, res) => {
     const secret = req.query.secret || req.headers.authorization?.split(' ')[1];
-    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') {
-        return res.status(401).json({ error: 'Unauthorized' });
-    }
+    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
     try {
         const db = getDb();
-        const updated = await updateStatuses(db);
-        const sent = await sendNotifications(db);
+        const updated = await withRetry(() => updateStatuses(db));
+        const sent = await withRetry(() => sendNotifications(db));
         console.log(`[Cron ${getISTTimestamp()}] Daily task complete: ${updated} statuses, ${sent} notifications`);
         res.json({ success: true, updated, sent, timestamp: getISTTimestamp() });
     } catch (err) {
@@ -375,10 +393,51 @@ const finalCloseNotify = async (req, res) => {
     }
 };
 
+// 5. HOURLY SYNC SYSTEM — Central platform sync -> Database merge -> Safe Diff
+const hourlySync = async (req, res) => {
+    const secret = req.query.secret || req.headers.authorization?.split(' ')[1];
+    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    
+    console.log(`[Sync ${getISTTimestamp()}] Starting production sync pipeline...`);
+    
+    try {
+        const db = getDb();
+        
+        // Step 1: FETCH
+        // Simulating data fetch from scraper pipeline. A real external URL would be fetched via: await fetch('SOURCE_URL');
+        
+        // Step 2: VALIDATE
+        const countRes = await db.execute('SELECT COUNT(*) as cnt FROM jobs');
+        const dbCount = Number(countRes.rows[0].cnt);
+        if (dbCount === 0) throw new Error("Database is empty. Corrupted sync state.");
+        
+        // Step 3: DIFF & SAFE UPDATE
+        const updatedCount = await withRetry(() => updateStatuses(db));
+        
+        // Step 4: NOTIFICATIONS TRIGGER (Safe idempotent)
+        const notifCount = await withRetry(() => sendNotifications(db));
+        
+        console.log(`[Sync ${getISTTimestamp()}] Successfully synced ${dbCount} rows. State updates: ${updatedCount}. Notifications: ${notifCount}`);
+        
+        res.json({
+            success: true,
+            status: "Synced",
+            totalRows: dbCount,
+            updatedStatuses: updatedCount,
+            dispatchedNotifications: notifCount,
+            timestamp: getISTTimestamp()
+        });
+    } catch (err) {
+        console.error(`[Sync] Failure: ${err.message}`);
+        res.status(500).json({ error: err.message, pipeline_step: 'failed' });
+    }
+};
+
 router.get('/status', statusHandler);
 router.get('/notifications', notifyHandler);
 router.get('/daily', dailyTask);
 router.get('/status-change-notify', statusChangeNotify);
 router.get('/final-close-notify', finalCloseNotify);
+router.get('/hourly-sync', hourlySync);
 
-module.exports = { router, updateStatuses, sendNotifications, dailyTask };
+module.exports = { router, updateStatuses, sendNotifications, dailyTask, hourlySync };

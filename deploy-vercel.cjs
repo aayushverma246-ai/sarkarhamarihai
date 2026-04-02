@@ -30,16 +30,32 @@ try {
     copyRecursiveSync(source, target);
 
     console.log('2. Deploying to Vercel...');
-    // We use --prod to target the main domain
-    // We use --force to bypass any remote build cache
-    const cmd = 'npx vercel --prod --force --yes';
-    console.log(`Running: ${cmd}`);
-
-    // Use inherit to see full output in real-time if possible, but for our logs we want capture
-    const output = execSync(`${cmd} 2>&1`, {
+    const tokenFile = path.join(source, 'token.txt');
+    let token = fs.existsSync(tokenFile) ? fs.readFileSync(tokenFile, 'utf8').trim() : '';
+    
+    // Aggressive cleanup: only allow valid JWT characters (A-Z, a-z, 0-9, ., -, _)
+    token = token.replace(/[^A-Za-z0-9._-]/g, '');
+    
+    console.log(`Token Length: ${token.length}`);
+    console.log(`Token Hex (First 10 chars): ${Buffer.from(token.substring(0, 10)).toString('hex')}`);
+    
+    const { spawnSync } = require('child_process');
+    const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+    
+    // Use environment variable version first as it's cleaner for spawn
+    console.log('Running: npx vercel --prod --force --yes (via environment VERCEL_TOKEN)');
+    
+    const result = spawnSync(npxCmd, ['vercel', '--prod', '--force', '--yes'], {
         cwd: target,
-        shell: 'powershell.exe'
+        env: { ...process.env, VERCEL_TOKEN: token },
+        shell: true,
+        encoding: 'utf8'
     });
+    
+    const output = (result.stdout || '') + (result.stderr || '');
+    if (result.status !== 0) {
+        throw new Error(`Command failed with status ${result.status}\n${output}`);
+    }
 
     console.log('--- VERCEL OUTPUT ---');
     console.log(output.toString());

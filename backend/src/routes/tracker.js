@@ -73,7 +73,7 @@ router.post('/plan/generate', auth, async (req, res) => {
 
         // Ensure stats exist
         await db.execute({
-            sql: `INSERT OR IGNORE INTO tracker_user_stats (user_id) VALUES (?)`,
+            sql: `INSERT INTO tracker_user_stats (user_id) VALUES (?) ON CONFLICT (user_id) DO NOTHING`,
             args: [userId]
         });
 
@@ -238,7 +238,7 @@ router.post('/plan/evaluate', auth, async (req, res) => {
         let stats = statsQuery.rows[0];
 
         if (!stats) {
-            await db.execute({ sql: `INSERT INTO tracker_user_stats (user_id) VALUES (?)`, args: [userId] });
+            await db.execute({ sql: `INSERT INTO tracker_user_stats (user_id) VALUES (?) ON CONFLICT (user_id) DO NOTHING`, args: [userId] });
             stats = { current_streak: 0, longest_streak: 0, total_study_hours: 0, overall_readiness_score: 50 };
         }
 
@@ -412,7 +412,7 @@ router.get('/stats', auth, async (req, res) => {
         const statsQuery = await db.execute({ sql: 'SELECT * FROM tracker_user_stats WHERE user_id = ?', args: [userId] });
         let stats;
         if (!statsQuery.rows || statsQuery.rows.length === 0) {
-            await db.execute({ sql: `INSERT INTO tracker_user_stats (user_id) VALUES (?)`, args: [userId] });
+            await db.execute({ sql: `INSERT INTO tracker_user_stats (user_id) VALUES (?) ON CONFLICT (user_id) DO NOTHING`, args: [userId] });
             const newStats = await db.execute({ sql: 'SELECT * FROM tracker_user_stats WHERE user_id = ?', args: [userId] });
             stats = newStats.rows[0];
         } else {
