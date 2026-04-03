@@ -7,7 +7,7 @@ const auth = require('../middleware/auth');
 router.get('/', auth, async (req, res) => {
     const db = getDb();
     const notifications = (await db.execute({
-        sql: 'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC',
+        sql: 'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
         args: [req.user.id]
     })).rows;
 

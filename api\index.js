@@ -117,6 +117,27 @@ module.exports = async (req, res) => {
                 }
                 const catCount = await db.execute('SELECT job_category, COUNT(*) as cnt FROM jobs GROUP BY job_category ORDER BY cnt DESC');
                 return res.json({ success: true, action: 'fix-categories', updates: results, categories: catCount.rows });
+            } else if (action === 'apply-indexes') {
+                // Apply performance indexes directly from API (useful in production)
+                const indexStatements = [
+                    "CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC)",
+                    "CREATE INDEX IF NOT EXISTS idx_notifications_job_id ON notifications(job_id)",
+                    "CREATE INDEX IF NOT EXISTS idx_jobs_composite_end ON jobs(application_end_date DESC, job_category)",
+                    "CREATE INDEX IF NOT EXISTS idx_liked_user_created ON liked_jobs(user_id, created_at DESC)",
+                    "CREATE INDEX IF NOT EXISTS idx_applied_user_created ON applied_jobs(user_id, created_at DESC)",
+                    "CREATE INDEX IF NOT EXISTS idx_jobs_category ON jobs(job_category)",
+                    "CREATE INDEX IF NOT EXISTS idx_jobs_app_end_date ON jobs(application_end_date DESC)",
+                ];
+                const idxResults = [];
+                for (const sql of indexStatements) {
+                    try {
+                        await db.execute(sql);
+                        idxResults.push({ sql: sql.substring(0, 80), status: 'ok' });
+                    } catch (e) {
+                        idxResults.push({ sql: sql.substring(0, 80), status: 'error', error: e.message });
+                    }
+                }
+                return res.json({ success: true, action: 'apply-indexes', results: idxResults });
             } else if (action === 'fix-selection') {
                 // Add selection procedures where missing
                 const SP = {
@@ -149,13 +170,14 @@ module.exports = async (req, res) => {
                 const noSel = await db.execute("SELECT COUNT(*) as cnt FROM jobs WHERE selection_process IS NULL OR selection_process = ''");
                 return res.json({ total: total.rows[0].cnt, noSelectionProcess: noSel.rows[0].cnt, categories: catCount.rows });
             } else {
-                return res.json({ error: 'Use ?action=fix-categories, fix-selection, or stats' });
+                return res.json({ error: 'Use ?action=fix-categories, fix-selection, apply-indexes, or stats' });
             }
         } catch (err) {
             console.error('fix-data error:', err);
             return res.status(500).json({ error: err.message, action });
         }
     }
+
 
     // Top-level Cron (Gateway)
     if (req.url.startsWith('/api/cron/')) {

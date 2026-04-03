@@ -195,7 +195,14 @@ CREATE INDEX IF NOT EXISTS idx_job_reminders_user_id ON job_reminders(user_id);
 CREATE INDEX IF NOT EXISTS idx_job_reminders_job_id ON job_reminders(job_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_job_id ON notifications(job_id);
 CREATE INDEX IF NOT EXISTS idx_tracker_plans_user_date ON tracker_plans(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_tracker_sessions_plan_id ON tracker_sessions(plan_id);
 CREATE INDEX IF NOT EXISTS idx_ai_recs_source ON ai_recommendations(source_job_id);
 CREATE INDEX IF NOT EXISTS idx_ai_recs_user ON ai_recommendations(user_id);
+-- Composite (hot path) indexes
+CREATE INDEX IF NOT EXISTS idx_jobs_composite_end ON jobs(application_end_date DESC, job_category);
+CREATE INDEX IF NOT EXISTS idx_liked_user_created ON liked_jobs(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_applied_user_created ON applied_jobs(user_id, created_at DESC);
+

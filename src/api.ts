@@ -234,8 +234,10 @@ export const api = {
     getLiveJobs: () => cachedGet<any[]>('/jobs/live', TWO_MIN, false),
     getUpcomingJobs: () => cachedGet<any[]>('/jobs/upcoming', TWO_MIN, false),
     getLikedJobs: () => cachedGet<any[]>('/jobs/liked', THIRTY_SEC, true),
-    getLikedStatus: (id: string) =>
-        cachedGet<{ liked: boolean }>(`/jobs/${id}/liked-status`, THIRTY_SEC, true),
+    getLikedStatus: async (id: string) => {
+        const res = await cachedGet<{ liked: boolean }>(`/jobs/${id}/liked-status`, THIRTY_SEC, true);
+        return res || { liked: false };
+    },
     likeJob: (id: string) => {
         invalidateCache('/jobs/liked');
         return request<{ liked: boolean }>('POST', `/jobs/${id}/like`, {}, true);
@@ -266,8 +268,14 @@ export const api = {
 
     // Application Tracking & Reminders
     getAppliedJobs: () => cachedGet<any[]>('/apply/applied', THIRTY_SEC, true),
-    getAppliedStatus: (jobId: string) => cachedGet<{ applied: boolean }>(`/apply/status/${jobId}`, THIRTY_SEC, true),
-    getReminderStatus: (jobId: string) => cachedGet<{ reminders_enabled: boolean }>(`/apply/reminder/${jobId}`, THIRTY_SEC, true),
+    getAppliedStatus: async (jobId: string) => {
+        const res = await cachedGet<{ applied: boolean }>(`/apply/status/${jobId}`, THIRTY_SEC, true);
+        return res || { applied: false };
+    },
+    getReminderStatus: async (jobId: string) => {
+        const res = await cachedGet<{ reminders_enabled: boolean }>(`/apply/reminder/${jobId}`, THIRTY_SEC, true);
+        return res || { reminders_enabled: false };
+    },
     toggleApplied: (jobId: string) => {
         // Only invalidate applied-jobs list and the specific job's apply status
         invalidateCache('/apply/applied');

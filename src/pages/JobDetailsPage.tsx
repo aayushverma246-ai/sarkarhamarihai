@@ -68,6 +68,16 @@ function getSelectionSteps(selectionProcess: string): string[] | null {
   if (!selectionProcess || !selectionProcess.trim()) return null;
   const raw = selectionProcess.trim();
   
+  // 0. JSON array
+  if (raw.startsWith('[') && raw.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map(s => String(s).trim()).filter(Boolean);
+      }
+    } catch (_) {}
+  }
+  
   // 1. Pipe delimited
   if (raw.includes('|')) {
     return raw.split('|').map(s => s.trim()).filter(Boolean);
@@ -541,22 +551,18 @@ export default function JobDetailsPage() {
     const load = async () => {
       setLoading(true);
       try {
+        // CRITICAL: always load the job first (no auth required)
+        const j = await api.getJobById(id);
+        if (!j) { setPageError('Exam not found.'); setLoading(false); return; }
+        setJob(j);
+
         if (cached) {
-          const [me, j, likeStatus, appliedStatus, reminderStatus] = await Promise.all([
-            api.getMe(),
-            api.getJobById(id),
-            api.getLikedStatus(id),
-            api.getAppliedStatus(id),
-            api.getReminderStatus(id),
-          ]);
-          setUser(me);
-          setJob(j);
-          setLiked(likeStatus.liked);
-          setApplied(appliedStatus.applied);
-          setReminding(reminderStatus.reminders_enabled);
-        } else {
-          const j = await api.getJobById(id);
-          setJob(j);
+          // Auth-required calls are non-critical — load them independently
+          // using .catch so any 401 failures don't crash the whole page
+          api.getMe().then(me => { if (me) setUser(me); }).catch(() => {});
+          api.getLikedStatus(id).then(s => setLiked(s?.liked ?? false)).catch(() => {});
+          api.getAppliedStatus(id).then(s => setApplied(s?.applied ?? false)).catch(() => {});
+          api.getReminderStatus(id).then(s => setReminding(s?.reminders_enabled ?? false)).catch(() => {});
         }
         try { 
           const r = await api.getRoadmap(id); 
