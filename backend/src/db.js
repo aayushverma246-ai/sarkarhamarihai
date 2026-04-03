@@ -178,10 +178,16 @@ async function executeViaRest(originalSql, transformed, args) {
       query = processWhere(whereClause, query, args);
     }
 
-    // ORDER BY
-    const orderMatch = rest.match(/ORDER\s+BY\s+(\w+)(?:\s+(ASC|DESC))?/i);
-    if (orderMatch) {
-      query = query.order(orderMatch[1], { ascending: (orderMatch[2] || 'ASC').toUpperCase() === 'ASC' });
+    // ORDER BY — supports multiple columns: ORDER BY col1 DESC, col2 ASC
+    const orderByMatch = rest.match(/ORDER\s+BY\s+(.+?)(?:\s+LIMIT|\s+OFFSET|$)/i);
+    if (orderByMatch) {
+      const orderCols = orderByMatch[1].split(',').map(c => c.trim());
+      for (const col of orderCols) {
+        const parts = col.split(/\s+/);
+        const colName = parts[0];
+        const ascending = (parts[1] || 'ASC').toUpperCase() !== 'DESC';
+        if (colName) query = query.order(colName, { ascending });
+      }
     }
 
     // LIMIT & OFFSET

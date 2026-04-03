@@ -147,27 +147,30 @@ router.get('/all-minimal', async (req, res) => {
         const db = getDb();
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, job_category, state, states, application_start_date, application_end_date, vacancies, official_application_link';
         
-        // Use a fixed safe page count to avoid a costly COUNT(*) pre-query.
-        // Extra empty pages cost <1ms each. 25 pages × 1000 = 25,000 max rows.
-        const SAFE_MAX_PAGES = 25;
+        // Sequential cursor pagination — guarantees every row appears exactly once.
+        // Stops as soon as an empty page is returned (no COUNT(*) pre-query needed).
+        // Each 1000-row page takes ~80-120ms; 16 pages = ~1.5s total, well within 60s timeout.
         const limit = 1000;
-        const fetchPromises = [];
-        for (let i = 0; i < SAFE_MAX_PAGES; i++) {
-            fetchPromises.push(
-                // CRITICAL: secondary sort key 'id' prevents unstable pagination.
-                // Without it, rows with identical application_end_date can appear
-                // on multiple pages (or be skipped) causing the ~450 row gap.
-                db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${i * limit}`)
-                  .then(r => r.rows || [])
-                  .catch(() => [])
-            );
-        }
+        const allRows = [];
+        let offset = 0;
+        let keepFetching = true;
         
-        const results = await Promise.all(fetchPromises);
-        const allRows = results.flat().filter((_, idx, arr) => {
-            // Deduplicate in case of overlap and filter trailing empty pages
-            return true;
-        });
+        while (keepFetching) {
+            let page = [];
+            try {
+                // ORDER BY (end_date DESC, id) is a stable sort: unique id guarantees no
+                // row can appear on two different pages or be skipped between pages.
+                const result = await db.execute(
+                    `SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${offset}`
+                );
+                page = result.rows || [];
+            } catch (_) { /* empty page on error — stop */ }
+            
+            if (page.length === 0) break;
+            allRows.push(...page);
+            offset += limit;
+            if (page.length < limit) keepFetching = false; // last page detected
+        }
 
         // Remove duplicate IDs (safety net)
         const seen = new Set();
