@@ -147,14 +147,17 @@ router.get('/all-minimal', async (req, res) => {
         const db = getDb();
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, job_category, state, states, application_start_date, application_end_date, vacancies, official_application_link';
         
-        // Use a fixed safe page count (18 pages × 1000 = 18,000 max) to avoid a
-        // costly COUNT(*) pre-query. Extra empty pages cost <1ms each.
-        const SAFE_MAX_PAGES = 20;
+        // Use a fixed safe page count to avoid a costly COUNT(*) pre-query.
+        // Extra empty pages cost <1ms each. 25 pages × 1000 = 25,000 max rows.
+        const SAFE_MAX_PAGES = 25;
         const limit = 1000;
         const fetchPromises = [];
         for (let i = 0; i < SAFE_MAX_PAGES; i++) {
             fetchPromises.push(
-                db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC LIMIT ${limit} OFFSET ${i * limit}`)
+                // CRITICAL: secondary sort key 'id' prevents unstable pagination.
+                // Without it, rows with identical application_end_date can appear
+                // on multiple pages (or be skipped) causing the ~450 row gap.
+                db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${i * limit}`)
                   .then(r => r.rows || [])
                   .catch(() => [])
             );
