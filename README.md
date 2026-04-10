@@ -124,7 +124,7 @@ The AI system is designed to provide intelligent, efficient, and controlled reco
 
 ## 👨‍💻 Author
 
-**Aayush Kumar**
+**Aayush Kumar, Shivam Kumar**
 
 ---
 
