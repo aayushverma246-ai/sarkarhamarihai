@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, getCachedUser } from '../api';
-import { Job } from '../types';
+import { Job, Roadmap as RoadmapType } from '../types';
 import Navbar from '../components/Navbar';
 import GovLoader from '../components/GovLoader';
 import { useLanguage } from '../i18n/LanguageContext';
+import { formatRelativeTime } from '../utils';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -640,7 +641,12 @@ export default function JobDetailsPage() {
   const [roadmapProgress, setRoadmapProgress] = useState(0);
 
   const handleRoadmap = async () => {
-    if (!job || roadmap) return;
+    if (!job) return;
+    // Allow (re)generation only if: no roadmap OR roadmap is still loading (not ready)
+    const roadmapIsReady = roadmap && (typeof roadmap === 'object') &&
+      ((roadmap as any).is_ready === true || (roadmap as any).overview?.is_ready === true);
+    if (roadmapIsReady) return;
+
     setLoadingRoadmap(true);
     setRoadmapError('');
     setRoadmapProgress(0);
@@ -676,17 +682,20 @@ export default function JobDetailsPage() {
 
       // Progressive polling with smooth progress bar
       let attempts = 0;
-      const maxAttempts = 30;
+      const maxAttempts = 40;
       const pollInterval = 2000;
 
       const poll = async () => {
         try {
           const check = await api.getGeneratedRoadmap(job.id);
-          const content = check?.roadmap_content;
+          // Handle both response shapes: {roadmap_content: {...}} or direct content
+          const content = check?.roadmap_content ?? check;
           attempts++;
           setRoadmapProgress(Math.min(95, Math.round((attempts / maxAttempts) * 100)));
 
-          if (content && (content.is_ready || content.overview?.is_ready)) {
+          // Check is_ready at top-level OR inside overview
+          const isReady = content && (content.is_ready === true || content.overview?.is_ready === true);
+          if (isReady) {
             // Smooth transition: update progress to 100%, then swap content
             setRoadmapProgress(100);
             setTimeout(() => {
@@ -696,10 +705,17 @@ export default function JobDetailsPage() {
           } else if (attempts < maxAttempts) {
             setTimeout(poll, pollInterval);
           } else {
-            // Timeout: use whatever we have
+            // Timeout: use whatever we have, or generate client-side fallback
             setRoadmapProgress(100);
             setTimeout(() => {
-              setRoadmap(content || skeletonData);
+              if (content && content.overview) {
+                // Mark it ready so UI displays it
+                content.is_ready = true;
+                if (content.overview) content.overview.is_ready = true;
+                setRoadmap(content);
+              } else {
+                setRoadmap(skeletonData as any);
+              }
               setLoadingRoadmap(false);
             }, 300);
           }
@@ -717,11 +733,11 @@ export default function JobDetailsPage() {
     } catch (err: any) {
       console.error('[V14 MasterPlan] API Fail:', err);
       // Client-side fallback
-      const syllabus = job.syllabus || job.job_name;
+      const syllabus = (job as any).syllabus || job.job_name;
       const kw = syllabus.split(/[,;|(\n]/).map((s:string) => s.trim()).filter((s:string) => s.length > 2);
       const chunk = Math.max(1, Math.ceil(kw.length / 4));
       const fallback = {
-        overview: { exam_name: job.job_name, readiness_score: 15, feasibility_status: 'Achievable', recommended_daily_hours: 4, days_remaining: 90, key_insight: 'Start with fundamentals, build daily consistency.' },
+        overview: { exam_name: job.job_name, readiness_score: 15, feasibility_status: 'Achievable', recommended_daily_hours: 4, days_remaining: 90, key_insight: 'Start with fundamentals, build daily consistency.', is_ready: true },
         syllabus_breakdown: [{ subject: kw[0] || 'General Studies', topics: kw.slice(0, 4), weightage: 'High', priority_order: 1 }],
         phase_plan: [
           { phase_name: 'Phase 1: Foundation', duration: '3 weeks', focus: 'Core concepts', daily_targets: kw.slice(0, 3), milestone: 'Complete basics' },
@@ -858,7 +874,7 @@ export default function JobDetailsPage() {
 
                   <div className="flex items-center gap-2 px-2.5 py-1 bg-[#111] border border-[#1a1a1a] rounded-lg text-gray-500 font-bold uppercase tracking-tighter">
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    <span>Updated {fmt((job as any).last_updated || new Date().toISOString().split('T')[0])}</span>
+                    <span>{formatRelativeTime((job as any).verified_at || (job as any).last_updated || (job as any).last_checked_at || (job as any).created_at)}</span>
                   </div>
                 </div>
               </div>

@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { getDb, ensureVercelUser } = require('../db');
+const { getDb, ensureVercelUser, getSupabase } = require('../db');
 const auth = require('../middleware/auth');
+const { CANONICAL_CATEGORIES, CANONICAL_STATES, normalizeCategory, normalizeState, validateJob } = require('../constants');
 
 // ── Server-side in-memory cache for heavy endpoints ────────────────────────────
 const _serverCache = {};
@@ -81,45 +82,37 @@ function meetsQualification(user, job) {
     return false;
 }
 
-const indianStates = [
-    'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
-    'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
-    'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram',
-    'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
-    'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
-    'Andaman and Nicobar Islands', 'Chandigarh', 'Dadra and Nagar Haveli',
-    'Daman and Diu', 'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry'
-];
-
-// Escape regex special chars in state names to handle them safely
-function escapeRegex(str) {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+// Use canonical states from shared constants
+const indianStates = CANONICAL_STATES;
 
 function meetsStateCriteria(user, job) {
-    const textToSearch = (job.job_name + ' ' + job.organization);
-    const userState = (user.state || '').toLowerCase();
-
-    // Detect all Indian states mentioned in the job title/org
-    const mentionedStates = indianStates.filter(state => {
-        const regex = new RegExp(`(?:^|\\s|,)${escapeRegex(state)}(?:\\s|,|$)`, 'i');
-        return regex.test(textToSearch);
-    });
-
-    // If no specific state is mentioned, it's a central/all-India job — open to everyone.
-    if (mentionedStates.length === 0) return true;
-
-    // If a state IS mentioned (e.g., "Assam PWD"), user MUST be from that state.
-    if (userState && mentionedStates.some(state => state.toLowerCase() === userState)) {
-        return true;
+    if (!job.state) return true;
+    if (job.state === 'All India') return true;
+    const userState = (user.state || '').toLowerCase().trim();
+    if (!userState) return true;
+    
+    // Exact match on primary state
+    if (job.state.toLowerCase().trim() === userState) return true;
+    
+    // Check multi-state array for multi-state jobs
+    if (job.states) {
+        let statesArr = job.states;
+        if (typeof statesArr === 'string') {
+            try { statesArr = JSON.parse(statesArr); } catch (_) { statesArr = []; }
+        }
+        if (Array.isArray(statesArr) && statesArr.length > 0) {
+            return statesArr.some(s => 
+                (s || '').toLowerCase().trim() === userState ||
+                (s || '').toLowerCase().trim() === 'all india'
+            );
+        }
     }
+    
     return false;
 }
 
 function meetsTechnicalCriteria(job) {
     const textToSearch = (job.job_name + ' ' + job.organization);
-    // Exclude highly specific technical roles that require non-general degrees.
-    // Uses strict word boundaries to avoid false positives (e.g., 'career' containing 'ae').
     const isHighlyTechnical = /(?:junior engineer|assistant engineer|ae\/je|\bAE\b|\bJE\b|b\.tech|\bbtech\b|m\.tech|\bmtech\b|diploma in|\bITI\b|nursing|medical officer|\bMBBS\b)/i.test(textToSearch);
     return !isHighlyTechnical;
 }
@@ -129,6 +122,56 @@ function meetsAge(user, job) {
     return Number(user.age) >= Number(job.minimum_age) && Number(user.age) <= Number(job.maximum_age);
 }
 
+// GET /api/jobs/categories — returns canonical categories merged with DB data
+router.get('/categories', async (req, res) => {
+    try {
+        const cacheKey = 'categories_v2';
+        const cached = getCachedResult(cacheKey, 300000);
+        if (cached) return res.json(cached);
+        
+        // Merge canonical list with any DB-specific categories
+        const sb = getSupabase();
+        const { data } = await sb.from('jobs').select('job_category').not('job_category', 'is', null).neq('job_category', '');
+        const dbCats = (data || []).map(r => r.job_category).filter(Boolean);
+        
+        // Start with canonical, add any DB categories not already present
+        const merged = new Set(CANONICAL_CATEGORIES);
+        for (const cat of dbCats) {
+            const normalized = normalizeCategory(cat);
+            if (normalized) merged.add(normalized);
+        }
+        merged.delete('Others');
+        merged.delete('Other');
+        merged.delete('Misc');
+        
+        const sorted = ['All', ...Array.from(merged).sort((a, b) => a.localeCompare(b))];
+        setCachedResult(cacheKey, sorted);
+        res.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
+        return res.json(sorted);
+    } catch (err) {
+        console.error('GET /api/jobs/categories error:', err);
+        return res.json(['All', ...CANONICAL_CATEGORIES]);
+    }
+});
+
+// GET /api/jobs/states — returns canonical states list
+router.get('/states', async (req, res) => {
+    try {
+        const cacheKey = 'states_v2';
+        const cached = getCachedResult(cacheKey, 300000);
+        if (cached) return res.json(cached);
+        
+        // Return canonical states — always complete, always correct
+        const states = [...CANONICAL_STATES];
+        setCachedResult(cacheKey, states);
+        res.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
+        return res.json(states);
+    } catch (err) {
+        console.error('GET /api/jobs/states error:', err);
+        return res.json(CANONICAL_STATES);
+    }
+});
+
 // GET /api/jobs/all-minimal
 // Extremely lightweight endpoint returning ALL jobs instantly (no heavy columns) for client-side search/filtering.
 router.get('/all-minimal', async (req, res) => {
@@ -136,8 +179,8 @@ router.get('/all-minimal', async (req, res) => {
         const todayStr = getTodayIST();
         const cacheKey = `all-minimal:${todayStr}`;
 
-        // ── Server-side cache check (90s TTL) ───────────────────────────────────
-        const cachedJobs = getCachedResult(cacheKey, 90000);
+        // ── Server-side cache check (5-min TTL to avoid constant DB hammering) ─────
+        const cachedJobs = getCachedResult(cacheKey, 300000);
         if (cachedJobs) {
             res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
             res.set('X-Cache', 'HIT');
@@ -148,28 +191,17 @@ router.get('/all-minimal', async (req, res) => {
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, job_category, state, states, application_start_date, application_end_date, vacancies, official_application_link';
         
         // Sequential cursor pagination — guarantees every row appears exactly once.
-        // Stops as soon as an empty page is returned (no COUNT(*) pre-query needed).
-        // Each 1000-row page takes ~80-120ms; 16 pages = ~1.5s total, well within 60s timeout.
         const limit = 1000;
-        const allRows = [];
         let offset = 0;
-        let keepFetching = true;
+        const allRows = [];
         
-        while (keepFetching) {
-            let page = [];
-            try {
-                // ORDER BY (end_date DESC, id) is a stable sort: unique id guarantees no
-                // row can appear on two different pages or be skipped between pages.
-                const result = await db.execute(
-                    `SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${offset}`
-                );
-                page = result.rows || [];
-            } catch (_) { /* empty page on error — stop */ }
-            
-            if (page.length === 0) break;
-            allRows.push(...page);
+        // Fetch up to 20 pages (20,000 rows) — stops as soon as a page returns fewer than limit rows
+        for (let page = 0; page < 20; page++) {
+            const result = await db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${offset}`);
+            const rows = result.rows || [];
+            allRows.push(...rows);
+            if (rows.length < limit) break; // last page
             offset += limit;
-            if (page.length < limit) keepFetching = false; // last page detected
         }
 
         // Remove duplicate IDs (safety net)
@@ -182,7 +214,10 @@ router.get('/all-minimal', async (req, res) => {
         // Compute form_status natively
         const jobs = unique.map(j => withStatus(j, todayStr));
         
-        // Cache for 90 seconds
+        // Final Output Sorted strict alphabetically 
+        jobs.sort((a, b) => a.job_name.localeCompare(b.job_name, undefined, { sensitivity: 'base' }));
+        
+        // Cache for 5 minutes
         setCachedResult(cacheKey, jobs);
         
         res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
@@ -194,51 +229,130 @@ router.get('/all-minimal', async (req, res) => {
     }
 });
 
+
+// Helper builder for exact filtering
+function buildFilters(req, statusParam) {
+    let whereClauses = [];
+    let args = [];
+    let index = 1;
+
+    // Status filter
+    if (statusParam) {
+        if (statusParam === 'CLOSED') {
+            const today = getTodayIST();
+            whereClauses.push(`application_end_date < $${index++}`);
+            args.push(today);
+        } else if (statusParam === 'UPCOMING') {
+            const today = getTodayIST();
+            whereClauses.push(`application_start_date > $${index++}`);
+            args.push(today);
+        } else if (statusParam === 'LIVE') {
+            const today = getTodayIST();
+            whereClauses.push(`application_start_date <= $${index++}`);
+            args.push(today);
+            whereClauses.push(`application_end_date >= $${index++}`);
+            args.push(today);
+        }
+    }
+
+    // Exact state and category mapping
+    const { state, category } = req.query;
+    if (state && state !== 'All India') {
+        // Match exact state OR jobs open to all India
+        whereClauses.push(`(state = $${index++} OR state = 'All India')`);
+        args.push(state);
+    }
+    
+    if (category && category !== 'All') {
+        whereClauses.push(`job_category = $${index++}`);
+        args.push(category);
+    }
+
+    const whereStr = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    return { whereStr, args };
+}
+
 // GET /api/jobs
+// Uses Supabase SDK directly with batch pagination to bypass the 1000-row REST limit.
 router.get('/', async (req, res) => {
     try {
-        const db = getDb();
-        const { status, full, limit: limitParam, offset: offsetParam } = req.query;
+        const sb = getSupabase();
+        const { limit: limitParam, offset: offsetParam, status, state, category } = req.query;
         const todayStr = getTodayIST();
         
-        // Default pagination: return first 500 jobs
-        const limit = Math.min(parseInt(limitParam) || 500, 1000);
+        const limit = Math.min(parseInt(limitParam) || 100, 5000);
         const offset = parseInt(offsetParam) || 0;
         
-        // Select only essential fields for list view
-        const selectFields = full === 'true' 
-            ? '*' 
-            : 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link';
+        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link';
         
-        // Build query - always paginate to avoid timeout
-        const baseQuery = `SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC`;
+        // Build Supabase SDK query with filters
+        const buildSbQuery = () => {
+            let q = sb.from('jobs').select(selectFields);
+            
+            // Status filter
+            const today = getTodayIST();
+            if (status === 'CLOSED') {
+                q = q.lt('application_end_date', today);
+            } else if (status === 'UPCOMING') {
+                q = q.gt('application_start_date', today);
+            } else if (status === 'LIVE') {
+                q = q.lte('application_start_date', today).gte('application_end_date', today);
+            }
+            
+            // State filter: match exact state OR All India records
+            if (state && state !== 'All India') {
+                q = q.or(`state.eq.${state},state.eq.All India`);
+            }
+            
+            // Category filter
+            if (category && category !== 'All') {
+                q = q.eq('job_category', category);
+            }
+            
+            return q;
+        };
         
-        // Get total count
-        const countResult = await db.execute('SELECT COUNT(*) as total FROM jobs');
-        const total = Number(countResult.rows[0]?.total || 0);
+        // Get total count first (fast — head=true means no body returned)
+        const { count: total, error: countErr } = await sb.from('jobs')
+            .select('*', { count: 'exact', head: true });
+        if (countErr) throw new Error(countErr.message);
         
-        // Get paginated results
-        const result = await db.execute(`${baseQuery} LIMIT ${limit} OFFSET ${offset}`);
-        const jobs = result.rows.map(job => withStatus(job, todayStr));
+        // Fetch data using batch pagination if limit > 1000 (Supabase REST cap)
+        const BATCH = 1000;
+        const allRows = [];
         
-        // Apply status filter if requested (after fetching)
-        let filteredJobs = jobs;
-        if (status) {
-            const s = status.toUpperCase();
-            if (s === 'CLOSED') {
-                filteredJobs = jobs.filter(j => j.form_status === 'CLOSED' || j.form_status === 'RECENTLY_CLOSED');
-            } else {
-                filteredJobs = jobs.filter(j => j.form_status === s);
+        if (limit <= BATCH) {
+            const { data, error } = await buildSbQuery()
+                .order('application_end_date', { ascending: false })
+                .range(offset, offset + limit - 1);
+            if (error) throw new Error(error.message);
+            allRows.push(...(data || []));
+        } else {
+            // Batch fetch to bypass 1000-row limit
+            let batchOffset = offset;
+            const target = offset + limit;
+            while (batchOffset < target) {
+                const batchEnd = Math.min(batchOffset + BATCH - 1, target - 1);
+                const { data, error } = await buildSbQuery()
+                    .order('application_end_date', { ascending: false })
+                    .range(batchOffset, batchEnd);
+                if (error) throw new Error(error.message);
+                if (!data || data.length === 0) break;
+                allRows.push(...data);
+                batchOffset += BATCH;
+                if (data.length < BATCH) break; // Last page
             }
         }
         
+        const jobs = allRows.map(job => withStatus(job, todayStr));
+        
         res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
         return res.json({
-            jobs: filteredJobs,
-            total,
+            jobs,
+            total: total || jobs.length,
             limit,
             offset,
-            hasMore: offset + limit < total
+            hasMore: offset + jobs.length < (total || 0)
         });
     } catch (err) {
         console.error('GET /api/jobs error:', err);
@@ -254,64 +368,32 @@ router.get('/eligible', auth, async (req, res) => {
         const user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [req.user.id] })).rows[0] || req.user;
         if (!user) return res.status(404).json({ error: 'User not found' });
         
-        // Check if user has a complete profile for strict filtering
         const hasCompleteProfile = !!(user.qualification_type && user.age && user.age > 0);
         
-        // Fetch all jobs in parallel batches to avoid timeout
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link';
+        const { whereStr, args } = buildFilters(req, null);
         
-        const countRes = await db.execute('SELECT COUNT(*) as count FROM jobs');
-        const total = Number(countRes.rows[0]?.count || countRes.rows[0]?.total || 18000);
-        
-        const limit = 1000;
-        const totalPages = Math.ceil(total / limit);
-        const fetchPromises = [];
-        for (let i = 0; i < totalPages; i++) {
-            fetchPromises.push(
-                db.execute(`SELECT ${selectFields} FROM jobs LIMIT ${limit} OFFSET ${i * limit}`)
-                  .then(r => r.rows || [])
-                  .catch(() => [])
-            );
-        }
-        
-        const results = await Promise.all(fetchPromises);
-        const allRows = results.flat();
+        // Optimized database fetch
+        const query = `SELECT ${selectFields} FROM jobs ${whereStr} ORDER BY application_end_date ASC LIMIT 500`;
+        const allRows = (await db.execute({ sql: query, args })).rows || [];
         
         const jobs = allRows.map(row => withStatus(row, todayStr));
         
-        const fallbackJobs = []; // Store fallback jobs if strict filtering returns 0
-        const allEligible = [];
+        let allEligible = [];
+        let broadlyEligible = [];
         
-        if (hasCompleteProfile) {
-            // Strict filtering for users with complete profile
-            const eligible = jobs.filter(j =>
-                meetsQualification(user, j) &&
-                meetsAge(user, j) &&
-                meetsStateCriteria(user, j) &&
-                meetsTechnicalCriteria(j)
-            );
-            allEligible.push(...eligible);
+        for (const j of jobs) {
+            if (hasCompleteProfile) {
+                if (meetsQualification(user, j) && meetsAge(user, j) && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j)) {
+                    allEligible.push(j);
+                }
+            }
+            if ((j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j)) {
+                broadlyEligible.push(j);
+            }
         }
         
-        // Build fallback: broadly eligible (LIVE or UPCOMING, non-technical)
-        const broadlyEligible = jobs.filter(j =>
-            (j.form_status === 'LIVE' || j.form_status === 'UPCOMING') &&
-            meetsTechnicalCriteria(j) &&
-            meetsStateCriteria(user, j)
-        );
-        fallbackJobs.push(...broadlyEligible);
-        
-        // FALLBACK SYSTEM: If strict filtering returns 0, use broadly eligible exams
-        let finalResult = allEligible;
-        if (finalResult.length === 0) {
-            console.log(`[eligible] No strictly eligible jobs for user ${req.user.id}, using fallback (${fallbackJobs.length} jobs)`);
-            // Sort fallback by application_end_date DESC (most urgent first)
-            finalResult = fallbackJobs.sort((a, b) => {
-                const dateA = new Date(a.application_end_date);
-                const dateB = new Date(b.application_end_date);
-                return dateB - dateA;
-            }).slice(0, 100); // Limit to 100 for performance
-        }
+        let finalResult = allEligible.length > 0 ? allEligible : broadlyEligible.slice(0, 100);
         
         res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
         return res.json(finalResult);
@@ -329,63 +411,31 @@ router.get('/partial', auth, async (req, res) => {
         const user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [req.user.id] })).rows[0] || req.user;
         if (!user) return res.status(404).json({ error: 'User not found' });
         
-        // Check if user has a complete profile for strict filtering
         const hasCompleteProfile = !!(user.qualification_type && user.age && user.age > 0);
         
-        // Fetch all jobs in parallel batches to avoid timeout
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link';
+        const { whereStr, args } = buildFilters(req, null);
         
-        const countRes = await db.execute('SELECT COUNT(*) as count FROM jobs');
-        const total = Number(countRes.rows[0]?.count || countRes.rows[0]?.total || 18000);
-        
-        const limit = 1000;
-        const totalPages = Math.ceil(total / limit);
-        const fetchPromises = [];
-        for (let i = 0; i < totalPages; i++) {
-            fetchPromises.push(
-                db.execute(`SELECT ${selectFields} FROM jobs LIMIT ${limit} OFFSET ${i * limit}`)
-                  .then(r => r.rows || [])
-                  .catch(() => [])
-            );
-        }
-        
-        const results = await Promise.all(fetchPromises);
-        const allRows = results.flat();
+        const query = `SELECT ${selectFields} FROM jobs ${whereStr} ORDER BY application_start_date ASC LIMIT 500`;
+        const allRows = (await db.execute({ sql: query, args })).rows || [];
         
         const jobs = allRows.map(row => withStatus(row, todayStr));
         
-        const allPartial = [];
-        const fallbackJobs = [];
+        let allPartial = [];
+        let fallbackJobs = [];
         
-        if (hasCompleteProfile) {
-            // Original logic: partial match (meets SOME but not ALL criteria)
-            const partial = jobs.filter(j =>
-                (meetsQualification(user, j) || meetsAge(user, j)) &&
-                !(meetsQualification(user, j) && meetsAge(user, j)) &&
-                meetsStateCriteria(user, j) &&
-                meetsTechnicalCriteria(j)
-            );
-            allPartial.push(...partial);
+        for (const j of jobs) {
+            if (hasCompleteProfile) {
+                // Partial means they meet qualification OR age, but NOT both. Or if it's All India fallback scenarios.
+                const isPartial = (meetsQualification(user, j) || meetsAge(user, j)) && !(meetsQualification(user, j) && meetsAge(user, j)) && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j);
+                if (isPartial) allPartial.push(j);
+            }
+            if (j.form_status === 'UPCOMING' && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j)) {
+                fallbackJobs.push(j);
+            }
         }
         
-        // Build fallback: upcoming exams (closing soon)
-        const upcoming = jobs.filter(j =>
-            j.form_status === 'UPCOMING' &&
-            meetsTechnicalCriteria(j)
-        );
-        fallbackJobs.push(...upcoming);
-        
-        // FALLBACK SYSTEM: If partial filtering returns 0, use upcoming exams
-        let finalResult = allPartial;
-        if (finalResult.length === 0) {
-            console.log(`[partial] No partial match jobs for user ${req.user.id}, using fallback (${fallbackJobs.length} jobs)`);
-            // Sort fallback by application_start_date ASC (soonest first)
-            finalResult = fallbackJobs.sort((a, b) => {
-                const dateA = new Date(a.application_start_date);
-                const dateB = new Date(b.application_start_date);
-                return dateA - dateB;
-            }).slice(0, 50); // Limit to 50 for performance
-        }
+        let finalResult = allPartial.length > 0 ? allPartial : fallbackJobs.slice(0, 50);
         
         res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
         return res.json(finalResult);
@@ -412,93 +462,42 @@ router.get('/liked', auth, async (req, res) => {
     }
 });
 
-// GET /api/jobs/live - Get all live (currently accepting applications) exams
+// GET /api/jobs/live
 router.get('/live', async (req, res) => {
     try {
         const db = getDb();
         const todayStr = getTodayIST();
         
-        // Fetch all jobs through parallel batching
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link';
+        const { whereStr, args } = buildFilters(req, 'LIVE');
         
-        const countRes = await db.execute('SELECT COUNT(*) as count FROM jobs');
-        const total = Number(countRes.rows[0]?.count || countRes.rows[0]?.total || 18000);
-        
-        const limit = 1000;
-        const totalPages = Math.ceil(total / limit);
-        const fetchPromises = [];
-        for (let i = 0; i < totalPages; i++) {
-            fetchPromises.push(
-                db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date ASC LIMIT ${limit} OFFSET ${i * limit}`)
-                  .then(r => r.rows || [])
-                  .catch(() => [])
-            );
-        }
-        
-        const results = await Promise.all(fetchPromises);
-        const allRows = results.flat();
-        
-        const jobs = allRows.map(job => withStatus(job, todayStr));
-        const liveJobs = jobs.filter(j => j.form_status === 'LIVE');
-        
-        // FALLBACK: If no live jobs, return recently closed exams
-        if (liveJobs.length === 0) {
-            console.log('[live] No live jobs found, returning recently closed as fallback');
-            const fallback = jobs.filter(j => j.form_status === 'RECENTLY_CLOSED')
-                .sort((a, b) => new Date(b.application_end_date) - new Date(a.application_end_date))
-                .slice(0, 20);
-            res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
-            return res.json(fallback);
-        }
+        const query = `SELECT ${selectFields} FROM jobs ${whereStr} ORDER BY application_end_date ASC LIMIT 500`;
+        const result = await db.execute({ sql: query, args });
+        const jobs = (result.rows || []).map(row => withStatus(row, todayStr));
         
         res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
-        return res.json(liveJobs);
+        return res.json(jobs);
     } catch (err) {
         console.error('GET /api/jobs/live error:', err);
         return res.status(500).json({ error: 'Failed to fetch live jobs', details: err.message });
     }
 });
 
-// GET /api/jobs/upcoming - Get all upcoming exams
+// GET /api/jobs/upcoming
 router.get('/upcoming', async (req, res) => {
     try {
         const db = getDb();
         const todayStr = getTodayIST();
         
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link';
+        const { whereStr, args } = buildFilters(req, 'UPCOMING');
         
-        const countRes = await db.execute('SELECT COUNT(*) as count FROM jobs');
-        const total = Number(countRes.rows[0]?.count || countRes.rows[0]?.total || 18000);
-        
-        const limit = 1000;
-        const totalPages = Math.ceil(total / limit);
-        const fetchPromises = [];
-        for (let i = 0; i < totalPages; i++) {
-            fetchPromises.push(
-                db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_start_date ASC LIMIT ${limit} OFFSET ${i * limit}`)
-                  .then(r => r.rows || [])
-                  .catch(() => [])
-            );
-        }
-        
-        const results = await Promise.all(fetchPromises);
-        const allRows = results.flat();
-        
-        const jobs = allRows.map(job => withStatus(job, todayStr));
-        const upcomingJobs = jobs.filter(j => j.form_status === 'UPCOMING');
-        
-        // FALLBACK: If no upcoming jobs, return live exams
-        if (upcomingJobs.length === 0) {
-            console.log('[upcoming] No upcoming jobs found, returning live as fallback');
-            const fallback = jobs.filter(j => j.form_status === 'LIVE')
-                .sort((a, b) => new Date(a.application_end_date) - new Date(b.application_end_date))
-                .slice(0, 20);
-            res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
-            return res.json(fallback);
-        }
+        const query = `SELECT ${selectFields} FROM jobs ${whereStr} ORDER BY application_start_date ASC LIMIT 500`;
+        const result = await db.execute({ sql: query, args });
+        const jobs = (result.rows || []).map(row => withStatus(row, todayStr));
         
         res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
-        return res.json(upcomingJobs);
+        return res.json(jobs);
     } catch (err) {
         console.error('GET /api/jobs/upcoming error:', err);
         return res.status(500).json({ error: 'Failed to fetch upcoming jobs', details: err.message });
@@ -618,10 +617,6 @@ router.post('/:id/like', auth, async (req, res) => {
         await db.execute({
             sql: 'INSERT INTO liked_jobs (id, user_id, job_id) VALUES (?, ?, ?) ON CONFLICT (user_id, job_id) DO NOTHING',
             args: [generateId(), userId, jobId]
-        });
-        await db.execute({
-            sql: 'INSERT INTO notifications (id, user_id, job_id, message) VALUES (?, ?, ?, ?)',
-            args: [generateId(), userId, jobId, 'You saved: ' + job.job_name]
         });
         return res.json({ liked: true });
     } catch (err) {

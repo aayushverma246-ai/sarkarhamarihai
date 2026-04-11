@@ -13,6 +13,31 @@ export interface User {
   expected_graduation_year: number;
 }
 
+/** Canonical job categories */
+export type JobCategory =
+  | 'Agriculture'
+  | 'Banking'
+  | 'Central Government'
+  | 'Cooperative'
+  | 'Defence'
+  | 'Engineering'
+  | 'Entrance Exam'
+  | 'Forest & Environment'
+  | 'Healthcare'
+  | 'Insurance'
+  | 'Judiciary'
+  | 'Police'
+  | 'PSU'
+  | 'Railways'
+  | 'Research & Science'
+  | 'Shipping & Ports'
+  | 'SSC'
+  | 'State Government'
+  | 'State PSCs'
+  | 'Teaching'
+  | 'Telecom'
+  | 'UPSC';
+
 export type FormStatus = 'LIVE' | 'UPCOMING' | 'CLOSED' | 'RECENTLY_CLOSED';
 
 export interface Job {
@@ -40,6 +65,12 @@ export interface Job {
   location?: string;
   vacancies?: number;
   recommendation_score?: number;
+  // Data integrity fields
+  is_verified?: boolean;
+  verified?: boolean;
+  last_checked_at?: string;
+  source_url?: string;
+  last_updated?: string;
 }
 
 export interface Notification {
@@ -60,4 +91,20 @@ export interface Roadmap {
   job_id: string;
   content: string;
   created_at: string;
+}
+
+export interface Recommendation {
+  id: string;
+  job_name: string;
+  organization: string;
+  job_category: string;
+  form_status: FormStatus;
+  application_start_date: string;
+  application_end_date: string;
+  salary_min: number;
+  salary_max: number;
+  qualification_required: string;
+  official_application_link: string;
+  score: number;
+  explanation: string;
 }

@@ -65,3 +65,32 @@ export function meetsQualification(user: any, job: Job): boolean {
     }
     return false;
 }
+
+export function formatRelativeTime(dateString: string | undefined | null): string {
+    if (!dateString) return 'Missing timestamp';
+    
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'Missing timestamp';
+    
+    // Fallback to absolute if the date is exactly '2024-04-02', maybe someone hardcoded it in string?
+    // Not needed. 
+
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 0) return 'Updated just now'; // Future drift fallback
+    if (diffInSeconds < 60) return 'Updated just now';
+    if (diffInSeconds < 3600) {
+        const mins = Math.floor(diffInSeconds / 60);
+        return `Updated ${mins} min${mins !== 1 ? 's' : ''} ago`;
+    }
+    if (diffInSeconds < 86400) {
+        const hrs = Math.floor(diffInSeconds / 3600);
+        return `Updated ${hrs} hour${hrs !== 1 ? 's' : ''} ago`;
+    }
+    if (diffInSeconds < 172800) {
+        return 'Updated yesterday';
+    }
+    const days = Math.floor(diffInSeconds / 86400);
+    return `Updated ${days} days ago`;
+}

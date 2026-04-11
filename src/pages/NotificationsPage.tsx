@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, getCachedUser, clearToken } from '../api';
+import { api, getCachedUser, invalidateCache } from '../api';
 import Navbar from '../components/Navbar';
 import GovLoader from '../components/GovLoader';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -11,7 +11,7 @@ export default function NotificationsPage() {
   const { t, language } = useLanguage();
   const [user, setUser] = useState<any>(cached);
   const [notifications, setNotifications] = useState<any[]>([]);
-  const [jobsMap, setJobsMap] = useState<Record<string, any>>({});
+  // Optimistic UI: Initial mount is immediate
   const [loading, setLoading] = useState(true);
 
   // Undo Toast State
@@ -25,33 +25,28 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     if (!cached) { navigate('/login'); return; }
-    const load = async () => {
-      try {
-        const [me, notifs] = await Promise.all([
-          api.getMe().catch(() => cached),
-          api.getNotifications().catch(() => [])
-        ]);
-        setUser(me);
-        setNotifications(notifs || []);
-        
-        // Load jobs separately - don't crash if it fails
-        try {
-          const jobs = await api.getJobs();
-          const map: Record<string, any> = {};
-          (jobs || []).forEach(j => map[j.id] = j);
-          setJobsMap(map);
-        } catch {
-          // Jobs failed to load, notifications still work
-          console.log('Jobs failed to load for notifications');
-        }
-      } catch {
-        clearToken(); navigate('/login');
-      } finally {
-        setLoading(false);
-      }
+    // Fetch user without blocking
+    api.getMe().then(me => setUser(me)).catch(() => setUser(cached));
+
+    const fetchNotifs = () => {
+      // Invalidate cache to always get fresh notifications
+      invalidateCache('/notifications');
+      api.getNotifications()
+        .then(notifs => {
+          setNotifications(Array.isArray(notifs) ? notifs : []);
+          setLoading(false);
+        })
+        .catch((err) => {
+          console.error('Failed fetching notifs:', err);
+          setLoading(false);
+        });
     };
-    load();
-    // eslint-disable-next-line
+
+    fetchNotifs();
+
+    // Re-fetch when likes/saves happen (notifications are created on like)
+    window.addEventListener('app:likeToggled', fetchNotifs);
+    return () => window.removeEventListener('app:likeToggled', fetchNotifs);
   }, []);
 
   // ─── Undo Deletion Logic ────────────────────────────────────────────────
@@ -107,8 +102,7 @@ export default function NotificationsPage() {
 
   const getLocalizedMessage = (n: any) => {
     const message: string = n.message;
-    const job = jobsMap[n.job_id];
-    const examNameInfo = job ? (job[`exam_name_${language}`] || job.job_name) : null;
+    const examNameInfo = n[`exam_name_${language}`] || n.job_name;
 
     // Check if the DB message is English. E.g "Applications for [Exam] are now LIVE!"
     if (message.includes('are now LIVE!')) {

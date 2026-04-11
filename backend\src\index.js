@@ -24,6 +24,7 @@ app.use('/api/syllabus', require('./routes/syllabus')); // Added syllabus matchi
 app.use('/api/tracker', require('./routes/tracker')); // Tracker feature routes
 app.use('/api/ai', require('./routes/ai')); // NEW AI rebuild route
 app.use('/api/exam', require('./routes/exam')); // NEW Exam dynamic stats routes
+app.use('/api/audit', require('./routes/audit')); // Data audit system
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));

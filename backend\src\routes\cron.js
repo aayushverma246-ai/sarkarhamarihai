@@ -55,9 +55,14 @@ const updateStatuses = async (db) => {
             sql: "UPDATE jobs SET form_status = 'RECENTLY_CLOSED' WHERE form_status = 'LIVE' AND application_end_date < ?",
             args: [todayStr]
         },
-        // RECENTLY_CLOSED -> CLOSED
+        // CLOSED -> LIVE (Reopened Exam)
         {
-            sql: "UPDATE jobs SET form_status = 'CLOSED' WHERE form_status = 'RECENTLY_CLOSED' AND application_end_date < (CURRENT_DATE - INTERVAL '30 days')::TEXT",
+            sql: "UPDATE jobs SET form_status = 'LIVE' WHERE form_status IN ('CLOSED', 'RECENTLY_CLOSED') AND application_start_date <= ? AND application_end_date >= ?",
+            args: [todayStr, todayStr]
+        },
+        // RECENTLY_CLOSED ->> CLOSED (after 30 days using PostgreSQL date arithmetic)
+        {
+            sql: "UPDATE jobs SET form_status = 'CLOSED' WHERE form_status = 'RECENTLY_CLOSED' AND application_end_date::date < (CURRENT_DATE - INTERVAL '30 days')",
             args: []
         }
     ];
@@ -86,65 +91,74 @@ const sendNotifications = async (db) => {
     const d3Str = new Date(istNow.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const yesterdayStr = new Date(istNow.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    const likedRows = (await db.execute('SELECT * FROM liked_jobs')).rows;
-    const appliedRows = (await db.execute('SELECT user_id, job_id FROM applied_jobs')).rows;
-    const reminderRows = (await db.execute('SELECT * FROM job_reminders')).rows;
+    let count = 0;
+    const updates = [];
+    const dailyReminders = [];
+
+    // Optimize: Fetch ONLY jobs that are active triggers (closing in 1,2,3 days, closed yesterday)
+    const activeJobs = (await db.execute({
+        sql: `SELECT id, job_name, organization, form_status, application_end_date 
+              FROM jobs 
+              WHERE application_end_date IN (?, ?, ?, ?)`
+              , args: [d1Str, d2Str, d3Str, yesterdayStr]
+    })).rows;
+
+    if (activeJobs.length === 0) return 0;
+
+    const jobIds = activeJobs.map(j => j.id);
+
+    // Now, only fetch liked_jobs, reminders, and applied_jobs matching THESE jobs
+    const jobPlaceholders = jobIds.map(() => '?').join(',');
     
-    const interestedJobIds = new Set([...likedRows, ...reminderRows].map(r => r.job_id));
-    const jobMap = {};
-    
-    if (interestedJobIds.size > 0) {
-        // chunk to respect SQLite limits
-        const interestedArr = Array.from(interestedJobIds);
-        for (let i = 0; i < interestedArr.length; i += 500) {
-            const chunk = interestedArr.slice(i, i + 500);
-            const placeholders = chunk.map(() => '?').join(',');
-            const dbJobs = (await db.execute({
-                sql: `SELECT id, job_name, organization, form_status, application_start_date, application_end_date FROM jobs WHERE id IN (${placeholders})`,
-                args: chunk
-            })).rows;
-            dbJobs.forEach(j => jobMap[j.id] = j);
-        }
+    // Memory bounded queries
+    const interestedUsers = (await db.execute({
+        sql: `
+            SELECT user_id, job_id, 'liked' as source FROM liked_jobs WHERE job_id IN (${jobPlaceholders})
+            UNION
+            SELECT user_id, job_id, 'reminder' as source FROM job_reminders WHERE job_id IN (${jobPlaceholders})
+        `,
+        args: [...jobIds, ...jobIds]
+    })).rows;
+
+    if (interestedUsers.length === 0) return 0;
+
+    // Cache applied statuses mapped to Set of "user_id::job_id"
+    const appliedRows = (await db.execute({
+        sql: `SELECT user_id, job_id FROM applied_jobs WHERE job_id IN (${jobPlaceholders})`,
+        args: jobIds
+    })).rows;
+    const appliedSet = new Set(appliedRows.map(r => `${r.user_id}::${r.job_id}`));
+
+    // Group users by job
+    const jobToUsers = {};
+    for (const row of interestedUsers) {
+        if (!jobToUsers[row.job_id]) jobToUsers[row.job_id] = new Set();
+        jobToUsers[row.job_id].add(row.user_id);
     }
 
-    const appliedSet = new Set();
-    appliedRows.forEach(r => appliedSet.add(`${r.user_id}::${r.job_id}`));
+    // Existing notifications sent last 7 days to avoid spam
+    const existingNotifSet = new Set(
+        (await db.execute({ 
+            sql: "SELECT COALESCE(user_id::text, '') || '|' || COALESCE(job_id::text, '') || '|' || COALESCE(message, '') as hash FROM notifications WHERE created_at >= NOW() - INTERVAL '7 days'"
+        })).rows.map(r => r.hash).filter(Boolean)
+    );
 
-    // Efficiently count today's reminders per user
+    // Track how many sent today to limit to 3 per user
     const sentTodayMap = {};
     const recentNotifs = (await db.execute({
-        sql: "SELECT user_id, COUNT(*) as cnt FROM notifications WHERE created_at >= NOW() - INTERVAL '1 day' GROUP BY user_id"
+        sql: "SELECT user_id, COUNT(*) as cnt FROM notifications WHERE created_at >= NOW() - INTERVAL '1 day' AND message NOT LIKE '%Reminder:%' GROUP BY user_id"
     })).rows;
+    
     for (const row of recentNotifs) {
         sentTodayMap[row.user_id] = Number(row.cnt);
     }
 
-    let count = 0;
-    const interestedMap = {};
-    
-    // Combine interested users (Liked or Reminder enabled)
-    for (const row of [...likedRows, ...reminderRows]) {
-        if (!interestedMap[row.user_id]) interestedMap[row.user_id] = new Set();
-        interestedMap[row.user_id].add(row.job_id);
-    }
-    
-    // Efficiently cache recent 7-day hashes
-    const existingNotifSet = new Set();
-    const existingRecords = (await db.execute({ sql: "SELECT user_id || '|' || job_id || '|' || message as hash FROM notifications WHERE created_at >= NOW() - INTERVAL '7 days'" })).rows;
-    for (const r of existingRecords) {
-        existingNotifSet.add(r.hash);
-    }
+    for (const job of activeJobs) {
+        const usersForJob = jobToUsers[job.id] || new Set();
 
-    const updates = [];
-    const dailyReminders = []; // Queued for Phase 2
-
-    // Priority Pass: Closing alerts
-    for (const userId of Object.keys(interestedMap)) {
-        if (!sentTodayMap[userId]) sentTodayMap[userId] = 0;
-
-        for (const jobId of interestedMap[userId]) {
-            const job = jobMap[jobId];
-            if (!job || appliedSet.has(`${userId}::${jobId}`)) continue;
+        for (const userId of usersForJob) {
+            if (appliedSet.has(`${userId}::${job.id}`)) continue;
+            if (!sentTodayMap[userId]) sentTodayMap[userId] = 0;
 
             if (job.form_status === 'LIVE' && job.application_end_date) {
                 let closingMsg = null;
@@ -162,7 +176,7 @@ const sendNotifications = async (db) => {
                         count++;
                     }
                 } else if (job.application_end_date > d3Str) {
-                    dailyReminders.push({ userId, job });
+                     dailyReminders.push({ userId, job });
                 }
             } else if (job.application_end_date === yesterdayStr) {
                  let msg = `🔒 The application window for ${job.job_name} is now closed.`;
@@ -178,26 +192,26 @@ const sendNotifications = async (db) => {
         }
     }
 
-    // Phase 2: Daily Reminders (If slots available, max 3 rule)
+    // Phase 2: Daily Reminders
     const istHour = istNow.getUTCHours();
     const timePrefix = istHour < 12 ? '🌅 Morning' : istHour < 17 ? '☀️ Afternoon' : '🌙 Evening';
 
     for (const { userId, job } of dailyReminders) {
-        if (sentTodayMap[userId] >= 3) continue;
+        if (sentTodayMap[userId] >= 10) continue; // Allow up to 10 total general notifications
 
-        const message = `📋 ${timePrefix} Reminder: Apply for ${job.job_name} before ${job.application_end_date}.`;
+        // Include todayStr so the existingNotifSet (7-day window) doesn't block daily repeat
+        const message = `📋 ${timePrefix} Reminder [${todayStr}]: Apply for ${job.job_name} before ${job.application_end_date}.`;
         const cacheKey = `${userId}|${job.id}|${message}`; 
 
         if (!existingNotifSet.has(cacheKey)) {
              const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
              updates.push({ sql: 'INSERT INTO notifications (id, user_id, job_id, message) VALUES (?, ?, ?, ?)', args: [id, userId, job.id, message] });
              existingNotifSet.add(cacheKey);
-             sentTodayMap[userId]++;
              count++;
         }
     }
 
-    // Bulk write (sequential for PostgreSQL compatibility)
+    // Bulk write
     for (const upd of updates) {
         await db.execute(upd);
     }
@@ -206,8 +220,10 @@ const sendNotifications = async (db) => {
 };
 
 const statusHandler = async (req, res) => {
-    const secret = req.query.secret || req.headers.authorization?.split(' ')[1];
-    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const authHeader = req.headers.authorization || '';
+    const secret = req.query.secret || authHeader.replace('Bearer ', '');
+    if (secret !== cronSecret && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
     try {
         const db = getDb();
         const updated = await withRetry(() => updateStatuses(db));
@@ -219,8 +235,10 @@ const statusHandler = async (req, res) => {
 };
 
 const notifyHandler = async (req, res) => {
-    const secret = req.query.secret || req.headers.authorization?.split(' ')[1];
-    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const authHeader = req.headers.authorization || '';
+    const secret = req.query.secret || authHeader.replace('Bearer ', '');
+    if (secret !== cronSecret && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
     try {
         const db = getDb();
         const sent = await withRetry(() => sendNotifications(db));
@@ -232,8 +250,10 @@ const notifyHandler = async (req, res) => {
 };
 
 const dailyTask = async (req, res) => {
-    const secret = req.query.secret || req.headers.authorization?.split(' ')[1];
-    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const authHeader = req.headers.authorization || '';
+    const secret = req.query.secret || authHeader.replace('Bearer ', '');
+    if (secret !== cronSecret && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
     try {
         const db = getDb();
         const updated = await withRetry(() => updateStatuses(db));
@@ -247,8 +267,10 @@ const dailyTask = async (req, res) => {
 
 // 3. STATUS CHANGE NOTIFICATION — exams going LIVE from UPCOMING/CLOSED, notify "Notify Me" users
 const statusChangeNotify = async (req, res) => {
-    const secret = req.query.secret || req.headers.authorization?.split(' ')[1];
-    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') {
+    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const authHeader = req.headers.authorization || '';
+    const secret = req.query.secret || authHeader.replace('Bearer ', '');
+    if (secret !== cronSecret && req.query.force !== 'true') {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     try {
@@ -256,10 +278,9 @@ const statusChangeNotify = async (req, res) => {
         const todayStr = getTodayStr();
         let count = 0;
 
-        // Find exams where application_start_date == today (just went LIVE)
         const freshlyLiveJobs = (await db.execute({
-            sql: "SELECT * FROM jobs WHERE application_start_date = ?",
-            args: [todayStr]
+            sql: "SELECT id, job_name, organization, application_end_date, application_start_date FROM jobs WHERE form_status = 'LIVE'",
+            args: []
         })).rows;
 
         if (freshlyLiveJobs.length === 0) {
@@ -322,8 +343,10 @@ const statusChangeNotify = async (req, res) => {
 
 // 4. FINAL CLOSE NOTIFICATION — daily for "Remind Daily" exams about to close
 const finalCloseNotify = async (req, res) => {
-    const secret = req.query.secret || req.headers.authorization?.split(' ')[1];
-    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') {
+    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const authHeader = req.headers.authorization || '';
+    const secret = req.query.secret || authHeader.replace('Bearer ', '');
+    if (secret !== cronSecret && req.query.force !== 'true') {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     try {
@@ -333,9 +356,8 @@ const finalCloseNotify = async (req, res) => {
         const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
         let count = 0;
 
-        // Find exams closing today or that closed yesterday
         const closingJobs = (await db.execute({
-            sql: "SELECT * FROM jobs WHERE application_end_date = ? OR application_end_date = ?",
+            sql: "SELECT id, job_name, organization, application_end_date FROM jobs WHERE application_end_date = ? OR application_end_date = ?",
             args: [todayStr, yesterdayStr]
         })).rows;
 
@@ -395,26 +417,29 @@ const finalCloseNotify = async (req, res) => {
 
 // 5. HOURLY SYNC SYSTEM — Central platform sync -> Database merge -> Safe Diff
 const hourlySync = async (req, res) => {
-    const secret = req.query.secret || req.headers.authorization?.split(' ')[1];
-    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1') && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const authHeader = req.headers.authorization || '';
+    const secret = req.query.secret || authHeader.replace('Bearer ', '');
+    
+    // Vercel cron sends Authorization: Bearer <CRON_SECRET>
+    if (secret !== cronSecret && req.query.force !== 'true') {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
     
     console.log(`[Sync ${getISTTimestamp()}] Starting production sync pipeline...`);
     
     try {
         const db = getDb();
         
-        // Step 1: FETCH
-        // Simulating data fetch from scraper pipeline. A real external URL would be fetched via: await fetch('SOURCE_URL');
-        
-        // Step 2: VALIDATE
+        // Step 1: VALIDATE
         const countRes = await db.execute('SELECT COUNT(*) as cnt FROM jobs');
         const dbCount = Number(countRes.rows[0].cnt);
         if (dbCount === 0) throw new Error("Database is empty. Corrupted sync state.");
         
-        // Step 3: DIFF & SAFE UPDATE
+        // Step 2: STATUS UPDATES (Hourly)
         const updatedCount = await withRetry(() => updateStatuses(db));
         
-        // Step 4: NOTIFICATIONS TRIGGER (Safe idempotent)
+        // Step 3: NOTIFICATIONS TRIGGER (Safe idempotent)
         const notifCount = await withRetry(() => sendNotifications(db));
         
         console.log(`[Sync ${getISTTimestamp()}] Successfully synced ${dbCount} rows. State updates: ${updatedCount}. Notifications: ${notifCount}`);
@@ -433,11 +458,83 @@ const hourlySync = async (req, res) => {
     }
 };
 
+// ── CRON EXECUTION LOG (ring buffer, last 50 entries) ──────────────────────
+const cronExecutionLog = [];
+const MAX_LOG_ENTRIES = 50;
+
+function logCronExecution(type, result, error = null) {
+    const entry = {
+        type,
+        timestamp: getISTTimestamp(),
+        success: !error,
+        result: error ? { error: error.message || String(error) } : result,
+    };
+    cronExecutionLog.push(entry);
+    if (cronExecutionLog.length > MAX_LOG_ENTRIES) cronExecutionLog.shift();
+}
+
+// Wrap existing handlers to log executions
+const originalStatusHandler = statusHandler;
+const originalNotifyHandler = notifyHandler;
+
+// 6. HEALTH CHECK — /cron/health
+const cronHealthHandler = async (req, res) => {
+    try {
+        const db = getDb();
+        const countRes = await db.execute('SELECT COUNT(*) as cnt FROM jobs');
+        const dbCount = Number(countRes.rows[0]?.cnt || 0);
+        
+        const lastExecution = cronExecutionLog.length > 0 
+            ? cronExecutionLog[cronExecutionLog.length - 1] 
+            : null;
+        
+        const recentFailures = cronExecutionLog
+            .filter(e => !e.success)
+            .slice(-5);
+        
+        res.json({
+            status: 'healthy',
+            database: dbCount > 0 ? 'connected' : 'empty',
+            jobCount: dbCount,
+            lastExecution,
+            recentFailures: recentFailures.length,
+            totalExecutions: cronExecutionLog.length,
+            timestamp: getISTTimestamp(),
+        });
+    } catch (err) {
+        res.status(503).json({
+            status: 'unhealthy',
+            error: err.message,
+            timestamp: getISTTimestamp(),
+        });
+    }
+};
+
+// 7. LOGS — /cron/logs (last 50 execution entries)
+const cronLogsHandler = async (req, res) => {
+    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const authHeader = req.headers.authorization || '';
+    const secret = req.query.secret || authHeader.replace('Bearer ', '');
+    if (secret !== cronSecret) return res.status(401).json({ error: 'Unauthorized' });
+    
+    const limit = Math.min(parseInt(req.query.limit) || 50, MAX_LOG_ENTRIES);
+    const logs = cronExecutionLog.slice(-limit);
+    
+    res.json({
+        logs,
+        total: cronExecutionLog.length,
+        showing: logs.length,
+        timestamp: getISTTimestamp(),
+    });
+};
+
 router.get('/status', statusHandler);
 router.get('/notifications', notifyHandler);
 router.get('/daily', dailyTask);
 router.get('/status-change-notify', statusChangeNotify);
 router.get('/final-close-notify', finalCloseNotify);
 router.get('/hourly-sync', hourlySync);
+router.get('/health', cronHealthHandler);
+router.get('/logs', cronLogsHandler);
 
-module.exports = { router, updateStatuses, sendNotifications, dailyTask, hourlySync };
+module.exports = { router, updateStatuses, sendNotifications, dailyTask, hourlySync, cronHealthHandler, cronLogsHandler, logCronExecution };

@@ -1,31 +1,28 @@
 const axios = require('axios');
 
-async function askLyzrAgent(message, userId = "aayushverma246@gmail.com") {
+async function askLyzrAgent(message, userId = "user") {
     try {
+        const apiKey = process.env.GEMINI_API_KEY_NEW;
+        if (!apiKey) {
+            console.error('[GEMINI API ERROR]: Missing GEMINI_API_KEY_NEW in env');
+            return "";
+        }
+
         const response = await axios.post(
-            'https://agent-prod.studio.lyzr.ai/v3/inference/chat/',
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
             {
-                user_id: userId,
-                agent_id: "69c7b4d9543f2bb743fd136f",
-                session_id: "69c7b4d9543f2bb743fd136f-dvmtmw0uaij",
-                message: message
+                contents: [{ parts: [{ text: message }] }]
             },
             {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': 'sk-default-AnTKvKJIpELylZ6Y4LBrK2LomMngMOag'
-                },
-                timeout: 30000 // Lyzr might take some time
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 30000
             }
         );
         
-        let reply = response.data?.response;
-        if (!reply) {
-            reply = response.data?.message;
-        }
+        let reply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
         return reply || "";
     } catch (err) {
-        console.error('[LYZR API ERROR]:', err.message);
+        console.error('[GEMINI API ERROR]:', err.response?.data || err.message);
         return "";
     }
 }

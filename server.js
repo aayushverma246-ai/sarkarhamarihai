@@ -170,27 +170,7 @@ app.get('/api/fix-categories', async (req, res) => {
 });
 
 
-// Health Check with DB verification
-app.get('/api/health', async (req, res) => {
-    try {
-        const db = require('./backend/src/db').getDb();
-        const result = await db.execute('SELECT COUNT(*) as cnt FROM jobs');
-        const jobCount = result.rows[0]?.cnt || 0;
-        res.json({
-            status: 'healthy',
-            database: 'connected',
-            jobCount,
-            ts: new Date().toISOString()
-        });
-    } catch (err) {
-        res.status(500).json({
-            status: 'unhealthy',
-            database: 'error',
-            error: err.message,
-            ts: new Date().toISOString()
-        });
-    }
-});
+// Inline health check removed - now served via routes/health.js
 
 // Quick test endpoint - returns first 10 jobs directly
 app.get('/api/test-jobs', async (req, res) => {
@@ -213,6 +193,8 @@ app.use('/api/syllabus', require('./backend/src/routes/syllabus'));
 app.use('/api/cron', cronRouter);
 app.use('/api/tracker', require('./backend/src/routes/tracker')); // ADDED: Tracker API Routes
 app.use('/api/ai', require('./backend/src/routes/ai')); // NEW AI rebuild route
+app.use('/api/health', require('./backend/src/routes/health')); // Robust DB monitors
+app.use('/api/audit', require('./backend/src/routes/audit')); // Data audit system
 
 // Serve static frontend (from dist/ array)
 app.use(express.static(path.join(__dirname, 'dist')));

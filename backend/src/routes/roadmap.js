@@ -4,93 +4,110 @@ const { getDb } = require('../db');
 const auth = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 
-/**
- * TIER 2 FALLBACK: Deterministic Lite JSON Roadmap
- * Builds a structured JSON object from syllabus keywords matching the 10-section format.
- */
-function simulateLiteJSON(user, job) {
-    const syllabus = job.syllabus || job.job_name;
-    const keywords = syllabus.split(/[,;|(\n]/)
-        .map(k => k.trim())
-        .filter(k => k.length > 2 && !k.includes('http'));
+const examSyllabusMap = {
+    'UPSC': ['Indian Polity & Constitution', 'History of India & National Movement', 'Geography (World & India)', 'Economy', 'General Science & Tech'],
+    'SSC': ['Quantitative Aptitude', 'General Intelligence & Reasoning', 'English Comprehension', 'General Awareness'],
+    'Banking': ['Reasoning Ability', 'Quantitative Aptitude / Data Interpretation', 'English Language', 'General / Financial Awareness'],
+    'Railways': ['Mathematics', 'General Intelligence & Reasoning', 'General Science', 'General Awareness (Current Affairs)'],
+    'State PSCs': ['State History & Culture', 'State Geography & Economy', 'General Mental Ability', 'Current Events (State & National)'],
+    'Defence': ['Mathematics', 'General Knowledge & Current Affairs', 'English', 'General Science'],
+    'Police': ['General Knowledge', 'Reasoning', 'Numerical Ability', 'Current Affairs']
+};
 
-    const chunkSize = Math.max(1, Math.ceil(keywords.length / 4));
-    const p1 = keywords.slice(0, chunkSize);
-    const p2 = keywords.slice(chunkSize, chunkSize * 2);
-    const p3 = keywords.slice(chunkSize * 2, chunkSize * 3);
-    const p4 = keywords.slice(chunkSize * 3);
+function generateDeterministicRoadmap(user, job) {
+    const defaultSyllabus = examSyllabusMap[job.job_category] || examSyllabusMap['SSC'];
+    const keywords = job.syllabus?.length > 10 ? 
+        job.syllabus.split(/[,\n]/).map(k => k.trim()).filter(k => k.length > 3) : 
+        defaultSyllabus;
+
+    const subjects = keywords.length >= 4 ? keywords : defaultSyllabus;
+    
+    // Distribute subjects into 4 phases
+    const chunkSize = Math.max(1, Math.ceil(subjects.length / 4));
+    const p1 = subjects.slice(0, chunkSize);
+    const p2 = subjects.slice(chunkSize, chunkSize * 2).length ? subjects.slice(chunkSize, chunkSize * 2) : [subjects[0] + " (Advanced)"];
+    const p3 = subjects.slice(chunkSize * 2, chunkSize * 3).length ? subjects.slice(chunkSize * 2, chunkSize * 3) : ["Mock Tests & Revision"];
+    const p4 = subjects.slice(chunkSize * 3).length ? subjects.slice(chunkSize * 3) : ["Current Affairs & Final Polish"];
+
+    const studyHours = user.study_hours || 4;
+    const isQualifying = user.qualification_status === 'Pursuing';
+    
+    const keyInsight = isQualifying 
+        ? `Balancing ${job.job_category} prep with college studies requires strict time management. Dedicate ${studyHours}h/day.`
+        : `Full-time prep advantage: Utilize ${studyHours}h/day systematically with 60% focus on ${p1[0] || 'core subjects'}.`;
 
     return {
         overview: {
             exam_name: job.job_name,
             readiness_score: 15,
-            feasibility_status: "Achievable",
-            recommended_daily_hours: user.study_hours || 4,
-            days_remaining: 90,
-            key_insight: `Focus on ${job.job_category} fundamentals with ${user.study_hours || 4}h daily commitment.`
+            feasibility_status: studyHours >= 6 ? "High Probability" : "Achievable",
+            recommended_daily_hours: studyHours,
+            days_remaining: 120, // Blueprint standard
+            key_insight: keyInsight,
+            is_ready: true
         },
         syllabus_breakdown: [
-            { subject: p1[0] || "General Studies", topics: p1.slice(0, 4), weightage: "High", priority_order: 1 },
-            { subject: p2[0] || "Core Topics", topics: p2.slice(0, 4), weightage: "High", priority_order: 2 },
-            { subject: p3[0] || "Advanced Topics", topics: p3.slice(0, 4), weightage: "Medium", priority_order: 3 },
-            { subject: p4[0] || "Current Affairs", topics: p4.slice(0, 4), weightage: "Medium", priority_order: 4 }
+            { subject: p1[0] || "Core Fundamentals", topics: p1, weightage: "High (35%)", priority_order: 1 },
+            { subject: p2[0] || "Advanced Concepts", topics: p2, weightage: "High (30%)", priority_order: 2 },
+            { subject: p3[0] || "Problem Solving", topics: p3, weightage: "Medium (20%)", priority_order: 3 },
+            { subject: p4[0] || "Current Affairs", topics: p4, weightage: "Medium (15%)", priority_order: 4 }
         ],
         phase_plan: [
-            { phase_name: "Phase 1: Foundation Building", duration: "3 weeks", focus: "Core concepts & basics", daily_targets: p1.slice(0, 3), milestone: "Complete all basic topics" },
-            { phase_name: "Phase 2: Core Mastery", duration: "4 weeks", focus: "In-depth subject study", daily_targets: p2.slice(0, 3), milestone: "Solve practice questions" },
-            { phase_name: "Phase 3: Advanced Practice", duration: "3 weeks", focus: "Speed & accuracy", daily_targets: p3.slice(0, 3), milestone: "Attempt full-length mocks" },
-            { phase_name: "Phase 4: Revision & Mocks", duration: "2 weeks", focus: "Final revision", daily_targets: ["Revise weak areas", "Mock tests daily"], milestone: "Exam readiness" }
+            { phase_name: "Phase 1: Foundation Building", duration: "Day 1 - Day 30", focus: "Concept clarity without timing pressure", daily_targets: p1.slice(0, 3).map(i => "Master " + i), milestone: "Complete NCERTs / Basic Textbooks" },
+            { phase_name: "Phase 2: Core Mastery", duration: "Day 31 - Day 60", focus: "Sectional practice and short notes", daily_targets: p2.slice(0, 3).map(i => "Practice " + i), milestone: "Consistently scoring 60%+ in sectionals" },
+            { phase_name: "Phase 3: Speed & Accuracy", duration: "Day 61 - Day 90", focus: "Full length mocks and time limits", daily_targets: p3.slice(0, 3).map(i => "Revise " + i), milestone: "Attempt 2 full mocks per week" },
+            { phase_name: "Phase 4: Final Polish", duration: "Day 91 - Day 120", focus: "Current affairs and weak areas", daily_targets: ["Daily Current Affairs", "1 Mock Test Daily"], milestone: "Exam Readiness Peak" }
         ],
         daily_strategy: {
-            morning: { duration: "3 hours", activities: ["New topic study: " + (p1[0] || "Core concepts"), "Note-making and summaries"] },
-            afternoon: { duration: "2 hours", activities: ["Practice questions from " + (p2[0] || "Previous topics"), "Solve previous year papers"] },
-            evening: { duration: "2 hours", activities: ["Revision of morning topics", "Current affairs / General awareness"] }
+            morning: { duration: `${Math.ceil(studyHours * 0.4)} hours`, activities: ["Fresh mind concept studying: " + (p1[0] || "Core Subject"), "Note-making"] },
+            afternoon: { duration: `${Math.ceil(studyHours * 0.4)} hours`, activities: ["Tackle calculation-heavy topics", "Solve 50+ MCQs"] },
+            evening: { duration: `${Math.ceil(studyHours * 0.2)} hours`, activities: ["Daily current affairs digest", "Light revision of morning concepts"] }
         },
         weekly_strategy: {
-            weekdays: "Rotate between " + job.job_category + " subjects systematically",
-            saturday: "Full-length mock test + detailed error analysis",
-            sunday: "Weekly revision of all topics covered + weak area focus"
+            weekdays: `Focus heavily on ${job.job_category} static syllabus progression`,
+            saturday: "Attempt 1 Previous Year Paper (PYP) in strict exam conditions",
+            sunday: "Consolidated revision of the week + Error book maintenance"
         },
         resources: [
-            { type: "Book", name: job.job_category + " standard textbook", purpose: "Concept building" },
-            { type: "Platform", name: "Previous Year Papers", purpose: "Pattern understanding" },
-            { type: "Platform", name: "Mock test platforms", purpose: "Timed practice" }
+            { type: "Book", name: `Standard ${job.job_category} Reference Books`, purpose: "Concept Building" },
+            { type: "Platform", name: "Textbook / Gradeup Mock Series", purpose: "Simulated Testing" },
+            { type: "Resource", name: "The Hindu / Indian Express", purpose: "Current Affairs" }
         ],
         revision_plan: {
-            method: "Active Recall + Spaced Repetition",
-            cycles: ["Cycle 1: After each topic completion", "Cycle 2: Weekly consolidated revision", "Cycle 3: Pre-exam full syllabus sweep"],
-            spaced_repetition: "Review notes at Day 1, Day 3, Day 7, Day 14, Day 30 intervals"
+            method: "Active Recall + 1/3/7/28 Spaced Repetition",
+            cycles: ["Cycle 1: Immediate weekend", "Cycle 2: End of month", "Cycle 3: Pre-exam mega sweep"],
+            spaced_repetition: "Create an error log notebook and revise it every Sunday."
         },
         mock_test_strategy: {
-            start_after: "Phase 2 completion",
-            frequency: "2 per week initially, daily in last month",
-            analysis_method: "Post-test error log: categorize mistakes as conceptual, silly, or time-management",
-            recommended_sources: ["Official previous year papers", job.job_category + " mock test series"]
+            start_after: "Syllabus 50% completion",
+            frequency: "1/week (Phase 2) -> 2/week (Phase 3) -> Daily (Phase 4)",
+            analysis_method: "Post-test error log: categorize mistakes as Conceptual, Silly, or Unattempted",
+            recommended_sources: ["Official Previous Year Papers", "Reputed Mock Series"]
         },
         weak_area_plan: {
-            identification_method: "Track errors in mock tests by subject and topic",
-            improvement_tactics: ["Dedicate 30 min daily to weakest subject", "Use targeted topic-wise quizzes", "Create formula/shortcut sheets"],
-            time_allocation: "20% of daily study time for weak areas"
+            identification_method: "Identify topics scoring <50% in three consecutive mock tests",
+            improvement_tactics: ["Re-watch foundational lectures", "Solve 100 dedicated questions on the weak topic"],
+            time_allocation: "Allocate first 1 hour of the day exclusively to the weakest topic"
         },
         final_month_strategy: {
-            last_30_days: "Only revision + mocks. No new topics. 2 mocks per week minimum.",
-            last_7_days: "Light revision, formula sheets, stay calm. One mock every alternate day.",
-            exam_day: "Reach early, carry all documents, read questions carefully, attempt easy ones first.",
-            mental_preparation: "Get 7-8 hours of sleep, eat light, avoid last-minute cramming."
+            last_30_days: "No new textbooks. Rely entirely on self-made short notes and mocks.",
+            last_7_days: "One full-length mock alternate day. Fix sleep cycle to match exam timing.",
+            exam_day: "Hydrate, carry admit card, read instructions. Use 3-pass attempt strategy.",
+            mental_preparation: "Visualize success. Accept that 100% syllabus completion is a myth."
         },
         warnings: [
-            "Do not skip any section of the syllabus",
-            "Avoid starting new topics in the final month",
-            "Manage time strictly — each subject has a deadline"
+            "Do not chase multiple new resources in the last 30 days.",
+            "Avoid skipping Mock Test analysis (Analysis > Giving Mocks).",
+            "Do not ignore previous year question (PYQ) trends."
         ],
         success_formula: [
-            "Consistency beats intensity — show up every day",
-            "Mock tests are non-negotiable from Phase 2 onwards",
-            "Track progress weekly and adjust plan accordingly"
+            "Consistency beats intensity.",
+            "Revision > Reading new material.",
+            "Exam temperament is 50% of the game."
         ],
         is_ready: true,
         is_permanent: true,
-        tier: 2
+        tier: 1 // High quality deterministic
     };
 }
 
@@ -143,85 +160,20 @@ router.post('/:id/roadmap', auth, async (req, res) => {
             });
         }
 
-        // Rule 2: Immediately respond with loading state
-        const liteData = {
-            overview: {
-                exam_name: jobRow.job_name,
-                days_remaining: 90,
-                readiness_score: 0,
-                feasibility_status: "Synthesizing Master Guide...",
-                recommended_daily_hours: userRow.study_hours || 4,
-                key_insight: "AI Coach is auditing your profile vs exam requirements...",
-                is_ready: false
-            },
-            syllabus_breakdown: [],
-            phase_plan: [{ phase_name: "Master Guide Initializing...", duration: "Personalizing Blueprint", daily_targets: ["AI Coach auditing your data vs Exam requirements"], milestone: "Loading..." }],
-            daily_strategy: {},
-            weekly_strategy: {},
-            resources: [],
-            revision_plan: {},
-            mock_test_strategy: {},
-            weak_area_plan: {},
-            final_month_strategy: {},
-            warnings: [],
-            success_formula: []
-        };
+        // Generate High-Quality Structured Deterministic Roadmap synchronously
+        const finalData = generateDeterministicRoadmap(userRow, jobRow);
 
-        const responseData = { id: uuidv4(), job_id: jobId, roadmap_content: liteData };
+        const responseData = { id: uuidv4(), job_id: jobId, roadmap_content: finalData, is_ready: true, is_permanent: true };
 
         await db.execute({
             sql: 'INSERT INTO roadmaps (id, user_id, job_id, roadmap_content) VALUES (?, ?, ?, ?)',
-            args: [responseData.id, userId, jobId, JSON.stringify(liteData)]
+            args: [responseData.id, userId, jobId, JSON.stringify(finalData)]
         });
 
-        res.status(200).json(responseData);
-
-        // Rule 3: Background Master Guide Generation
-        (async () => {
-            const bgDb = require('../db').getDb();
-            try {
-                const targetsQuery = await bgDb.execute({ sql: 'SELECT exam_name FROM tracker_user_targets WHERE user_id = ?', args: [userId] });
-                const targets = (targetsQuery.rows || []).map(t => t.exam_name);
-
-                const { generatePremiumRoadmapV9 } = require('../services/gemini');
-                const finalData = await generatePremiumRoadmapV9(userRow, jobRow, jobRow.syllabus || jobRow.job_name, targets);
-
-                finalData.is_ready = true;
-                finalData.is_permanent = true;
-                // Preserve the exam name in overview
-                if (finalData.overview) {
-                    finalData.overview.exam_name = jobRow.job_name;
-                    finalData.overview.is_ready = true;
-                }
-
-                await bgDb.execute({
-                    sql: 'UPDATE roadmaps SET roadmap_content = ? WHERE id = ?',
-                    args: [JSON.stringify(finalData), responseData.id]
-                });
-                console.log(`[V14 MASTER GUIDE] Success for ${userId}`);
-            } catch (bgErr) {
-                console.error("[V14 MASTER GUIDE] BG Fail:", bgErr.message);
-                // Use deterministic fallback
-                const fallbackData = simulateLiteJSON(userRow, jobRow);
-                fallbackData.is_ready = true;
-                fallbackData.is_permanent = true;
-                fallbackData.generation_note = "Generated using deterministic fallback. AI service was temporarily unavailable.";
-                await bgDb.execute({
-                    sql: 'UPDATE roadmaps SET roadmap_content = ? WHERE id = ?',
-                    args: [JSON.stringify(fallbackData), responseData.id]
-                });
-            }
-        })();
-
-    } catch (err) {
-        console.error('[ROADMAP V14] CRITICAL:', err);
-        if (!res.headersSent) {
-            return res.status(200).json({
-                id: uuidv4(),
-                job_id: req.params.id,
-                roadmap_content: { overview: { exam_name: "Loading...", feasibility_status: "Calculating", is_ready: false } }
-            });
-        }
+        return res.status(200).json(responseData);
+    } catch (e) {
+        console.error('Roadmap DB Error:', e);
+        return res.status(500).json({ error: 'Failed to generate roadmap' });
     }
 });
 

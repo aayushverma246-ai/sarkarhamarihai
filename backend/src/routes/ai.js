@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const { getRecommendations } = require('../services/recommendation_engine');
-const { getGapAnalysisWithLyzr, estimateLiveData } = require('../services/lyzr');
 const { getDb } = require('../db');
 
 // Helper: compute form_status dynamically
@@ -16,6 +15,7 @@ const getTodayIST = () => {
 function computeFormStatus(job, todayStr) {
     const start = job.application_start_date;
     const end = job.application_end_date;
+    if (!start || !end) return 'CLOSED';
     if (todayStr < start) return 'UPCOMING';
     if (todayStr <= end) return 'LIVE';
     const endParts = end.split('-').map(Number);
@@ -38,7 +38,6 @@ router.post('/recommendations', auth, async (req, res) => {
         
         // FALLBACK: If no applied exams, return popular LIVE exams
         if (!appliedExams || appliedExams.length === 0) {
-            console.log('[AI Recs] No applied exams, returning default LIVE exams as recommendations');
             const fallbackResult = await db.execute('SELECT * FROM jobs ORDER BY application_end_date DESC LIMIT 30');
             const fallbackJobs = fallbackResult.rows
                 .map(job => ({ ...job, form_status: computeFormStatus(job, todayStr) }))
@@ -58,83 +57,17 @@ router.post('/recommendations', auth, async (req, res) => {
                 salary_max: job.salary_max,
                 qualification_required: job.qualification_required,
                 official_application_link: job.official_application_link,
-                explanation: 'Popular exam - mark exams as "applied" for personalized recommendations'
+                score: 0,
+                explanation: 'Popular exam — mark exams as "Applied" for personalized recommendations'
             }));
             
             return res.json({ data, hasMore: fallbackJobs.length > start + pageSize, page });
         }
 
-        // Try AI engine first
-        let results = [];
-        try {
-            results = await getRecommendations(userId, appliedExams, { page, search, category });
-        } catch (engineErr) {
-            console.error('[AI Recs] Engine failed:', engineErr.message);
-        }
+        // Use the rebuilt recommendation engine
+        const result = await getRecommendations(userId, appliedExams, { page, search, category });
         
-        // FALLBACK: If AI engine returns nothing, use local matching
-        if (!results || results.length === 0) {
-            console.log('[AI Recs] AI engine returned 0 results, using local category matching');
-            
-            const appliedIds = new Set(appliedExams.map(e => e.id));
-            const categories = [...new Set(appliedExams.map(e => e.job_category).filter(Boolean))];
-            
-            const allJobs = (await db.execute('SELECT * FROM jobs')).rows;
-            const candidateJobs = allJobs
-                .filter(j => !appliedIds.has(j.id))
-                .map(job => ({ ...job, form_status: computeFormStatus(job, todayStr) }));
-            
-            // Score by category match and status
-            const scoredJobs = candidateJobs.map(job => {
-                let score = 0;
-                if (categories.includes(job.job_category)) score += 50;
-                if (job.form_status === 'LIVE') score += 30;
-                else if (job.form_status === 'UPCOMING') score += 20;
-                
-                // Basic syllabus overlap scoring
-                const appliedSyllabus = appliedExams.map(e => e.syllabus || '').join(' ').toLowerCase();
-                const jobSyllabus = (job.syllabus || '').toLowerCase();
-                if (appliedSyllabus && jobSyllabus) {
-                    const words1 = new Set(appliedSyllabus.split(/\W+/).filter(w => w.length > 3));
-                    const words2 = new Set(jobSyllabus.split(/\W+/).filter(w => w.length > 3));
-                    if (words1.size > 0 && words2.size > 0) {
-                        const intersection = [...words1].filter(x => words2.has(x)).length;
-                        score += Math.round((intersection / Math.min(words1.size, words2.size)) * 50);
-                    }
-                }
-                
-                return { ...job, recommendation_score: score };
-            });
-            
-            results = scoredJobs
-                .filter(j => j.recommendation_score > 0)
-                .sort((a, b) => b.recommendation_score - a.recommendation_score)
-                .slice(0, 30)
-                .map(job => ({
-                    id: job.id,
-                    job_name: job.job_name,
-                    organization: job.organization,
-                    job_category: job.job_category,
-                    form_status: job.form_status,
-                    application_start_date: job.application_start_date,
-                    application_end_date: job.application_end_date,
-                    salary_min: job.salary_min,
-                    salary_max: job.salary_max,
-                    qualification_required: job.qualification_required,
-                    official_application_link: job.official_application_link,
-                    similarity: job.recommendation_score,
-                    explanation: `Matched via ${categories.includes(job.job_category) ? 'category' : 'syllabus'} similarity`
-                }));
-        }
-        
-        // Paginate results
-        const pageSize = 10;
-        const start = (page - 1) * pageSize;
-        const end = start + pageSize;
-        const data = results.slice(start, end);
-        const hasMore = results.length > end;
-
-        return res.json({ data, hasMore, page });
+        return res.json(result);
     } catch (err) {
         console.error('Recommendation API error:', err);
         return res.status(500).json({ error: 'Server error generating recommendations' });
@@ -159,7 +92,32 @@ router.post('/gap-analysis', auth, async (req, res) => {
 
         if (!targetExam) return res.status(404).json({ error: 'Target exam not found' });
 
-        const gapAnalysis = await getGapAnalysisWithLyzr(sourceExams, targetExam);
+        // Use local syllabus overlap instead of external Lyzr service
+        const { syllabusOverlap } = require('../services/recommendation_engine');
+        
+        const combinedSourceSyllabus = sourceExams
+            .map(e => e.syllabus || e.structured_syllabus_json || '')
+            .join(' ');
+        const targetSyllabus = targetExam.syllabus || targetExam.structured_syllabus_json || '';
+        
+        const overlapRatio = syllabusOverlap(combinedSourceSyllabus, targetSyllabus);
+        
+        const gapAnalysis = {
+            topic_coverage_percentage: Math.round(overlapRatio * 100),
+            source_exams: sourceExams.map(e => e.job_name),
+            target_exam: targetExam.job_name,
+            overlap_summary: overlapRatio > 0.7
+                ? 'High syllabus overlap — your preparation covers most topics'
+                : overlapRatio > 0.4
+                    ? 'Moderate overlap — additional preparation needed for specific topics'
+                    : 'Low overlap — significant new preparation required',
+            action_plan: overlapRatio > 0.7
+                ? 'Focus on exam-specific practice papers and previous year questions.'
+                : overlapRatio > 0.4
+                    ? 'Identify gap areas and dedicate focused study time to new topics.'
+                    : 'Start with a complete syllabus review and build a new study plan.',
+        };
+        
         return res.json(gapAnalysis);
     } catch (err) {
         console.error('Gap Analysis API error:', err);

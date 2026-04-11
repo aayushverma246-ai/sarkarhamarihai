@@ -272,13 +272,14 @@ async function executeViaRest(originalSql, transformed, args) {
       return typeof val === 'string' ? `|||${val}|||` : String(val ?? 'null');
     });
 
-    const resolvedSet = resolveArgs(setStr);
-    const setPairs = resolvedSet.split(',');
+    const setPairs = setStr.split(',');
     for (const pair of setPairs) {
       const eqIdx = pair.indexOf('=');
       if (eqIdx === -1) continue;
       const col = pair.substring(0, eqIdx).trim();
-      let val = pair.substring(eqIdx + 1).trim();
+      let rawVal = pair.substring(eqIdx + 1).trim();
+      let val = resolveArgs(rawVal);
+      
       if (val.startsWith('|||') && val.endsWith('|||')) {
         val = val.slice(3, -3);
       } else if (val === 'null') {

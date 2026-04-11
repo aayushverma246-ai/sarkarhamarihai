@@ -181,7 +181,8 @@ module.exports = async (req, res) => {
 
     // Top-level Cron (Gateway)
     if (req.url.startsWith('/api/cron/')) {
-        const { dailyTask, updateStatuses, sendNotifications } = require('../backend/src/routes/cron');
+        const cronMod = require('../backend/src/routes/cron');
+        const { router: cronRouter, dailyTask, updateStatuses, sendNotifications, hourlySync, cronHealthHandler, cronLogsHandler } = cronMod;
         if (!dbInitialized) {
             await initDb();
             dbInitialized = true;
@@ -189,26 +190,35 @@ module.exports = async (req, res) => {
 
         const { getDb } = require('../backend/src/db');
         const db = getDb();
+        const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+        const pathname = parsed.pathname;
 
-        if (req.url.startsWith('/api/cron/daily')) {
+        if (pathname === '/api/cron/daily') {
             return dailyTask(req, res);
         }
-        if (req.url.startsWith('/api/cron/status')) {
+        if (pathname === '/api/cron/hourly-sync') {
+            return hourlySync(req, res);
+        }
+        if (pathname === '/api/cron/health') {
+            return cronHealthHandler(req, res);
+        }
+        if (pathname === '/api/cron/logs') {
+            return cronLogsHandler(req, res);
+        }
+        if (pathname === '/api/cron/status') {
             try {
                 const updated = await updateStatuses(db);
-                return res.json({ success: true, type: 'status', updated });
-            } catch (err) {
-                return res.status(500).json({ error: err.message });
-            }
+                return res.json({ success: true, type: 'status', updated, ts: new Date().toISOString() });
+            } catch (err) { return res.status(500).json({ error: err.message }); }
         }
-        if (req.url.startsWith('/api/cron/notifications')) {
+        if (pathname === '/api/cron/notifications') {
             try {
                 const sent = await sendNotifications(db);
-                return res.json({ success: true, type: 'notifications', sent });
-            } catch (err) {
-                return res.status(500).json({ error: err.message });
-            }
+                return res.json({ success: true, type: 'notifications', sent, ts: new Date().toISOString() });
+            } catch (err) { return res.status(500).json({ error: err.message }); }
         }
+        // status-change-notify and final-close-notify — delegate to express router
+        return app(req, res);
     }
 
     if (!dbInitialized) {

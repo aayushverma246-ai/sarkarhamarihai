@@ -20,6 +20,13 @@ CREATE INDEX IF NOT EXISTS idx_jobs_pagination       ON jobs(application_end_dat
 -- Composite for category-filtered browse
 CREATE INDEX IF NOT EXISTS idx_jobs_category_end     ON jobs(job_category, application_end_date DESC);
 
+-- ── STATE FILTER (New — critical for state dropdown) ──────────────────────
+CREATE INDEX IF NOT EXISTS idx_jobs_state            ON jobs(state);
+CREATE INDEX IF NOT EXISTS idx_jobs_state_end        ON jobs(state, application_end_date DESC);
+-- Needed for DISTINCT queries on category and state columns
+CREATE INDEX IF NOT EXISTS idx_jobs_category_only    ON jobs(job_category) WHERE job_category IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_jobs_state_only       ON jobs(state) WHERE state IS NOT NULL AND state != '';
+
 -- ── USERS ─────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_users_id    ON users(id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);

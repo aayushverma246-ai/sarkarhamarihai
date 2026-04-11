@@ -91,7 +91,7 @@ export default function Navbar({ user }: Props) {
   };
 
   useEffect(() => {
-    const fetchNotifs = () => api.getNotifications().then(n => setNotifCount(n.length)).catch(() => { });
+    const fetchNotifs = () => api.getNotificationCount().then(r => setNotifCount(r?.count || 0)).catch(() => { });
     fetchNotifs();
     window.addEventListener('app:likeToggled', fetchNotifs);
     return () => window.removeEventListener('app:likeToggled', fetchNotifs);

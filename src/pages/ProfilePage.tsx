@@ -25,28 +25,47 @@ export default function ProfilePage() {
     const load = async () => {
       setLoading(true);
       try {
-        const [me, eligible, liked] = await Promise.all([
-          api.getMe(),
-          api.getEligibleJobs(),
-          api.getLikedJobs(),
-        ]);
-        setUser(me);
-        setCachedUser(me);
+        // Fetch each piece independently so one failure doesn't crash the whole page
+        let me: any = null;
+        let eligible: any[] = [];
+        let liked: any[] = [];
+
+        try { me = await api.getMe(); } catch (meErr: any) {
+          // Only redirect on explicit auth failure, not on network errors
+          if (meErr?.message?.includes('Session expired') || meErr?.message?.includes('401')) {
+            clearToken(); navigate('/login'); return;
+          }
+          me = cached; // Fall back to cached user data
+        }
+
+        try {
+          const res = await api.getEligibleJobs();
+          eligible = Array.isArray(res) ? res : [];
+        } catch { eligible = []; }
+
+        try {
+          const res = await api.getLikedJobs();
+          liked = Array.isArray(res) ? res : [];
+        } catch { liked = []; }
+
+        const resolvedUser = (me && me.email) ? me : cached;
+        setUser(resolvedUser);
+        if (me && me.email) setCachedUser(resolvedUser);
         setEligibleCount(eligible.length);
         setLikedCount(liked.length);
         setForm({
-          full_name: me.full_name || '',
-          age: me.age ? String(me.age) : '',
-          category: me.category || 'General',
-          state: me.state || 'Delhi',
-          qualification_type: me.qualification_type || 'Graduation',
-          qualification_status: me.qualification_status || 'Pursuing',
-          current_year: me.current_year ? String(me.current_year) : '',
-          current_semester: me.current_semester ? String(me.current_semester) : '',
-          expected_graduation_year: me.expected_graduation_year ? String(me.expected_graduation_year) : '',
+          full_name: resolvedUser.full_name || '',
+          age: resolvedUser.age ? String(resolvedUser.age) : '',
+          category: resolvedUser.category || 'General',
+          state: resolvedUser.state || 'Delhi',
+          qualification_type: resolvedUser.qualification_type || 'Graduation',
+          qualification_status: resolvedUser.qualification_status || 'Pursuing',
+          current_year: resolvedUser.current_year ? String(resolvedUser.current_year) : '',
+          current_semester: resolvedUser.current_semester ? String(resolvedUser.current_semester) : '',
+          expected_graduation_year: resolvedUser.expected_graduation_year ? String(resolvedUser.expected_graduation_year) : '',
         });
-      } catch {
-        clearToken(); navigate('/login');
+      } catch (err: any) {
+        setError('Failed to load profile. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -75,14 +94,18 @@ export default function ProfilePage() {
         current_semester: parseInt(form.current_semester) || 0,
         expected_graduation_year: parseInt(form.expected_graduation_year) || 0,
       });
-      setUser(updated);
-      setCachedUser(updated);
-      const eligible = await api.getEligibleJobs();
-      setEligibleCount(eligible.length);
+      if (updated) {
+        setUser(updated);
+        setCachedUser(updated);
+      }
+      try {
+        const eligible = await api.getEligibleJobs();
+        setEligibleCount(Array.isArray(eligible) ? eligible.length : 0);
+      } catch { /* non-critical */ }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save');
+      setError(err instanceof Error ? err.message : 'Could not save. Please try again.');
     } finally {
       setSaving(false);
     }

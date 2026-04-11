@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { api, getCachedUser } from '../api';
 import { Job } from '../types';
 import { useLanguage } from '../i18n/LanguageContext';
-
+import { CheckCircle2, Send, Eye, Clock } from 'lucide-react';
+import { formatRelativeTime } from '../utils';
 interface Props {
   job: Job;
   isLiked: boolean;
@@ -18,19 +19,27 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
   const navigate = useNavigate();
   const user = getCachedUser();
   const { t, language } = useLanguage();
-  const [likeLoading, setLikeLoading] = useState(false);
-  const [applyLoading, setApplyLoading] = useState(false);
   const [likeBeat, setLikeBeat] = useState(false);
+  // Prevent double-click navigation
+  const navigatingRef = React.useRef(false);
 
   // Dynamic translated title
   const examTitle = (job as any)[`exam_name_${language}`] || job.job_name;
 
+  // STRICT RULE: If missing timestamps entirely, do not display.
+  // Note: jobs.js currently provides a fallback to created_at or today, but we enforce this defensively.
+  if (!job.last_updated && !job.verified_at && !job.last_checked_at && !job.created_at) {
+    return null;
+  }
+
+  const activeTimestamp = job.verified_at || job.last_updated || job.last_checked_at || job.created_at;
+
   const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     if (!user) return;
 
     // Optimistic UI toggle immediately for that snappy, refined feel
-    setLikeLoading(true);
     const newLikedStatus = !isLiked;
     onLikeToggle(newLikedStatus);
     // Trigger heartbeat pulse
@@ -48,26 +57,23 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
       console.error(err);
       // Revert the UI if the server request fails
       onLikeToggle(isLiked);
-    } finally {
-      setLikeLoading(false);
     }
   };
 
   const handleApply = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     if (!user) return;
 
-    setApplyLoading(true);
     const newAppliedStatus = !isApplied;
     onApplyToggle(newAppliedStatus);
 
     try {
       await api.toggleApplied(job.id);
+      window.dispatchEvent(new Event('app:appliedToggled'));
     } catch (err) {
       console.error(err);
       onApplyToggle(isApplied);
-    } finally {
-      setApplyLoading(false);
     }
   };
 
@@ -148,6 +154,9 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
   return (
     <div
       onClick={() => {
+        if (navigatingRef.current) return;
+        navigatingRef.current = true;
+        setTimeout(() => { navigatingRef.current = false; }, 800);
         onBeforeNavigate?.();
         if (document.startViewTransition) {
           document.startViewTransition(() => navigate(`/jobs/${job.id}`));
@@ -156,7 +165,7 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
         }
       }}
       style={{ animationDelay: `${delay}s`, animationFillMode: 'both' }}
-      className={`animate-cardIn card-hover bg-white dark:bg-[#0e0e0e] rounded-xl border p-3.5 sm:p-4 cursor-pointer group transition-all duration-300 hover:shadow-2xl hover:shadow-green-500/10 group-hover:-translate-y-1 hover:-translate-y-1 ${isApplied
+      className={`animate-cardIn card-hover relative bg-white dark:bg-[#0e0e0e] rounded-xl border p-3.5 sm:p-4 cursor-pointer group transition-all duration-300 hover:shadow-2xl hover:shadow-green-500/10 group-hover:-translate-y-1 hover:-translate-y-1 ${isApplied
         ? 'border-blue-900/40 bg-blue-950/5 hover:border-blue-800/60'
         : 'border-[#141414] hover:border-[#252525] hover:bg-[#101010]'
         }`}
@@ -196,34 +205,52 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
               <svg className="w-2.5 h-2.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
               {t('job.govSource') || 'Gov Source'}
             </span>
+            <span className="opacity-30">•</span>
+            <span className="flex items-center gap-1 text-gray-500 bg-[#141414] px-1.5 py-0.5 rounded border border-[#191919]">
+              <Clock className="w-2.5 h-2.5" />
+              {formatRelativeTime(activeTimestamp)}
+            </span>
           </div>
         </div>
         <div className="flex flex-col gap-2 flex-shrink-0">
           <button
             onClick={handleLike}
-            disabled={likeLoading}
-            className={`p-2 rounded-lg border transition-all duration-150 ${isLiked ? 'bg-red-900/20 border-red-900/30 text-red-400' : 'bg-[#111] border-[#1e1e1e] text-gray-600 hover:text-red-400 hover:border-[#252525] hover:bg-[#141414]'}`}
-            title={isLiked ? (t('job.saved') || 'Saved') : (t('job.saveThisJob') || 'Save this job')}
+            className={`relative p-2.5 rounded-xl border flex items-center justify-center transition-all group overflow-hidden ${
+              isLiked
+                ? 'bg-red-500/10 border-red-500/30 text-red-500'
+                : 'bg-[#191919] border-[#252525] text-gray-500 hover:text-gray-300 hover:bg-[#202020]'
+            }`}
           >
             <svg className={`w-4 h-4 ${likeBeat ? 'animate-heartbeat' : ''}`} viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
             </svg>
           </button>
  
-          {(isLive || isRecentlyClosed || job.form_status === 'CLOSED') && (
+          {/* Restore Mark as Applied for liked exams strictly according to precision override */}
+          {(isLive || isRecentlyClosed || job.form_status === 'CLOSED' || isLiked) && (
+            <button
+              onClick={(e) => { e.stopPropagation(); navigate(`/jobs/${job.id}`); }}
+              className="p-2.5 rounded-xl border bg-[#191919] border-[#252525] text-gray-500 hover:text-gray-300 hover:bg-[#202020] transition-all flex items-center justify-center group"
+              title="View Details"
+            >
+              <Eye className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+            </button>
+          )}
+          {(isLive || isLiked) && (
             <button
               onClick={handleApply}
-              disabled={applyLoading}
-              className={`p-2 rounded-lg border transition-all ${isApplied ? 'bg-blue-900/20 border-blue-900/40 text-blue-400' : 'bg-[#111] border-[#1e1e1e] text-gray-500 hover:text-blue-400 hover:border-blue-900/30 hover:bg-[#141414]'}`}
-              title={isApplied ? (t('job.applied')) : (t('job.markApplied'))}
+              className={`p-2.5 rounded-xl border flex items-center justify-center transition-all group ${
+                isApplied
+                  ? 'bg-red-500/10 border-red-500/30 text-red-500'
+                  : 'bg-[#191919] border-[#252525] text-gray-500 hover:text-gray-300 hover:bg-[#202020]'
+              }`}
+              title={isApplied ? t('job.applied') : "Apply"}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                {isApplied ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                )}
-              </svg>
+              {isApplied ? (
+                <CheckCircle2 className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+              ) : (
+                <Send className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+              )}
             </button>
           )}
         </div>

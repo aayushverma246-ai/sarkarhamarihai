@@ -5,10 +5,6 @@
 // In local dev: falls back to localhost:3001/api
 const API_BASE: string = (import.meta as any).env.VITE_API_URL || 'http://localhost:3001/api';
 
-// Debug logging for API base URL (remove in production)
-if (typeof window !== 'undefined') {
-    console.log('[API] Base URL:', API_BASE);
-}
 
 const TOKEN_KEY = 'sarkar_token';
 const USER_KEY = 'sarkar_user';
@@ -169,9 +165,9 @@ async function cachedGet<T>(path: string, ttlMs: number, requiresAuth = false): 
     return data;
 }
 
-const FIVE_MIN = 300_000;
-const TWO_MIN = 120_000;
 const THIRTY_SEC = 30_000;
+const FIVE_MIN = THIRTY_SEC;
+const TWO_MIN = THIRTY_SEC;
 
 export const api = {
     // Auth
@@ -218,21 +214,50 @@ export const api = {
         setCache(cacheKey, jobs);
         return jobs;
     },
-    getJobsPaginated: async (params?: { limit?: number; offset?: number; status?: string }) => {
+    getJobsPaginated: async (params?: { limit?: number; offset?: number; status?: string; state?: string; category?: string }) => {
         const query = new URLSearchParams();
         if (params?.limit) query.set('limit', String(params.limit));
         if (params?.offset) query.set('offset', String(params.offset));
         if (params?.status) query.set('status', params.status);
+        if (params?.state) query.set('state', params.state);
+        if (params?.category) query.set('category', params.category);
         const queryStr = query.toString();
         const path = queryStr ? `/jobs?${queryStr}` : '/jobs';
         return request<{ jobs: any[]; total: number; limit: number; offset: number; hasMore: boolean }>('GET', path, undefined, false);
     },
+    getJobsAllMinimal: () => request<{ jobs: any[] }>('GET', '/jobs/all-minimal', undefined, false),
     getJobById: (id: string) => cachedGet<any>(`/jobs/${id}`, TWO_MIN),
-    getEligibleJobs: () => cachedGet<any[]>('/jobs/eligible', TWO_MIN, true),
-    getPartialJobs: () => cachedGet<any[]>('/jobs/partial', TWO_MIN, true),
+    getCategories: () => cachedGet<string[]>('/jobs/categories', 300_000),
+    getStates: () => cachedGet<string[]>('/jobs/states', 300_000),
+    getEligibleJobs: (state = '', category = '') => {
+        const q = new URLSearchParams();
+        if (state) q.set('state', state);
+        if (category) q.set('category', category);
+        const qs = q.toString();
+        return cachedGet<any[]>(`/jobs/eligible${qs ? '?' + qs : ''}`, TWO_MIN, true);
+    },
+    getPartialJobs: (state = '', category = '') => {
+        const q = new URLSearchParams();
+        if (state) q.set('state', state);
+        if (category) q.set('category', category);
+        const qs = q.toString();
+        return cachedGet<any[]>(`/jobs/partial${qs ? '?' + qs : ''}`, TWO_MIN, true);
+    },
     getRecommendedJobs: () => cachedGet<any[]>('/jobs/recommendations', TWO_MIN, true),
-    getLiveJobs: () => cachedGet<any[]>('/jobs/live', TWO_MIN, false),
-    getUpcomingJobs: () => cachedGet<any[]>('/jobs/upcoming', TWO_MIN, false),
+    getLiveJobs: (state = '', category = '') => {
+        const q = new URLSearchParams();
+        if (state) q.set('state', state);
+        if (category) q.set('category', category);
+        const qs = q.toString();
+        return cachedGet<any[]>(`/jobs/live${qs ? '?' + qs : ''}`, TWO_MIN, false);
+    },
+    getUpcomingJobs: (state = '', category = '') => {
+        const q = new URLSearchParams();
+        if (state) q.set('state', state);
+        if (category) q.set('category', category);
+        const qs = q.toString();
+        return cachedGet<any[]>(`/jobs/upcoming${qs ? '?' + qs : ''}`, TWO_MIN, false);
+    },
     getLikedJobs: () => cachedGet<any[]>('/jobs/liked', THIRTY_SEC, true),
     getLikedStatus: async (id: string) => {
         const res = await cachedGet<{ liked: boolean }>(`/jobs/${id}/liked-status`, THIRTY_SEC, true);
@@ -248,6 +273,7 @@ export const api = {
     },
 
     // Notifications
+    getNotificationCount: () => cachedGet<{ count: number }>('/notifications/count', THIRTY_SEC, true),
     getNotifications: () => cachedGet<any[]>('/notifications', THIRTY_SEC, true),
     deleteNotification: (id: string) => {
         invalidateCache('/notifications');

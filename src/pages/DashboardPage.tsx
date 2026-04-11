@@ -10,31 +10,13 @@ import { useLanguage } from '../i18n/LanguageContext';
 import RecommendationsWidget from '../components/RecommendationsWidget';
 import GovLoader from '../components/GovLoader';
 import { LayoutDashboard, Sparkles, Search, XCircle, ChevronDown } from 'lucide-react';
-import { meetsStateCriteria, meetsTechnicalCriteria, meetsAge, meetsQualification } from '../utils';
+import { meetsTechnicalCriteria, meetsAge, meetsQualification } from '../utils';
 
-import { indianStates } from '../data/states';
+import { CANONICAL_STATES, CANONICAL_CATEGORIES, indianStatesCanonical } from '../data/states';
 
-type TabKey = 'eligible' | 'eligibleLive' | 'partial' | 'live' | 'upcoming' | 'closed' | 'liked' | 'applied' | 'all';
-const meetsStateFilter = (job: Job, selected: string | null) => {
-  if (!selected || selected === 'All India') return true;
-  
-  const normalize = (s: any) => (typeof s === 'string' ? s : '').trim().toLowerCase();
-  const normalizedSelected = normalize(selected);
+export type TabKey = 'eligible' | 'eligibleLive' | 'partial' | 'live' | 'upcoming' | 'closed' | 'liked' | 'applied' | 'all';
 
-  // 1. Check primary state (normalized exact match)
-  if (normalize(job.state) === normalizedSelected) return true;
-
-  // 2. Check multi-state array (normalized inclusion check)
-  if (Array.isArray(job.states) && job.states.some(s => normalize(s) === normalizedSelected)) return true;
-
-  // 3. Metadata Coverage (Matches Search Logic for 100% Completeness)
-  // Scan title, organization, and location for the selected state name
-  if (normalize(job.job_name).includes(normalizedSelected)) return true;
-  if (job.organization && normalize(job.organization).includes(normalizedSelected)) return true;
-  if (job.location && normalize(job.location).includes(normalizedSelected)) return true;
-
-  return false;
-};
+// Removed: meetsStateFilter (now entirely handled natively by PostgreSQL backend)
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -85,12 +67,7 @@ export default function DashboardPage() {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const prevTabRef = useRef<TabKey>(getInitialTab());
 
-  const [selectedState, setSelectedState] = useState<string>(() => {
-    const urlState = searchParams.get('state');
-    if (urlState) return urlState;
-    // Strictly default to "All India" for a neutral initial view as requested
-    return 'All India';
-  });
+  const [selectedState, setSelectedState] = useState<string>('All India');
 
   // Unified setter with guaranteed zero-lag paint
   const setActiveTab = useCallback((tab: TabKey) => {
@@ -163,13 +140,6 @@ export default function DashboardPage() {
       setVisualTab(urlTab); // Sync visual state for instant UI update
       localStorage.setItem('dashboard_last_tab', urlTab);
     }
-    
-    // Normalize urlState: null or empty means 'All India'
-    const urlState = searchParams.get('state') || 'All India';
-    if (urlState !== selectedState) {
-        setSelectedState(urlState);
-        localStorage.setItem('dashboard_selected_state', urlState);
-    }
   }, [searchParams]); // Only depend on searchParams to avoid "revert" race condition
 
   // Ensure URL is populated on initial load
@@ -184,43 +154,41 @@ export default function DashboardPage() {
     }
   }, []); // Only once on mount
 
-  // Compute states for dropdown with priority
-  const displayStates = useMemo(() => {
-    const rawUserState = user?.state || '';
-    // Find the canonical state name from our list that matches the user's state
-    const canonicalState = indianStates.find(s => s.toLowerCase() === rawUserState.toLowerCase().trim());
-    
-    // Filter out the user's state from the base list to avoid duplicates (case-insensitive)
-    const base = canonicalState 
-      ? [...indianStates].filter(s => s.toLowerCase() !== canonicalState.toLowerCase()).sort()
-      : [...indianStates].sort();
+  // Declare filter state before the useMemos that reference them
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('All');
+  const [dbCategories, setDbCategories] = useState<string[]>([]);
+  const [dbStates, setDbStates] = useState<string[]>([]);
 
-    if (canonicalState) {
-        return [
-            { label: `My State (${canonicalState})`, value: canonicalState },
-            { label: 'All India', value: 'All India' },
-            ...base.map(s => ({ label: s, value: s }))
-        ];
-    }
-    return [
-        { label: 'All India', value: 'All India' },
-        ...base.map(s => ({ label: s, value: s }))
-    ];
-  }, [user?.state]);
-    
+  // Preload categories and states from DB for instant dropdowns
+  useEffect(() => {
+    api.getCategories().then(cats => {
+      if (Array.isArray(cats) && cats.length > 1) setDbCategories(cats);
+    }).catch(() => {});
+    api.getStates().then(states => {
+      if (Array.isArray(states) && states.length > 0) setDbStates(states);
+    }).catch(() => {});
+  }, []);
 
+  const statesDropdown = useMemo(() => {
+    // Use canonical list — always complete, no variants
+    return ['All India', ...CANONICAL_STATES];
+  }, []);
+  
+    
   const allJobs = useMemo(() => {
-    return rawAllJobs.filter(j => meetsStateFilter(j, selectedState));
-  }, [rawAllJobs, selectedState]);
-
-
+    return [...rawAllJobs].sort((a, b) => {
+      const nameA = a.job_name || '';
+      const nameB = b.job_name || '';
+      return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+    });
+  }, [rawAllJobs]);
   const eligibleJobs = useMemo(() => {
-    return rawEligibleJobs.filter(j => meetsStateFilter(j, selectedState));
-  }, [rawEligibleJobs, selectedState]);
-
+    return [...rawEligibleJobs].sort((a, b) => (a.job_name || '').localeCompare(b.job_name || '', undefined, { sensitivity: 'base' }));
+  }, [rawEligibleJobs]);
   const partialJobs = useMemo(() => {
-    return rawPartialJobs.filter(j => meetsStateFilter(j, selectedState));
-  }, [rawPartialJobs, selectedState]);
+    return [...rawPartialJobs].sort((a, b) => (a.job_name || '').localeCompare(b.job_name || '', undefined, { sensitivity: 'base' }));
+  }, [rawPartialJobs]);
 
   const liveJobs = useMemo(() => allJobs.filter(j => j.form_status === 'LIVE'), [allJobs]);
   const upcomingJobs = useMemo(() => allJobs.filter(j => j.form_status === 'UPCOMING'), [allJobs]);
@@ -229,12 +197,16 @@ export default function DashboardPage() {
   const eligibleLiveJobs = useMemo(() => eligibleJobs.filter(j => j.form_status === 'LIVE'), [eligibleJobs]);
 
   const categories = useMemo(() => {
-    const cats = new Set(allJobs.map(j => j.job_category).filter(Boolean));
-    return ['All', ...Array.from(cats).sort()];
-  }, [allJobs]);
-
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('All');
+    // Start with canonical categories, merge any DB-specific ones
+    const merged = new Set([...CANONICAL_CATEGORIES, ...dbCategories]);
+    merged.delete('All');
+    merged.delete('Other');
+    merged.delete('Others');
+    merged.delete('Misc');
+    
+    const sorted = Array.from(merged).sort((a, b) => a.localeCompare(b));
+    return ['All', ...sorted];
+  }, [dbCategories]);
 
   // ── Scroll & State Persistence ──────────────────────────────
   const isRestoringScroll = useRef(false);
@@ -346,6 +318,7 @@ export default function DashboardPage() {
     else setGreeting(t('greeting.default'));
   }, [t]);
 
+  // Data Loading Trigger
   useEffect(() => {
     if (!cachedUser) { navigate('/login'); return; }
 
@@ -356,18 +329,19 @@ export default function DashboardPage() {
         setIsCriticalLoaded(false);
   
         try {
-          // ── PHASE 1: Fetch user & all-jobs in parallel (unblocks UI ASAP) ──────
+          // ── PHASE 1: Fetch user & accurately filtered jobs via exact SQL ──────
           let authFailed = false;
-          const [me, jobs] = await Promise.all([
+          
+          const [me, jobsResponse] = await Promise.all([
             api.getMe().catch(err => {
                if (!isMockGuest && err.message && (err.message.includes('Session expired') || err.message.includes('401'))) {
                  authFailed = true;
                }
                return cachedUser || { full_name: 'Guest', age: 0 };
             }),
-            api.getJobs().catch(err => {
-               console.error('getJobs failed:', err);
-               return [];
+            api.getJobsAllMinimal().catch(err => {
+               console.error('getJobsAllMinimal failed:', err);
+               return { jobs: [] };
             }),
           ]);
           
@@ -378,11 +352,11 @@ export default function DashboardPage() {
           
           const resolvedUser = (me && me.full_name) ? me : (cachedUser || { full_name: 'Guest', age: 0 });
           
-          // Populate all jobs
-          const validJobs = Array.isArray(jobs) ? jobs : [];
+          // The database ALREADY exact-matched 'state' and 'category'. 
+          const validJobs = Array.isArray(jobsResponse?.jobs) ? jobsResponse.jobs : [];
           setRawAllJobs(validJobs);
           
-          // Compute eligible/partial client-side (no extra API call needed)
+          // Compute eligible/partial purely from the localized DB payload
           const hasCompleteProfile = !!(resolvedUser?.qualification_type && resolvedUser?.age && resolvedUser.age > 0);
           let strictlyEligible: Job[] = [];
           let broadlyEligible: Job[] = [];
@@ -391,14 +365,14 @@ export default function DashboardPage() {
           
           for (const j of validJobs) {
               if (hasCompleteProfile) {
-                  const isEligible = meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j) && meetsStateCriteria(resolvedUser, j) && meetsTechnicalCriteria(j);
+                  const isEligible = meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j) && meetsTechnicalCriteria(j);
                   if (isEligible) strictlyEligible.push(j);
               }
-              if ((j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(j) && meetsStateCriteria(resolvedUser, j)) {
+              if ((j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(j)) {
                   broadlyEligible.push(j);
               }
               if (hasCompleteProfile) {
-                  const isPartial = (meetsQualification(resolvedUser, j) || meetsAge(resolvedUser, j)) && !(meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j)) && meetsStateCriteria(resolvedUser, j) && meetsTechnicalCriteria(j);
+                  const isPartial = (meetsQualification(resolvedUser, j) || meetsAge(resolvedUser, j)) && !(meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j)) && meetsTechnicalCriteria(j);
                   if (isPartial) strictPartial.push(j);
               }
               if (j.form_status === 'UPCOMING' && meetsTechnicalCriteria(j)) {
@@ -406,8 +380,8 @@ export default function DashboardPage() {
               }
           }
           
-          const finalEligible = strictlyEligible.length > 0 ? strictlyEligible : broadlyEligible.sort((a, b) => new Date(b.application_end_date).getTime() - new Date(a.application_end_date).getTime()).slice(0, 100);
-          const finalPartial = strictPartial.length > 0 ? strictPartial : broadlyUpcoming.sort((a, b) => new Date(a.application_start_date).getTime() - new Date(b.application_start_date).getTime()).slice(0, 50);
+          const finalEligible = strictlyEligible.length > 0 ? strictlyEligible : broadlyEligible.slice(0, 100);
+          const finalPartial = strictPartial.length > 0 ? strictPartial : broadlyUpcoming.slice(0, 50);
           
           setUser(resolvedUser);
           setRawEligibleJobs(finalEligible);
@@ -442,9 +416,18 @@ export default function DashboardPage() {
 
     window.addEventListener('app:appliedToggled', handleAppliedSync);
     loadData();
-    return () => window.removeEventListener('app:appliedToggled', handleAppliedSync);
+
+    // Auto-refresh every 1 hour to keep data accurate
+    const hourlyRefresh = setInterval(() => {
+      loadData();
+    }, 3600000);
+
+    return () => {
+      window.removeEventListener('app:appliedToggled', handleAppliedSync);
+      clearInterval(hourlyRefresh);
+    };
     // eslint-disable-next-line
-  }, []);
+  }, []); // Only fetch once on mount. Filters are now instant client-side!
 
   const handleLikeToggle = useCallback((job: Job, isBecomingLiked: boolean) => {
     if (!isBecomingLiked) {
@@ -533,20 +516,48 @@ export default function DashboardPage() {
           allJobs.slice(0, 30)
         );
       case 'liked': 
-        return likedJobs.filter(j => meetsStateFilter(j, selectedState));
+        return likedJobs;
       case 'applied': 
-        return appliedJobs.filter(j => meetsStateFilter(j, selectedState));
+        return appliedJobs;
       case 'all': 
         return allJobs;
       default: 
         return allJobs;
     }
-  }, [eligibleLiveJobs, eligibleJobs, partialJobs, liveJobs, upcomingJobs, closedJobs, likedJobs, appliedJobs, allJobs, selectedState]);
+  }, [eligibleLiveJobs, eligibleJobs, partialJobs, liveJobs, upcomingJobs, closedJobs, likedJobs, appliedJobs, allJobs]);
 
   const filtered = useMemo(() => {
     let jobs = tabJobs(activeTab);
     
-    // 1. Search Filter
+    // 1. STRICT State Filter
+    // When a specific state is selected:
+    //   - Show jobs explicitly tagged for that state OR 'All India'
+    //   - EXCLUDE jobs with no state, empty state, or a different specific state
+    if (selectedState && selectedState !== 'All India') {
+      const lowerFilter = selectedState.toLowerCase();
+      jobs = jobs.filter(j => {
+        const jobState = (j.state || '').trim();
+        // 'All India' national-level jobs always included
+        if (jobState.toLowerCase() === 'all india') return true;
+        // Exact match for selected state
+        if (jobState.toLowerCase() === lowerFilter) return true;
+        // Match within multi-state array (for multi-state jobs)
+        if (j.states && Array.isArray(j.states) && j.states.length > 0) {
+          return j.states.some((s: string) => (s || '').toLowerCase() === lowerFilter ||
+            (s || '').toLowerCase() === 'all india');
+        }
+        // Empty/null state with no states array: treat as state-specific unknown, exclude
+        return false;
+      });
+    }
+
+    // 2. STRICT Category Filter — exact match, case-insensitive
+    if (category && category !== 'All') {
+      const lowerCat = category.toLowerCase();
+      jobs = jobs.filter(j => (j.job_category || '').toLowerCase() === lowerCat);
+    }
+
+    // 3. Search Filter
     if (search.trim()) {
       const q = search.toLowerCase();
       jobs = jobs.filter(j =>
@@ -556,18 +567,17 @@ export default function DashboardPage() {
       );
     }
 
-    // 2. Category Filter
-    if (category !== 'All') {
-      jobs = jobs.filter(j => j.job_category === category);
-    }
-
     return jobs;
-    // eslint-disable-next-line
-  }, [activeTab, tabJobs, search, category]);
+  }, [activeTab, tabJobs, search, selectedState, category]);
 
   // Slice for progressive rendering
   const visibleJobs = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
   const hasMore = visibleCount < filtered.length;
+
+  // STRICT RULE OVERRIDE: Reset visible count flush guaranteeing UI updates inherently via array purge
+  useEffect(() => {
+    setVisibleCount(INITIAL_BATCH);
+  }, [activeTab, search, selectedState, category]);
 
   // IntersectionObserver to load more cards on scroll
   useEffect(() => {
@@ -592,10 +602,10 @@ export default function DashboardPage() {
     { key: 'live' as TabKey, label: t('tab.live'), count: liveJobs.length },
     { key: 'upcoming' as TabKey, label: t('tab.upcoming'), count: upcomingJobs.length },
     { key: 'closed' as TabKey, label: t('tab.closed'), count: closedJobs.length, dot: recentlyClosedJobs.length > 0 ? 'orange' : undefined },
-    { key: 'liked' as TabKey, label: t('tab.saved'), count: likedJobs.filter(j => meetsStateFilter(j, selectedState)).length },
-    { key: 'applied' as TabKey, label: t('tab.applied'), count: appliedJobs.filter(j => meetsStateFilter(j, selectedState)).length },
+    { key: 'liked' as TabKey, label: t('tab.saved'), count: likedJobs.length },
+    { key: 'applied' as TabKey, label: t('tab.applied'), count: appliedJobs.length },
     { key: 'all' as TabKey, label: t('tab.all'), count: allJobs.length },
-  ], [eligibleLiveJobs, eligibleJobs, partialJobs, liveJobs, upcomingJobs, closedJobs, recentlyClosedJobs, likedJobs, appliedJobs, allJobs, t, language, selectedState]);
+  ], [eligibleLiveJobs, eligibleJobs, partialJobs, liveJobs, upcomingJobs, closedJobs, recentlyClosedJobs, likedJobs, appliedJobs, allJobs, t, language]);
 
   // Dynamic Closed Exam Counter (Last 30 Days)
   const [closedLast30DaysCount, setClosedLast30DaysCount] = useState(0);
@@ -747,15 +757,12 @@ export default function DashboardPage() {
                 )}
               </div>
               <div className="relative w-full sm:w-64 group">
-                <div className="absolute left-4 inset-y-0 flex items-center pointer-events-none">
-                  <span className="text-[10px] font-bold text-gray-500 group-focus-within:text-red-500 uppercase tracking-tighter mr-2">{t('dashboard.categoryLabel')}:</span>
-                </div>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-[#0e0e0e]/40 backdrop-blur-xl border border-[#1a1a1a] rounded-xl pl-20 pr-10 py-2.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-red-900/40 focus:border-red-900/40 transition-all appearance-none cursor-pointer font-medium"
+                  className="w-full bg-[#0e0e0e]/40 backdrop-blur-xl border border-[#1a1a1a] rounded-xl pl-4 pr-10 py-2.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-red-900/40 focus:border-red-900/40 transition-all appearance-none cursor-pointer font-medium"
                 >
-                  <option value="All" className="bg-[#0e0e0e] text-gray-300">{t('dashboard.allCategories')}</option>
+                  <option value="All" className="bg-[#0e0e0e] text-gray-300">All Categories</option>
                   {categories.filter(cat => cat !== 'All').map(cat => (
                     <option key={cat} value={cat} className="bg-[#0e0e0e] text-gray-300">{cat}</option>
                   ))}
@@ -767,28 +774,14 @@ export default function DashboardPage() {
 
               {/* STATE FILTER */}
               <div className="relative w-full sm:w-64 group">
-                <div className="absolute left-4 inset-y-0 flex items-center pointer-events-none">
-                  <span className="text-[10px] font-bold text-gray-500 group-focus-within:text-red-500 uppercase tracking-tighter mr-2">State:</span>
-                </div>
                 <select
                   value={selectedState}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setSelectedState(val);
-                    localStorage.setItem('dashboard_selected_state', val);
-                    setSearchParams(prev => {
-                      const next = new URLSearchParams(prev);
-                      if (val === 'All India') next.delete('state');
-                      else next.set('state', val);
-                      return next;
-                    }, { replace: true });
-                  }}
-                  className="w-full bg-[#0e0e0e]/40 backdrop-blur-xl border border-[#1a1a1a] rounded-xl pl-16 pr-10 py-2.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-red-900/40 focus:border-red-900/40 transition-all appearance-none cursor-pointer font-medium"
+                  onChange={(e) => setSelectedState(e.target.value)}
+                  className="w-full bg-[#0e0e0e]/40 backdrop-blur-xl border border-[#1a1a1a] rounded-xl pl-4 pr-10 py-2.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-red-900/40 focus:border-red-900/40 transition-all appearance-none cursor-pointer font-medium"
                 >
-                  {displayStates.map((s, idx) => (
-                    <option key={`${s.value}-${idx}`} value={s.value} className="bg-[#0e0e0e] text-gray-300">
-                      {s.label}
-                    </option>
+                  <option value="All India" className="bg-[#0e0e0e] text-gray-300">All India</option>
+                  {statesDropdown.filter(s => s !== 'All India').map(s => (
+                    <option key={s} value={s} className="bg-[#0e0e0e] text-gray-300">{s}</option>
                   ))}
                 </select>
                 <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
@@ -927,7 +920,7 @@ export default function DashboardPage() {
       )}
 
       <p className="text-center text-[10px] text-gray-700 mt-6">
-        {t('dashboard.footer')} • v1.7.0
+        {t('dashboard.footer')} • v1.7.0 • {new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}
       </p>
     </div>
   );

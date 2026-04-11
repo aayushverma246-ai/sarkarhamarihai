@@ -155,6 +155,9 @@ router.put('/me', auth, async (req, res) => {
         } = req.body;
 
         const db = getDb();
+        const existingRow = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [req.user.id] })).rows[0];
+        if (!existingRow) return res.status(404).json({ error: 'User not found' });
+
         await db.execute({
             sql: `UPDATE users SET
                 full_name = ?, age = ?, category = ?, state = ?,
@@ -162,9 +165,15 @@ router.put('/me', auth, async (req, res) => {
                 current_year = ?, current_semester = ?, expected_graduation_year = ?
               WHERE id = ?`,
             args: [
-                full_name || '', age || 0, category || '', state || '',
-                qualification_type || '', qualification_status || '',
-                current_year || 0, current_semester || 0, expected_graduation_year || 0,
+                full_name !== undefined ? full_name : existingRow.full_name,
+                age !== undefined ? age : existingRow.age,
+                category !== undefined ? category : existingRow.category,
+                state !== undefined ? state : existingRow.state,
+                qualification_type !== undefined ? qualification_type : existingRow.qualification_type,
+                qualification_status !== undefined ? qualification_status : existingRow.qualification_status,
+                current_year !== undefined ? current_year : existingRow.current_year,
+                current_semester !== undefined ? current_semester : existingRow.current_semester,
+                expected_graduation_year !== undefined ? expected_graduation_year : existingRow.expected_graduation_year,
                 req.user.id
             ]
         });
