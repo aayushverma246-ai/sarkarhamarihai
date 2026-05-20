@@ -38,19 +38,7 @@ app.post('/dump/:type', express.text({ type: '*/*' }), (req, res) => {
 // -----------------------
 
 // Direct API Routes (Top Priority)
-const { router: cronRouter, updateStatuses, sendNotifications, dailyTask } = require('./backend/src/routes/cron');
-app.get('/api/cron/status', async (req, res) => {
-    const { getDb } = require('./backend/src/db');
-    const db = getDb();
-    const updated = await updateStatuses(db);
-    res.json({ success: true, type: 'status', updated });
-});
-app.get('/api/cron/notifications', async (req, res) => {
-    const { getDb } = require('./backend/src/db');
-    const db = getDb();
-    const sent = await sendNotifications(db);
-    res.json({ success: true, type: 'notifications', sent });
-});
+const { router: cronRouter, dailyTask } = require('./backend/src/routes/cron');
 app.get('/api/cron/daily', dailyTask);
 
 // Seed endpoint - triggers database population
@@ -65,8 +53,8 @@ app.get('/api/seed', async (req, res) => {
         const db = require('./backend/src/db').getDb();
         const result = await db.execute('SELECT COUNT(*) as cnt FROM jobs');
         const jobCount = result.rows[0]?.cnt || 0;
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             message: 'Database seeded successfully',
             jobCount,
             ts: new Date().toISOString()
@@ -87,7 +75,7 @@ app.get('/api/fix-categories', async (req, res) => {
     const step = parseInt(req.query.step) || 1;
     try {
         const db = require('./backend/src/db').getDb();
-        
+
         const allRules = {
             1: [
                 ['%upsc%', 'UPSC'], ['%civil services%', 'UPSC'], ['%ias%', 'UPSC'], ['%ips%', 'UPSC'],
@@ -133,10 +121,10 @@ app.get('/api/fix-categories', async (req, res) => {
                 ['%safai%', 'State Government'], ['%rozgar%', 'State Government'], ['%revenue%', 'State Government'],
             ],
         };
-        
+
         const rules = allRules[step] || [];
         let totalUpdated = 0;
-        
+
         for (const [pattern, newCat] of rules) {
             const r = await db.execute({
                 sql: `UPDATE jobs SET job_category = ? WHERE (job_category = 'CENTRAL' OR job_category = 'STATE') AND (LOWER(job_name) LIKE ? OR LOWER(organization) LIKE ?)`,
@@ -144,7 +132,7 @@ app.get('/api/fix-categories', async (req, res) => {
             });
             totalUpdated += r.rowsAffected;
         }
-        
+
         // On step 6: final cleanup
         if (step === 6) {
             const r1 = await db.execute("UPDATE jobs SET job_category = 'Central Government' WHERE job_category = 'CENTRAL'");
@@ -154,7 +142,7 @@ app.get('/api/fix-categories', async (req, res) => {
         }
 
         const after = await db.execute('SELECT job_category, COUNT(*) as cnt FROM jobs GROUP BY job_category ORDER BY job_category');
-        
+
         res.json({
             success: true,
             step,
@@ -195,6 +183,7 @@ app.use('/api/tracker', require('./backend/src/routes/tracker')); // ADDED: Trac
 app.use('/api/ai', require('./backend/src/routes/ai')); // NEW AI rebuild route
 app.use('/api/health', require('./backend/src/routes/health')); // Robust DB monitors
 app.use('/api/audit', require('./backend/src/routes/audit')); // Data audit system
+app.use('/api/verifier', require('./backend/src/routes/verifier')); // Dynamic Data Verifier System
 
 // Serve static frontend (from dist/ array)
 app.use(express.static(path.join(__dirname, 'dist')));
@@ -212,7 +201,7 @@ async function start() {
     try {
         // Fast init ONLY (skips migrations/seeding in prod)
         await initDb();
-        
+
         // Removed: seedDatabase(); // SEEDING MUST BE MANUAL (npm run seed)
         // This fixes the 'Authenticating...' hang caused by 15,000 job updates on every cold start.
 

@@ -1,128 +1,118 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
-const { getRecommendations } = require('../services/recommendation_engine');
-const { getDb } = require('../db');
+const { getRecommendations } = require('../services/gemini_recommender');
+const { createClient } = require('@supabase/supabase-js');
 
-// Helper: compute form_status dynamically
+function getSb() {
+  return createClient(
+    process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEzNDgyNywiZXhwIjoyMDkwNzEwODI3fQ.wbX4lhJKE8OtzIl2RJamsFA71DRwo-B7QCL4UzAsr9A',
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+}
+
 const getTodayIST = () => {
-    const today = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000;
-    const istDate = new Date(today.getTime() + istOffset);
-    return istDate.toISOString().split('T')[0];
+  const now = new Date();
+  const istDate = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+  return istDate.toISOString().split('T')[0];
 };
 
-function computeFormStatus(job, todayStr) {
-    const start = job.application_start_date;
-    const end = job.application_end_date;
-    if (!start || !end) return 'CLOSED';
-    if (todayStr < start) return 'UPCOMING';
-    if (todayStr <= end) return 'LIVE';
-    const endParts = end.split('-').map(Number);
-    const todayParts = todayStr.split('-').map(Number);
-    const endDays = endParts[0] * 365 + endParts[1] * 30 + endParts[2];
-    const todayDays = todayParts[0] * 365 + todayParts[1] * 30 + todayParts[2];
-    const diffDays = todayDays - endDays;
-    if (diffDays <= 30) return 'RECENTLY_CLOSED';
-    return 'CLOSED';
+function computeFormStatus(job) {
+  const todayStr = getTodayIST();
+  const start = job.application_start_date;
+  const end = job.application_end_date;
+  if (!start || !end) return 'CLOSED';
+  if (todayStr < start) return 'UPCOMING';
+  if (todayStr <= end) return 'LIVE';
+  return 'CLOSED';
 }
 
 // POST /api/ai/recommendations
-// Frontend sends { appliedExams: [], page: 1, search: '', category: '' }
 router.post('/recommendations', auth, async (req, res) => {
-    try {
-        const { appliedExams, page = 1, search = '', category = '' } = req.body;
-        const userId = req.user.id;
-        const db = getDb();
-        const todayStr = getTodayIST();
-        
-        // FALLBACK: If no applied exams, return popular LIVE exams
-        if (!appliedExams || appliedExams.length === 0) {
-            const fallbackResult = await db.execute('SELECT * FROM jobs ORDER BY application_end_date DESC LIMIT 30');
-            const fallbackJobs = fallbackResult.rows
-                .map(job => ({ ...job, form_status: computeFormStatus(job, todayStr) }))
-                .filter(j => j.form_status === 'LIVE' || j.form_status === 'UPCOMING');
-            
-            const pageSize = 10;
-            const start = (page - 1) * pageSize;
-            const data = fallbackJobs.slice(start, start + pageSize).map(job => ({
-                id: job.id,
-                job_name: job.job_name,
-                organization: job.organization,
-                job_category: job.job_category,
-                form_status: job.form_status,
-                application_start_date: job.application_start_date,
-                application_end_date: job.application_end_date,
-                salary_min: job.salary_min,
-                salary_max: job.salary_max,
-                qualification_required: job.qualification_required,
-                official_application_link: job.official_application_link,
-                score: 0,
-                explanation: 'Popular exam — mark exams as "Applied" for personalized recommendations'
-            }));
-            
-            return res.json({ data, hasMore: fallbackJobs.length > start + pageSize, page });
-        }
+  try {
+    const { appliedExams = [], page = 1, search = '', category = '' } = req.body;
+    const userId = req.user.id;
+    const sb = getSb();
 
-        // Use the rebuilt recommendation engine
-        const result = await getRecommendations(userId, appliedExams, { page, search, category });
-        
-        return res.json(result);
-    } catch (err) {
-        console.error('Recommendation API error:', err);
-        return res.status(500).json({ error: 'Server error generating recommendations' });
+    // Get source exam IDs from applied + liked
+    let sourceIds = (appliedExams || []).map(e => e.id).filter(Boolean);
+
+    // Also fetch liked jobs as source
+    const { data: likedRows } = await sb.from('liked_jobs')
+      .select('job_id').eq('user_id', userId);
+    if (likedRows) sourceIds.push(...likedRows.map(r => r.job_id));
+    sourceIds = [...new Set(sourceIds)];
+
+    // FALLBACK: If no source exams, return popular LIVE exams
+    if (sourceIds.length === 0) {
+      const { data: popular } = await sb.from('jobs')
+        .select('id, job_name, organization, job_category, form_status, application_start_date, application_end_date, salary_min, salary_max, qualification_required, official_application_link, official_website_link')
+        .in('form_status', ['LIVE', 'UPCOMING'])
+        .order('application_end_date', { ascending: false })
+        .limit(30);
+
+      const PAGE_SIZE = 10;
+      const start = (page - 1) * PAGE_SIZE;
+      const data = (popular || []).slice(start, start + PAGE_SIZE).map(job => ({
+        ...job,
+        similarity: 0,
+        overlap_score: 0,
+        explanation: 'Popular exam — apply to or save exams to unlock AI syllabus matching.',
+        overlapping_topics: [],
+        missing_topics: [],
+        difficulty_gap: 'high',
+        gap_analysis: { matched_topics: [], missing_topics: [], extra_topics: [] },
+      }));
+
+      return res.json({ data, hasMore: (popular || []).length > start + PAGE_SIZE, page, totalMatches: (popular || []).length });
     }
+
+    // Use Gemini recommendation engine
+    const result = await getRecommendations(sourceIds, userId, { page, search, category });
+    return res.json(result);
+  } catch (err) {
+    console.error('[AI Route] Error:', err.message);
+    return res.status(500).json({ error: 'Recommendation engine error', details: err.message });
+  }
 });
 
 // POST /ai/gap-analysis
 router.post('/gap-analysis', auth, async (req, res) => {
-    try {
-        const { source_exam_ids, target_exam_id } = req.body;
-        const db = getDb();
+  try {
+    const { source_exam_ids, target_exam_id } = req.body;
+    const sb = getSb();
+    const { computeGapAnalysis, structureSyllabus } = require('../services/gemini_recommender');
 
-        const sourceExams = (await db.execute({
-            sql: `SELECT * FROM jobs WHERE id IN (${source_exam_ids.map(() => '?').join(',')})`,
-            args: source_exam_ids
-        })).rows;
+    const { data: sourceExams } = await sb.from('jobs')
+      .select('id, job_name, syllabus').in('id', source_exam_ids);
+    const { data: targetData } = await sb.from('jobs')
+      .select('id, job_name, syllabus').eq('id', target_exam_id).single();
 
-        const targetExam = (await db.execute({
-            sql: 'SELECT * FROM jobs WHERE id = ?',
-            args: [target_exam_id]
-        })).rows[0];
+    if (!targetData) return res.status(404).json({ error: 'Target exam not found' });
 
-        if (!targetExam) return res.status(404).json({ error: 'Target exam not found' });
+    const combinedSource = (sourceExams || []).map(e => (e.syllabus || '') + ' ' + e.job_name).join(' ');
+    const srcStruct = structureSyllabus(combinedSource);
+    const tgtStruct = structureSyllabus(targetData.syllabus, targetData.job_name);
+    const gap = computeGapAnalysis(srcStruct, tgtStruct);
 
-        // Use local syllabus overlap instead of external Lyzr service
-        const { syllabusOverlap } = require('../services/recommendation_engine');
-        
-        const combinedSourceSyllabus = sourceExams
-            .map(e => e.syllabus || e.structured_syllabus_json || '')
-            .join(' ');
-        const targetSyllabus = targetExam.syllabus || targetExam.structured_syllabus_json || '';
-        
-        const overlapRatio = syllabusOverlap(combinedSourceSyllabus, targetSyllabus);
-        
-        const gapAnalysis = {
-            topic_coverage_percentage: Math.round(overlapRatio * 100),
-            source_exams: sourceExams.map(e => e.job_name),
-            target_exam: targetExam.job_name,
-            overlap_summary: overlapRatio > 0.7
-                ? 'High syllabus overlap — your preparation covers most topics'
-                : overlapRatio > 0.4
-                    ? 'Moderate overlap — additional preparation needed for specific topics'
-                    : 'Low overlap — significant new preparation required',
-            action_plan: overlapRatio > 0.7
-                ? 'Focus on exam-specific practice papers and previous year questions.'
-                : overlapRatio > 0.4
-                    ? 'Identify gap areas and dedicate focused study time to new topics.'
-                    : 'Start with a complete syllabus review and build a new study plan.',
-        };
-        
-        return res.json(gapAnalysis);
-    } catch (err) {
-        console.error('Gap Analysis API error:', err);
-        return res.status(500).json({ error: 'Server error generating gap analysis' });
-    }
+    return res.json({
+      topic_coverage_percentage: gap.matched_topics.length > 0
+        ? Math.round((gap.matched_topics.length / (gap.matched_topics.length + gap.missing_topics.length)) * 100)
+        : 0,
+      source_exams: (sourceExams || []).map(e => e.job_name),
+      target_exam: targetData.job_name,
+      gap_analysis: gap,
+      overlap_summary: gap.missing_topics.length <= 2
+        ? 'High overlap — your preparation covers most topics.'
+        : gap.missing_topics.length <= 5
+          ? 'Moderate overlap — additional preparation needed for specific topics.'
+          : 'Significant gaps — focused study plan recommended.',
+    });
+  } catch (err) {
+    console.error('[Gap Analysis] Error:', err.message);
+    return res.status(500).json({ error: 'Gap analysis error' });
+  }
 });
 
 module.exports = router;

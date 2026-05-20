@@ -170,6 +170,13 @@ router.post('/:id/roadmap', auth, async (req, res) => {
             args: [responseData.id, userId, jobId, JSON.stringify(finalData)]
         });
 
+        // Generate a notification for the newly created roadmap
+        const notifId = uuidv4();
+        await db.execute({
+            sql: 'INSERT INTO notifications (id, user_id, job_id, message) VALUES (?, ?, ?, ?)',
+            args: [notifId, userId, jobId, `✨ Your AI Master Roadmap for ${jobRow.job_name} is ready!`]
+        });
+
         return res.status(200).json(responseData);
     } catch (e) {
         console.error('Roadmap DB Error:', e);

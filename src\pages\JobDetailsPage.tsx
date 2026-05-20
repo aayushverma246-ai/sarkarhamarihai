@@ -874,7 +874,7 @@ export default function JobDetailsPage() {
 
                   <div className="flex items-center gap-2 px-2.5 py-1 bg-[#111] border border-[#1a1a1a] rounded-lg text-gray-500 font-bold uppercase tracking-tighter">
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    <span>{formatRelativeTime((job as any).verified_at || (job as any).last_updated || (job as any).last_checked_at || (job as any).created_at)}</span>
+                    <span>{formatRelativeTime((job as any).last_verified_at || (job as any).verified_at || (job as any).last_updated || (job as any).last_checked_at || (job as any).created_at)}</span>
                   </div>
                 </div>
               </div>
@@ -960,7 +960,7 @@ export default function JobDetailsPage() {
                 </a>
               )}
 
-              {isLive && !applied && (
+              {!applied && (
                 <button
                   onClick={handleReminderToggle}
                   disabled={reminderLoading || appliedLoading}
@@ -973,7 +973,7 @@ export default function JobDetailsPage() {
                   <svg className={`w-5 h-5 relative z-10 ${reminding ? 'animate-[ring_1s_ease-in-out_infinite] origin-top text-purple-400' : ''}`} fill={reminding ? "currentColor" : "none"} stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
-                  <span className="relative z-10">{reminding ? t('job.remindersOn') : t('job.remindDaily')}</span>
+                  <span className="relative z-10">{reminding ? t('job.remindersOn') : (isLive ? t('job.remindDaily') : 'Remind When Opens')}</span>
                 </button>
               )}
             </div>
@@ -982,12 +982,12 @@ export default function JobDetailsPage() {
             <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
               {isLive && daysRemaining !== null && (
                 <span className="inline-flex items-center gap-1.5 px-4 py-3 rounded-xl text-xs font-black text-red-500 bg-red-950/30 border border-red-900/40 animate-pulse flex-1 sm:flex-none justify-center whitespace-nowrap uppercase tracking-widest shadow-lg shadow-red-950/20">
-                  {daysRemaining === 0 ? "⚠️ Closing Today" : `⏳ ${daysRemaining} ${t('job.daysLeft')}`}
+                  {daysRemaining === 0 ? "⚠️ Closing Today" : `⏳ ${daysRemaining} ${daysRemaining === 1 ? 'day left' : t('job.daysLeft')}`}
                 </span>
               )}
               
               {(isRecentlyClosed || job.form_status === 'CLOSED' || job.form_status === 'UPCOMING') && !applied && (
-                <span className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-black flex-1 sm:flex-none uppercase tracking-wider ${isRecentlyClosed
+                <span className={`inline-flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-xl text-xs sm:text-sm font-black flex-1 sm:flex-none uppercase tracking-wider text-center leading-tight whitespace-normal ${isRecentlyClosed
                   ? 'bg-orange-950/40 border border-orange-900/30 text-orange-500 shadow-xl shadow-orange-900/20'
                   : job.form_status === 'UPCOMING'
                     ? 'bg-amber-950/30 border border-amber-900/25 text-amber-500 shadow-xl shadow-amber-900/20'
@@ -995,7 +995,7 @@ export default function JobDetailsPage() {
                   }`}>
                   {job.form_status === 'UPCOMING' && t('job.formNotOpen')}
                   {job.form_status === 'UPCOMING' && daysUntilOpen !== null && (
-                    <span className="ml-1 text-[11px] font-black text-amber-500 bg-amber-950/30 px-2 py-0.5 rounded border border-amber-900/30 animate-pulse">
+                    <span className="ml-1 text-[11px] font-black text-amber-500 bg-amber-950/30 px-2 py-0.5 rounded border border-amber-900/30 animate-pulse whitespace-nowrap">
                       ⏳ Opens in {daysUntilOpen}d
                     </span>
                   )}

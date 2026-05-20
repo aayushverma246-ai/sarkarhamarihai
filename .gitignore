@@ -40,3 +40,5 @@ yarn-error.log*
 *.db-journal
 *.sqlite
 data/
+
+.env*.local

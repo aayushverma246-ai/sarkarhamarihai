@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, getCachedUser } from '../api';
 import { Job } from '../types';
 import { useLanguage } from '../i18n/LanguageContext';
-import { CheckCircle2, Send, Eye, Clock } from 'lucide-react';
+import { CheckCircle2, Send, Eye, Clock, Bell } from 'lucide-react';
 import { formatRelativeTime } from '../utils';
 interface Props {
   job: Job;
@@ -13,9 +13,11 @@ interface Props {
   onApplyToggle: (applied: boolean) => void;
   onBeforeNavigate?: () => void;
   staggerIndex?: number;
+  isReminded?: boolean;
+  onRemindToggle?: (reminded: boolean) => void;
 }
 
-const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isApplied, onApplyToggle, onBeforeNavigate, staggerIndex = 0 }: Props) {
+const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isApplied, onApplyToggle, onBeforeNavigate, staggerIndex = 0, isReminded = false, onRemindToggle }: Props) {
   const navigate = useNavigate();
   const user = getCachedUser();
   const { t, language } = useLanguage();
@@ -27,12 +29,12 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
   const examTitle = (job as any)[`exam_name_${language}`] || job.job_name;
 
   // STRICT RULE: If missing timestamps entirely, do not display.
-  // Note: jobs.js currently provides a fallback to created_at or today, but we enforce this defensively.
-  if (!job.last_updated && !job.verified_at && !job.last_checked_at && !job.created_at) {
+  // Use last_verified_at as primary (matches JobDetailsPage), with fallbacks.
+  if (!(job as any).last_verified_at && !job.last_updated && !job.verified_at && !job.last_checked_at && !job.created_at) {
     return null;
   }
 
-  const activeTimestamp = job.verified_at || job.last_updated || job.last_checked_at || job.created_at;
+  const activeTimestamp = (job as any).last_verified_at || job.verified_at || job.last_updated || job.last_checked_at || job.created_at;
 
   const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -74,6 +76,22 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
     } catch (err) {
       console.error(err);
       onApplyToggle(isApplied);
+    }
+  };
+
+  const handleReminder = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!user) return;
+
+    const newStatus = !isReminded;
+    onRemindToggle?.(newStatus);
+    
+    try {
+      await api.toggleReminder(job.id);
+    } catch (err) {
+      console.error(err);
+      onRemindToggle?.(isReminded);
     }
   };
 
@@ -165,8 +183,8 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
         }
       }}
       style={{ animationDelay: `${delay}s`, animationFillMode: 'both' }}
-      className={`animate-cardIn card-hover relative bg-white dark:bg-[#0e0e0e] rounded-xl border p-3.5 sm:p-4 cursor-pointer group transition-all duration-300 hover:shadow-2xl hover:shadow-green-500/10 group-hover:-translate-y-1 hover:-translate-y-1 ${isApplied
-        ? 'border-blue-900/40 bg-blue-950/5 hover:border-blue-800/60'
+      className={`animate-cardIn card-hover relative bg-white dark:bg-[#0e0e0e] rounded-xl border p-3.5 sm:p-4 cursor-pointer group transition-all duration-300 hover:shadow-2xl hover:shadow-emerald-500/10 group-hover:-translate-y-1 hover:-translate-y-1 ${isApplied
+        ? 'border-emerald-900/40 bg-emerald-950/5 hover:border-emerald-800/60'
         : 'border-[#141414] hover:border-[#252525] hover:bg-[#101010]'
         }`}
     >
@@ -236,23 +254,38 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
               <Eye className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
             </button>
           )}
-          {(isLive || isLiked) && (
+
+          {/* New Remind Me Button for Upcoming/Closed Exams */}
+          {(!isLive) && (
             <button
-              onClick={handleApply}
+              onClick={handleReminder}
               className={`p-2.5 rounded-xl border flex items-center justify-center transition-all group ${
-                isApplied
-                  ? 'bg-red-500/10 border-red-500/30 text-red-500'
+                isReminded
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-500'
                   : 'bg-[#191919] border-[#252525] text-gray-500 hover:text-gray-300 hover:bg-[#202020]'
               }`}
-              title={isApplied ? t('job.applied') : "Apply"}
+              title={isReminded ? 'Reminder Set' : 'Remind me when opens'}
             >
-              {isApplied ? (
-                <CheckCircle2 className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-              ) : (
-                <Send className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
-              )}
+              <Bell className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
             </button>
           )}
+
+          {/* Mark as Applied (Globally exposed as requested) */}
+          <button
+            onClick={handleApply}
+            className={`p-2.5 rounded-xl border flex items-center justify-center transition-all group ${
+              isApplied
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'
+                : 'bg-[#191919] border-[#252525] text-gray-500 hover:text-gray-300 hover:bg-[#202020]'
+            }`}
+            title={isApplied ? t('job.applied') : "Mark as Applied"}
+          >
+            {isApplied ? (
+              <CheckCircle2 className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+            ) : (
+              <Send className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
+            )}
+          </button>
         </div>
       </div>
  
@@ -280,7 +313,7 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
           </p>
           {isLive && daysRemaining !== null && (
             <span className="text-[9.5px] font-black text-red-500 bg-red-950/30 px-2 py-0.5 rounded border border-red-900/30 animate-pulse whitespace-nowrap uppercase tracking-tighter">
-              {daysRemaining === 0 ? "⚠️ Closing Today" : `⏳ ${daysRemaining} days left`}
+              {daysRemaining === 0 ? "⚠️ Closing Today" : `⏳ ${daysRemaining} ${daysRemaining === 1 ? 'day' : 'days'} left`}
             </span>
           )}
           {job.form_status === 'UPCOMING' && daysUntilOpen !== null && (

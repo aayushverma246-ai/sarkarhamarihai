@@ -92,5 +92,5 @@ export function formatRelativeTime(dateString: string | undefined | null): strin
         return 'Updated yesterday';
     }
     const days = Math.floor(diffInSeconds / 86400);
-    return `Updated ${days} days ago`;
+    return `Updated ${days} day${days !== 1 ? 's' : ''} ago`;
 }

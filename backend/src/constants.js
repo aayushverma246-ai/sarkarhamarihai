@@ -132,9 +132,28 @@ const CATEGORY_NORMALIZATION = {
   'entrance exams': 'Entrance Exam',
   'forest & environment': 'Forest & Environment',
   'forest': 'Forest & Environment',
+  'environment': 'Forest & Environment',
   'shipping & ports': 'Shipping & Ports',
   'shipping': 'Shipping & Ports',
+  'ports': 'Shipping & Ports',
   'telecom': 'Telecom',
+  'bsnl': 'Telecom',
+  'mtnl': 'Telecom',
+  // Variant spellings from seed data
+  'medical': 'Healthcare',
+  'law': 'Judiciary',
+  'legal': 'Judiciary',
+  'railway': 'Railways',
+  'metro': 'Railways',
+  'central govt': 'Central Government',
+  'central': 'Central Government',
+  'state services': 'State Government',
+  'state pcs': 'State PSCs',
+  'apprenticeships': 'Central Government',
+  'scholarships': 'Central Government',
+  'police & security': 'Police',
+  'teaching & education': 'Teaching',
+  'judiciary & law': 'Judiciary',
   // Catch-all legacy
   'others': 'Central Government',
   'other': 'Central Government',
@@ -223,22 +242,22 @@ STATE_SET.add('all india'); // Special value
 function normalizeCategory(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const lower = raw.trim().toLowerCase();
-  
+
   // Direct match against canonical set
   if (CATEGORY_SET.has(lower)) {
     return CANONICAL_CATEGORIES.find(c => c.toLowerCase() === lower) || null;
   }
-  
+
   // Check normalization map
   if (CATEGORY_NORMALIZATION[lower]) {
     return CATEGORY_NORMALIZATION[lower];
   }
-  
+
   // Partial match — check if any canonical category is a substring
   for (const canonical of CANONICAL_CATEGORIES) {
     if (lower.includes(canonical.toLowerCase())) return canonical;
   }
-  
+
   return null;
 }
 
@@ -249,18 +268,18 @@ function normalizeCategory(raw) {
 function normalizeState(raw) {
   if (!raw || typeof raw !== 'string') return null;
   const lower = raw.trim().toLowerCase();
-  
+
   // Direct match
   if (STATE_SET.has(lower)) {
     if (lower === 'all india') return 'All India';
     return CANONICAL_STATES.find(s => s.toLowerCase() === lower) || null;
   }
-  
+
   // Check normalization map
   if (STATE_NORMALIZATION[lower]) {
     return STATE_NORMALIZATION[lower];
   }
-  
+
   return null;
 }
 
@@ -279,40 +298,102 @@ function isValidState(state) {
 }
 
 /**
- * Validate a job object has all critical fields.
- * Returns { valid: boolean, errors: string[] }
+ * Validate a job object has all critical fields and field values are correct.
+ * Returns { valid: boolean, errors: string[], warnings: string[] }
  */
 function validateJob(job) {
   const errors = [];
-  
+  const warnings = [];
+  const URL_RE = /^https?:\/\/[a-zA-Z0-9]/;
+
+  // ── Critical fields ──
   if (!job.id) errors.push('Missing id');
   if (!job.job_name || job.job_name.trim().length < 3) errors.push('Missing or invalid job_name');
   if (!job.organization || job.organization.trim().length < 2) errors.push('Missing or invalid organization');
   if (!job.application_start_date) errors.push('Missing application_start_date');
   if (!job.application_end_date) errors.push('Missing application_end_date');
-  
-  // Date format validation (YYYY-MM-DD)
+
+  // ── Date format validation (YYYY-MM-DD) ──
   const dateRe = /^\d{4}-\d{2}-\d{2}$/;
   if (job.application_start_date && !dateRe.test(job.application_start_date)) {
-    errors.push('Invalid application_start_date format');
+    errors.push('Invalid application_start_date format (expected YYYY-MM-DD)');
   }
   if (job.application_end_date && !dateRe.test(job.application_end_date)) {
-    errors.push('Invalid application_end_date format');
+    errors.push('Invalid application_end_date format (expected YYYY-MM-DD)');
   }
-  
-  // Date consistency: start must be before or equal to end
+
+  // ── Date consistency: start must be before or equal to end ──
   if (job.application_start_date && job.application_end_date && job.application_start_date > job.application_end_date) {
     errors.push('application_start_date is after application_end_date');
   }
-  
-  // Age validation
-  if (job.minimum_age != null && job.maximum_age != null) {
-    if (Number(job.minimum_age) > Number(job.maximum_age)) {
-      errors.push('minimum_age exceeds maximum_age');
+
+  // ── Date sanity: not before 2020, not > 3 years future ──
+  if (job.application_start_date && dateRe.test(job.application_start_date)) {
+    if (job.application_start_date < '2020-01-01') warnings.push('application_start_date is before 2020');
+    const futureLimit = new Date();
+    futureLimit.setFullYear(futureLimit.getFullYear() + 3);
+    if (job.application_start_date > futureLimit.toISOString().slice(0, 10)) {
+      warnings.push('application_start_date is > 3 years in the future');
     }
   }
-  
-  return { valid: errors.length === 0, errors };
+
+  // ── Age validation ──
+  if (job.minimum_age != null && job.maximum_age != null) {
+    const minAge = Number(job.minimum_age);
+    const maxAge = Number(job.maximum_age);
+    if (minAge > maxAge) errors.push('minimum_age exceeds maximum_age');
+    if (minAge > 0 && minAge < 14) warnings.push('minimum_age < 14 (unusually low)');
+    if (maxAge > 70) warnings.push('maximum_age > 70 (unusually high)');
+  }
+
+  // ── Payscale validation ──
+  if (job.salary_min != null || job.salary_max != null) {
+    const salMin = Number(job.salary_min) || 0;
+    const salMax = Number(job.salary_max) || 0;
+    if (salMin > salMax && salMax > 0) errors.push('salary_min exceeds salary_max');
+    if (salMin < 0) errors.push('salary_min is negative');
+    if (salMax < 0) errors.push('salary_max is negative');
+    if (salMax > 1000000) warnings.push('salary_max > 10L/month (verify if annual)');
+  }
+
+  // ── URL validation ──
+  if (job.official_application_link && job.official_application_link.length > 5) {
+    if (!URL_RE.test(job.official_application_link)) {
+      warnings.push('official_application_link is not a valid URL');
+    }
+  }
+  if (job.official_website_link && job.official_website_link.length > 5) {
+    if (!URL_RE.test(job.official_website_link)) {
+      warnings.push('official_website_link is not a valid URL');
+    }
+  }
+  if (job.official_notification_link && job.official_notification_link.length > 5) {
+    if (!URL_RE.test(job.official_notification_link)) {
+      warnings.push('official_notification_link is not a valid URL');
+    }
+  }
+
+  // ── Category validation ──
+  if (job.job_category && !isValidCategory(job.job_category)) {
+    warnings.push(`Non-canonical job_category: "${job.job_category}"`);
+  }
+
+  // ── State validation ──
+  if (job.state && job.state !== 'All India' && !isValidState(job.state)) {
+    warnings.push(`Non-canonical state: "${job.state}"`);
+  }
+
+  // ── Selection process completeness ──
+  if (!job.selection_process || job.selection_process.trim().length < 10) {
+    warnings.push('Missing or incomplete selection_process');
+  }
+
+  // ── Qualification ──
+  if (!job.qualification_required || job.qualification_required.trim().length < 3) {
+    warnings.push('Missing qualification_required');
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
 }
 
 // ── SELECTION PROCESS TEMPLATES ───────────────────────────────────────────────

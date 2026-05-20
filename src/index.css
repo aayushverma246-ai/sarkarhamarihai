@@ -9,6 +9,67 @@ body,
   width: 100%;
   position: relative;
   -webkit-overflow-scrolling: touch;
+  /* NO safe-area padding here — it creates an ugly gap.
+     Safe areas are handled by individual components (navbar, bottom bars). */
+}
+
+/* Capacitor native mobile overrides */
+body.capacitor-app {
+  /* Disable overscroll rubber-band effect */
+  overscroll-behavior: none;
+  /* Prevent long-press context menus */
+  -webkit-touch-callout: none;
+  /* Disable text selection on UI elements (keep on content) */
+  -webkit-user-select: none;
+  user-select: none;
+  /* Remove any margin/padding for edge-to-edge */
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Re-enable text selection on content areas */
+body.capacitor-app p,
+body.capacitor-app span,
+body.capacitor-app h1,
+body.capacitor-app h2,
+body.capacitor-app h3,
+body.capacitor-app h4,
+body.capacitor-app td,
+body.capacitor-app li {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ── Capacitor safe area: applied to specific elements only ── */
+/* Navbar gets top safe area padding */
+body.capacitor-app nav.cap-safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Bottom floating buttons/bars get bottom safe area */
+body.capacitor-app .cap-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Full-screen pages (login, splash) get all safe areas */
+body.capacitor-app .cap-safe-all {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* ── Mobile-native touch feedback ── */
+body.capacitor-app button,
+body.capacitor-app a {
+  -webkit-tap-highlight-color: rgba(239, 68, 68, 0.1);
+}
+
+/* Disable hover effects on touch devices (prevents sticky hover) */
+@media (hover: none) {
+  .card-hover:hover {
+    transform: none;
+  }
 }
 
 /* Prevent horizontal scroll bugs on mobile */

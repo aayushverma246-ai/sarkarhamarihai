@@ -1,9 +1,24 @@
 // Central API client for SarkarHamariHai
 // All requests go through here — handles JWT auth, errors, and base URL.
 
-// In production / Vercel: VITE_API_URL is '/api'
+// In Capacitor (mobile app): Must use the absolute production URL
+// because relative '/api' resolves to the WebView's fake hostname.
+// In Vercel: VITE_API_URL is '/api' (relative, works with rewrites)
 // In local dev: falls back to localhost:3001/api
-const API_BASE: string = (import.meta as any).env.VITE_API_URL || 'http://localhost:3001/api';
+function getApiBase(): string {
+    const envUrl = (import.meta as any).env.VITE_API_URL;
+
+    // If we're in a native Capacitor app, always use absolute URL
+    if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform()) {
+        // Prefer env var if it's already absolute, otherwise use production
+        if (envUrl && envUrl.startsWith('http')) return envUrl;
+        return 'https://sarkarhamarihai.vercel.app/api';
+    }
+
+    return envUrl || 'http://localhost:3001/api';
+}
+
+const API_BASE: string = getApiBase();
 
 
 const TOKEN_KEY = 'sarkar_token';
@@ -84,14 +99,16 @@ async function request<T>(
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
+        // In Capacitor, API calls are cross-origin (WebView → Vercel), so don't send cookies
+        const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
         const res = await fetch(`${API_BASE}${path}`, {
             method,
             headers,
-            credentials: 'same-origin',
+            credentials: isNative ? 'omit' : 'same-origin',
             body: body !== undefined ? JSON.stringify(body) : undefined,
             signal: controller.signal,
         });
-        
+
         clearTimeout(timeoutId);
 
         if (res.status === 429) {
@@ -132,20 +149,20 @@ async function request<T>(
         return res.json();
     } catch (err: any) {
         clearTimeout(timeoutId);
-        
+
         // Handle abort/timeout
         if (err.name === 'AbortError') {
             if (token?.startsWith('mock_guest_token_')) return null as unknown as T;
             throw new Error('Request timed out. Please check your connection.');
         }
-        
+
         // Handle network layer failures (e.g., DNS, offline)
         if ((err.message === 'Failed to fetch' || err.name === 'TypeError') && retries > 0) {
             const jitter = Math.random() * 1000;
             await new Promise(r => setTimeout(r, 1500 + jitter));
             return request(method, path, body, requiresAuth, retries - 1, timeoutMs);
         }
-        
+
         // Zero-failure fallback for network errors when running mock token
         if (token?.startsWith('mock_guest_token_')) {
             console.warn('[Offline Mode] Network request failed completely. Graceful degradation.');
@@ -171,6 +188,8 @@ const TWO_MIN = THIRTY_SEC;
 
 export const api = {
     // Auth
+    loginWithGoogle: (supabaseToken: string) =>
+        request<{ token: string; user: any }>('POST', '/auth/google', { token: supabaseToken }),
     signup: (data: any) => request<{ token: string; user: any }>('POST', '/auth/signup', data),
     login: (email: string, password: string) =>
         request<{ token: string; user: any }>('POST', '/auth/login', { email, password }),
@@ -183,7 +202,7 @@ export const api = {
     },
 
     // Jobs (cached — these are the heaviest endpoints)
-    // Efficient dashboard aggregation (New pattern to avoid Turso OOM)
+    // Efficient dashboard aggregation — optimized minimal payload
     // Fetch jobs directly without heavy infinite loops
     getJobs: async (params?: { status?: string; limit?: number; offset?: number }) => {
         // If no params, use the highly optimized all-minimal payload
@@ -201,16 +220,16 @@ export const api = {
         if (params?.limit) query.set('limit', String(params.limit));
         if (params?.offset) query.set('offset', String(params.offset));
         if (params?.status) query.set('status', params.status);
-        
+
         const path = `/jobs?${query.toString()}`;
         const cacheKey = path;
-        
+
         const cached = getCached<any>(cacheKey, TWO_MIN);
         if (cached) return cached;
 
         const result = await request<any>('GET', path, undefined, false);
         const jobs = Array.isArray(result) ? result : (result.jobs || []);
-        
+
         setCache(cacheKey, jobs);
         return jobs;
     },
@@ -294,6 +313,7 @@ export const api = {
 
     // Application Tracking & Reminders
     getAppliedJobs: () => cachedGet<any[]>('/apply/applied', THIRTY_SEC, true),
+    getRemindedJobs: () => cachedGet<any[]>('/apply/reminders', THIRTY_SEC, true),
     getAppliedStatus: async (jobId: string) => {
         const res = await cachedGet<{ applied: boolean }>(`/apply/status/${jobId}`, THIRTY_SEC, true);
         return res || { applied: false };
@@ -309,7 +329,7 @@ export const api = {
         return request<{ applied: boolean }>('POST', '/apply/toggle', { job_id: jobId }, true);
     },
     toggleReminder: (jobId: string) => {
-        // Only invalidate the specific job's reminder status, not the whole apply namespace
+        invalidateCache('/apply/reminders');
         invalidateCache(`/apply/reminder/${jobId}`);
         return request<{ reminders_enabled: boolean }>('POST', '/apply/reminder/toggle', { job_id: jobId }, true);
     },

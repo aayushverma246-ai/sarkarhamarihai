@@ -14,7 +14,7 @@ import { meetsTechnicalCriteria, meetsAge, meetsQualification } from '../utils';
 
 import { CANONICAL_STATES, CANONICAL_CATEGORIES, indianStatesCanonical } from '../data/states';
 
-export type TabKey = 'eligible' | 'eligibleLive' | 'partial' | 'live' | 'upcoming' | 'closed' | 'liked' | 'applied' | 'all';
+export type TabKey = 'eligible' | 'eligibleLive' | 'partial' | 'live' | 'upcoming' | 'closed' | 'liked' | 'applied' | 'reminded' | 'all';
 
 // Removed: meetsStateFilter (now entirely handled natively by PostgreSQL backend)
 
@@ -29,6 +29,7 @@ export default function DashboardPage() {
   const [rawPartialJobs, setRawPartialJobs] = useState<Job[]>([]);
   const [likedJobs, setLikedJobs] = useState<Job[]>([]);
   const [appliedJobs, setAppliedJobs] = useState<Job[]>([]);
+  const [remindedJobs, setRemindedJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCriticalLoaded, setIsCriticalLoaded] = useState(false);
 
@@ -46,7 +47,7 @@ export default function DashboardPage() {
   // Helper to safely get the initial tab
   const getInitialTab = useCallback((): TabKey => {
     const urlTab = searchParams.get('tab') as TabKey;
-    const validTabs: TabKey[] = ['eligible', 'eligibleLive', 'partial', 'live', 'upcoming', 'closed', 'liked', 'applied', 'all'];
+    const validTabs: TabKey[] = ['eligible', 'eligibleLive', 'partial', 'live', 'upcoming', 'closed', 'liked', 'applied', 'reminded', 'all'];
     if (urlTab && validTabs.includes(urlTab)) return urlTab;
     const storedTab = localStorage.getItem('dashboard_last_tab') as TabKey;
     if (storedTab && validTabs.includes(storedTab as TabKey)) return storedTab as TabKey;
@@ -90,7 +91,7 @@ export default function DashboardPage() {
       setActiveTabState(tab);
       prevTabRef.current = tab;
       setIsSwitching(false);
-      
+
       // Clear min-height after transition
       const panel = document.querySelector('.tab-panel') as HTMLElement;
       if (panel) panel.style.minHeight = '';
@@ -164,18 +165,18 @@ export default function DashboardPage() {
   useEffect(() => {
     api.getCategories().then(cats => {
       if (Array.isArray(cats) && cats.length > 1) setDbCategories(cats);
-    }).catch(() => {});
+    }).catch(() => { });
     api.getStates().then(states => {
       if (Array.isArray(states) && states.length > 0) setDbStates(states);
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   const statesDropdown = useMemo(() => {
     // Use canonical list — always complete, no variants
     return ['All India', ...CANONICAL_STATES];
   }, []);
-  
-    
+
+
   const allJobs = useMemo(() => {
     return [...rawAllJobs].sort((a, b) => {
       const nameA = a.job_name || '';
@@ -203,14 +204,14 @@ export default function DashboardPage() {
     merged.delete('Other');
     merged.delete('Others');
     merged.delete('Misc');
-    
+
     const sorted = Array.from(merged).sort((a, b) => a.localeCompare(b));
     return ['All', ...sorted];
   }, [dbCategories]);
 
   // ── Scroll & State Persistence ──────────────────────────────
   const isRestoringScroll = useRef(false);
-  
+
   // Restore state on mount
   useEffect(() => {
     const saved = sessionStorage.getItem('dashboard_nav_state');
@@ -242,7 +243,7 @@ export default function DashboardPage() {
     };
     sessionStorage.setItem('dashboard_nav_state', JSON.stringify(state));
   }, [search, category, selectedState, activeTab, viewMode]);
-  
+
   // Scroll listener ─────────────────────────────────────────────────────────────
   // LOCK ON MOUNT — prevents the scroll listener from saving y=0 during
   // the initial loading phase before restoration can read sessionStorage.
@@ -289,7 +290,7 @@ export default function DashboardPage() {
           const { scrollPosition, activeTab: sTab, viewMode: sView } = JSON.parse(saved);
           if (activeTab === sTab && viewMode === sView && scrollPosition > 0) {
             isRestoringScroll.current = true;
-            
+
             // Use requestAnimationFrame to ensure DOM is rendered before scrolling
             const restore = () => {
               window.scrollTo({ top: scrollPosition, behavior: 'instant' });
@@ -299,7 +300,7 @@ export default function DashboardPage() {
                 isRestoringScroll.current = false;
               });
             };
-            
+
             requestAnimationFrame(restore);
           }
         } catch (e) {
@@ -324,89 +325,91 @@ export default function DashboardPage() {
 
     const isMockGuest = localStorage.getItem('sarkar_token')?.startsWith('mock_guest_token_');
 
-      const loadData = async () => {
-        setLoading(true);
-        setIsCriticalLoaded(false);
-  
-        try {
-          // ── PHASE 1: Fetch user & accurately filtered jobs via exact SQL ──────
-          let authFailed = false;
-          
-          const [me, jobsResponse] = await Promise.all([
-            api.getMe().catch(err => {
-               if (!isMockGuest && err.message && (err.message.includes('Session expired') || err.message.includes('401'))) {
-                 authFailed = true;
-               }
-               return cachedUser || { full_name: 'Guest', age: 0 };
-            }),
-            api.getJobsAllMinimal().catch(err => {
-               console.error('getJobsAllMinimal failed:', err);
-               return { jobs: [] };
-            }),
-          ]);
-          
-          if (authFailed && !isMockGuest) {
-            navigate('/login');
-            return;
-          }
-          
-          const resolvedUser = (me && me.full_name) ? me : (cachedUser || { full_name: 'Guest', age: 0 });
-          
-          // The database ALREADY exact-matched 'state' and 'category'. 
-          const validJobs = Array.isArray(jobsResponse?.jobs) ? jobsResponse.jobs : [];
-          setRawAllJobs(validJobs);
-          
-          // Compute eligible/partial purely from the localized DB payload
-          const hasCompleteProfile = !!(resolvedUser?.qualification_type && resolvedUser?.age && resolvedUser.age > 0);
-          let strictlyEligible: Job[] = [];
-          let broadlyEligible: Job[] = [];
-          let strictPartial: Job[] = [];
-          let broadlyUpcoming: Job[] = [];
-          
-          for (const j of validJobs) {
-              if (hasCompleteProfile) {
-                  const isEligible = meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j) && meetsTechnicalCriteria(j);
-                  if (isEligible) strictlyEligible.push(j);
-              }
-              if ((j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(j)) {
-                  broadlyEligible.push(j);
-              }
-              if (hasCompleteProfile) {
-                  const isPartial = (meetsQualification(resolvedUser, j) || meetsAge(resolvedUser, j)) && !(meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j)) && meetsTechnicalCriteria(j);
-                  if (isPartial) strictPartial.push(j);
-              }
-              if (j.form_status === 'UPCOMING' && meetsTechnicalCriteria(j)) {
-                  broadlyUpcoming.push(j);
-              }
-          }
-          
-          const finalEligible = strictlyEligible.length > 0 ? strictlyEligible : broadlyEligible.slice(0, 100);
-          const finalPartial = strictPartial.length > 0 ? strictPartial : broadlyUpcoming.slice(0, 50);
-          
-          setUser(resolvedUser);
-          setRawEligibleJobs(finalEligible);
-          setRawPartialJobs(finalPartial);
+    const loadData = async () => {
+      setLoading(true);
+      setIsCriticalLoaded(false);
 
-          // ── RELEASE GovLoader immediately once jobs are ready ─────────────────
-          setIsCriticalLoaded(true);
-          setLoading(false);
+      try {
+        // ── PHASE 1: Fetch user & accurately filtered jobs via exact SQL ──────
+        let authFailed = false;
 
-          // ── PHASE 2: Load liked/applied silently in background (non-blocking) ──
-          Promise.all([
-            api.getLikedJobs().catch(() => []),
-            api.getAppliedJobs().catch(() => []),
-            api.getNotifications().catch(() => {}),
-          ]).then(([liked, applied]) => {
-            setLikedJobs(Array.isArray(liked) ? liked : []);
-            setAppliedJobs(Array.isArray(applied) ? applied : []);
-          });
+        const [me, jobsResponse] = await Promise.all([
+          api.getMe().catch(err => {
+            if (!isMockGuest && err.message && (err.message.includes('Session expired') || err.message.includes('401'))) {
+              authFailed = true;
+            }
+            return cachedUser || { full_name: 'Guest', age: 0 };
+          }),
+          api.getJobsAllMinimal().catch(err => {
+            console.error('getJobsAllMinimal failed:', err);
+            return { jobs: [] };
+          }),
+        ]);
 
-        } catch (err: any) {
-          console.error('Dashboard load failed:', err);
-          setCriticalError(err.message || 'Failed to connect to official servers. Please check your connection.');
-          setLoading(false);
+        if (authFailed && !isMockGuest) {
+          navigate('/login');
+          return;
         }
-      };
+
+        const resolvedUser = (me && me.full_name) ? me : (cachedUser || { full_name: 'Guest', age: 0 });
+
+        // The database ALREADY exact-matched 'state' and 'category'. 
+        const validJobs = Array.isArray(jobsResponse?.jobs) ? jobsResponse.jobs : [];
+        setRawAllJobs(validJobs);
+
+        // Compute eligible/partial purely from the localized DB payload
+        const hasCompleteProfile = !!(resolvedUser?.qualification_type && resolvedUser?.age && resolvedUser.age > 0);
+        let strictlyEligible: Job[] = [];
+        let broadlyEligible: Job[] = [];
+        let strictPartial: Job[] = [];
+        let broadlyUpcoming: Job[] = [];
+
+        for (const j of validJobs) {
+          if (hasCompleteProfile) {
+            const isEligible = meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j) && meetsTechnicalCriteria(j);
+            if (isEligible) strictlyEligible.push(j);
+          }
+          if ((j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(j)) {
+            broadlyEligible.push(j);
+          }
+          if (hasCompleteProfile) {
+            const isPartial = (meetsQualification(resolvedUser, j) || meetsAge(resolvedUser, j)) && !(meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j)) && meetsTechnicalCriteria(j);
+            if (isPartial) strictPartial.push(j);
+          }
+          if (j.form_status === 'UPCOMING' && meetsTechnicalCriteria(j)) {
+            broadlyUpcoming.push(j);
+          }
+        }
+
+        const finalEligible = strictlyEligible.length > 0 ? strictlyEligible : broadlyEligible.slice(0, 100);
+        const finalPartial = strictPartial.length > 0 ? strictPartial : broadlyUpcoming.slice(0, 50);
+
+        setUser(resolvedUser);
+        setRawEligibleJobs(finalEligible);
+        setRawPartialJobs(finalPartial);
+
+        // ── RELEASE GovLoader immediately once jobs are ready ─────────────────
+        setIsCriticalLoaded(true);
+        setLoading(false);
+
+        // ── PHASE 2: Load liked/applied silently in background (non-blocking) ──
+        Promise.all([
+          api.getLikedJobs().catch(() => []),
+          api.getAppliedJobs().catch(() => []),
+          api.getRemindedJobs().catch(() => []),
+          api.getNotifications().catch(() => { }),
+        ]).then(([liked, applied, reminded]) => {
+          setLikedJobs(Array.isArray(liked) ? liked : []);
+          setAppliedJobs(Array.isArray(applied) ? applied : []);
+          setRemindedJobs(Array.isArray(reminded) ? reminded : []);
+        });
+
+      } catch (err: any) {
+        console.error('Dashboard load failed:', err);
+        setCriticalError(err.message || 'Failed to connect to official servers. Please check your connection.');
+        setLoading(false);
+      }
+    };
 
     const handleAppliedSync = () => {
       api.getAppliedJobs().then(applied => {
@@ -445,6 +448,14 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const handleRemindToggle = useCallback((job: Job, isBecomingReminded: boolean) => {
+    if (!isBecomingReminded) {
+      setRemindedJobs((prev) => prev.filter((j) => j.id !== job.id));
+    } else {
+      setRemindedJobs((prev) => [...prev, job]);
+    }
+  }, []);
+
   // RENDER CONTROL: GovLoader Integration (STAGE 1)
   if (criticalError) {
     return (
@@ -452,7 +463,7 @@ export default function DashboardPage() {
         <div className="bg-[#0e0e0e] border border-red-900/30 p-8 rounded-2xl max-w-md w-full text-center shadow-2xl relative overflow-hidden">
           {/* subtle scanning animation background */}
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-red-900/5 to-transparent animate-[scan_3s_ease-in-out_infinite]" />
-          
+
           <div className="w-16 h-16 bg-red-950/20 rounded-full flex items-center justify-center mx-auto mb-6 relative">
             <svg className="w-8 h-8 text-red-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -463,7 +474,7 @@ export default function DashboardPage() {
             {criticalError}
           </p>
           <div className="flex flex-col gap-3 relative">
-            <button 
+            <button
               onClick={() => {
                 setCriticalError(null);
                 window.location.reload();
@@ -481,8 +492,8 @@ export default function DashboardPage() {
   }
 
   const hasProfile = !!(user?.qualification_type && user?.age && user.age > 0);
-  const firstName = (user?.full_name && typeof user.full_name === 'string' && user.full_name !== 'Guest') 
-    ? user.full_name.split(' ')[0] 
+  const firstName = (user?.full_name && typeof user.full_name === 'string' && user.full_name !== 'Guest')
+    ? user.full_name.split(' ')[0]
     : '';
 
 
@@ -493,42 +504,44 @@ export default function DashboardPage() {
     };
 
     switch (tab) {
-      case 'eligibleLive': 
+      case 'eligibleLive':
         return getFallback(eligibleLiveJobs, () => liveJobs.slice(0, 50));
-      case 'eligible': 
-        return getFallback(eligibleJobs, () => 
+      case 'eligible':
+        return getFallback(eligibleJobs, () =>
           allJobs.filter(j => j.form_status === 'LIVE' || j.form_status === 'UPCOMING').slice(0, 100)
         );
-      case 'partial': 
-        return getFallback(partialJobs, () => 
+      case 'partial':
+        return getFallback(partialJobs, () =>
           allJobs.filter(j => j.form_status === 'UPCOMING').slice(0, 50)
         );
-      case 'live': 
-        return getFallback(liveJobs, () => 
+      case 'live':
+        return getFallback(liveJobs, () =>
           allJobs.filter(j => j.form_status === 'RECENTLY_CLOSED').slice(0, 30)
         );
-      case 'upcoming': 
-        return getFallback(upcomingJobs, () => 
+      case 'upcoming':
+        return getFallback(upcomingJobs, () =>
           allJobs.filter(j => j.form_status === 'LIVE').slice(0, 30)
         );
-      case 'closed': 
-        return getFallback(closedJobs, () => 
+      case 'closed':
+        return getFallback(closedJobs, () =>
           allJobs.slice(0, 30)
         );
-      case 'liked': 
+      case 'liked':
         return likedJobs;
-      case 'applied': 
+      case 'applied':
         return appliedJobs;
-      case 'all': 
+      case 'reminded':
+        return remindedJobs;
+      case 'all':
         return allJobs;
-      default: 
+      default:
         return allJobs;
     }
-  }, [eligibleLiveJobs, eligibleJobs, partialJobs, liveJobs, upcomingJobs, closedJobs, likedJobs, appliedJobs, allJobs]);
+  }, [eligibleLiveJobs, eligibleJobs, partialJobs, liveJobs, upcomingJobs, closedJobs, likedJobs, appliedJobs, remindedJobs, allJobs]);
 
   const filtered = useMemo(() => {
     let jobs = tabJobs(activeTab);
-    
+
     // 1. STRICT State Filter
     // When a specific state is selected:
     //   - Show jobs explicitly tagged for that state OR 'All India'
@@ -536,17 +549,13 @@ export default function DashboardPage() {
     if (selectedState && selectedState !== 'All India') {
       const lowerFilter = selectedState.toLowerCase();
       jobs = jobs.filter(j => {
-        const jobState = (j.state || '').trim();
-        // 'All India' national-level jobs always included
-        if (jobState.toLowerCase() === 'all india') return true;
-        // Exact match for selected state
-        if (jobState.toLowerCase() === lowerFilter) return true;
+        const jobState = (j.state || '').trim().toLowerCase();
+        // STRICT: Only exact match for the selected state
+        if (jobState === lowerFilter) return true;
         // Match within multi-state array (for multi-state jobs)
         if (j.states && Array.isArray(j.states) && j.states.length > 0) {
-          return j.states.some((s: string) => (s || '').toLowerCase() === lowerFilter ||
-            (s || '').toLowerCase() === 'all india');
+          return j.states.some((s: string) => (s || '').toLowerCase() === lowerFilter);
         }
-        // Empty/null state with no states array: treat as state-specific unknown, exclude
         return false;
       });
     }
@@ -582,7 +591,7 @@ export default function DashboardPage() {
   // IntersectionObserver to load more cards on scroll
   useEffect(() => {
     const el = sentinelRef.current;
-    if (!el || !hasMore || tabIsAnimating) return; 
+    if (!el || !hasMore || tabIsAnimating) return;
     const io = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
         setVisibleCount(prev => Math.min(prev + INITIAL_BATCH, filtered.length));
@@ -594,6 +603,7 @@ export default function DashboardPage() {
 
   const likedSet = useMemo(() => new Set(likedJobs.map(j => j.id)), [likedJobs]);
   const appliedSet = useMemo(() => new Set(appliedJobs.map(j => j.id)), [appliedJobs]);
+  const remindedSet = useMemo(() => new Set(remindedJobs.map(j => j.id)), [remindedJobs]);
 
   const tabs = useMemo(() => [
     { key: 'eligibleLive' as TabKey, label: t('tab.liveEligible'), count: eligibleLiveJobs.length },
@@ -604,22 +614,23 @@ export default function DashboardPage() {
     { key: 'closed' as TabKey, label: t('tab.closed'), count: closedJobs.length, dot: recentlyClosedJobs.length > 0 ? 'orange' : undefined },
     { key: 'liked' as TabKey, label: t('tab.saved'), count: likedJobs.length },
     { key: 'applied' as TabKey, label: t('tab.applied'), count: appliedJobs.length },
+    { key: 'reminded' as TabKey, label: 'Reminders', count: remindedJobs.length },
     { key: 'all' as TabKey, label: t('tab.all'), count: allJobs.length },
-  ], [eligibleLiveJobs, eligibleJobs, partialJobs, liveJobs, upcomingJobs, closedJobs, recentlyClosedJobs, likedJobs, appliedJobs, allJobs, t, language]);
+  ], [eligibleLiveJobs, eligibleJobs, partialJobs, liveJobs, upcomingJobs, closedJobs, recentlyClosedJobs, likedJobs, appliedJobs, remindedJobs, allJobs, t, language]);
 
   // Dynamic Closed Exam Counter (Last 30 Days)
   const [closedLast30DaysCount, setClosedLast30DaysCount] = useState(0);
-  
+
   const calculateClosedCount = useCallback(() => {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
+
     const count = closedJobs.filter(job => {
       if (!job.application_end_date) return false;
       const endDate = new Date(job.application_end_date);
       return endDate >= thirtyDaysAgo && endDate <= new Date();
     }).length;
-    
+
     setClosedLast30DaysCount(count);
   }, [closedJobs]);
 
@@ -652,12 +663,12 @@ export default function DashboardPage() {
                   {t('dashboard.description')}
                 </p>
               </div>
-                <p className="text-gray-600 text-[11px] uppercase tracking-wider font-medium">
-                  {hasProfile
-                    ? `${eligibleJobs.length} ${t('dashboard.eligibleFound')} ${liveJobs.length} ${t('dashboard.formsOpen')}`
-                    : t('dashboard.completeProfile')}
-                </p>
-              </div>
+              <p className="text-gray-600 text-[11px] uppercase tracking-wider font-medium">
+                {hasProfile
+                  ? `${eligibleJobs.length} ${t('dashboard.eligibleFound')} ${liveJobs.length} ${t('dashboard.formsOpen')}`
+                  : t('dashboard.completeProfile')}
+              </p>
+            </div>
 
 
             {/* Profile nudge */}
@@ -681,56 +692,63 @@ export default function DashboardPage() {
 
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-5">
-              <button 
-                onClick={() => setActiveTab('all')} 
+              <button
+                onClick={() => setActiveTab('all')}
                 className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'all' ? 'border-[#252525] ring-1 ring-[#252525]' : 'border-[#141414] hover:border-[#252525]'}`}
               >
                 <p className="text-[9px] text-gray-600 uppercase tracking-wide">{t('stats.total')}</p>
                 <p className="text-xl font-bold text-gray-200 mt-0.5">{allJobs.length}</p>
               </button>
-              <button 
-                onClick={() => setActiveTab('live')} 
+              <button
+                onClick={() => setActiveTab('live')}
                 className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'live' ? 'border-green-900/40 ring-1 ring-green-900/20' : 'border-[#141414] hover:border-[#252525]'}`}
               >
                 <p className="text-[9px] text-green-700 uppercase tracking-wide">{t('stats.live')}</p>
                 <p className="text-xl font-bold text-green-500 mt-0.5">{liveJobs.length}</p>
               </button>
-              <button 
-                onClick={() => setActiveTab('eligible')} 
+              <button
+                onClick={() => setActiveTab('eligible')}
                 className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'eligible' ? 'border-red-900/40 ring-1 ring-red-900/20' : 'border-[#141414] hover:border-[#252525]'}`}
               >
                 <p className="text-[9px] text-red-700 uppercase tracking-wide">{t('stats.eligible')}</p>
                 <p className="text-xl font-bold text-red-400 mt-0.5">{eligibleJobs.length}</p>
                 {!hasProfile && <p className="text-[9px] text-red-600 font-bold mt-0.5">{t('stats.needsProfile')}</p>}
               </button>
-              <button 
-                onClick={() => setActiveTab('partial')} 
+              <button
+                onClick={() => setActiveTab('partial')}
                 className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'partial' ? 'border-amber-900/40 ring-1 ring-amber-900/20' : 'border-[#141414] hover:border-[#252525]'}`}
               >
                 <p className="text-[9px] text-amber-700 uppercase tracking-wide">{t('stats.partialMatch')}</p>
                 <p className="text-xl font-bold text-amber-500 mt-0.5">{partialJobs.length}</p>
               </button>
-              <button 
-                onClick={() => setActiveTab('eligibleLive')} 
+              <button
+                onClick={() => setActiveTab('eligibleLive')}
                 className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'eligibleLive' ? 'border-blue-900/40 ring-1 ring-blue-900/20' : 'border-[#141414] hover:border-[#252525]'}`}
               >
                 <p className="text-[9px] text-blue-700 uppercase tracking-wide">{t('stats.liveEligible')}</p>
                 <p className="text-xl font-bold text-blue-400 mt-0.5">{eligibleLiveJobs.length}</p>
                 {!hasProfile && <p className="text-[9px] text-red-600 font-bold mt-0.5">{t('stats.needsProfile')}</p>}
               </button>
-              <button 
-                onClick={() => setActiveTab('liked')} 
+              <button
+                onClick={() => setActiveTab('liked')}
                 className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'liked' ? 'border-[#252525] ring-1 ring-[#252525]' : 'border-[#141414] hover:border-[#252525]'}`}
               >
                 <p className="text-[9px] text-gray-600 uppercase tracking-wide">{t('stats.saved')}</p>
                 <p className="text-xl font-bold text-gray-300 mt-0.5">{likedJobs.length}</p>
               </button>
-              <button 
-                onClick={() => setActiveTab('applied')} 
+              <button
+                onClick={() => setActiveTab('applied')}
                 className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'applied' ? 'border-purple-900/40 ring-1 ring-purple-900/20' : 'border-[#141414] hover:border-[#1e1e1e]'}`}
               >
                 <p className="text-[9px] text-purple-700 uppercase tracking-wide">{t('stats.applied')}</p>
                 <p className="text-xl font-bold text-purple-400 mt-0.5">{appliedJobs.length}</p>
+              </button>
+              <button
+                onClick={() => setActiveTab('reminded')}
+                className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'reminded' ? 'border-amber-900/40 ring-1 ring-amber-900/20' : 'border-[#141414] hover:border-[#1e1e1e]'}`}
+              >
+                <p className="text-[9px] text-amber-700 uppercase tracking-wide">Reminders</p>
+                <p className="text-xl font-bold text-amber-400 mt-0.5">{remindedJobs.length}</p>
               </button>
             </div>
 
@@ -834,6 +852,13 @@ export default function DashboardPage() {
                             </svg>
                             {tab.label}
                           </span>
+                        ) : tab.key === 'reminded' ? (
+                          <span className="flex items-center gap-1">
+                            <svg className={`w-3.5 h-3.5 ${remindedJobs.length > 0 ? 'text-amber-400' : 'text-gray-600'}`} viewBox="0 0 24 24" fill="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                            </svg>
+                            {tab.label}
+                          </span>
                         ) : (
                           <span>{tab.label}</span>
                         )}
@@ -862,9 +887,11 @@ export default function DashboardPage() {
                       <p className="text-xs text-gray-600">
                         {tabs.find(t => t.key === activeTab)?.label}: {filtered.length} job{filtered.length !== 1 ? 's' : ''}
                         {search && <span className="text-gray-500"> matching "{search}"</span>}
+                        {selectedState !== 'All India' && <span className="text-gray-500"> in {selectedState}</span>}
+                        {category !== 'All' && <span className="text-gray-500"> • {category}</span>}
                       </p>
-                      {(search || category !== 'All') && (
-                        <button onClick={() => { setSearch(''); setCategory('All'); }} className="text-xs text-red-600 hover:text-red-500 transition-colors">
+                      {(search || category !== 'All' || selectedState !== 'All India') && (
+                        <button onClick={() => { setSearch(''); setCategory('All'); setSelectedState('All India'); }} className="text-xs text-red-600 hover:text-red-500 transition-colors">
                           {t('dashboard.clearFilters')}
                         </button>
                       )}
@@ -874,14 +901,14 @@ export default function DashboardPage() {
                   {filtered.length === 0 ? (
                     <div className="text-center py-16 px-4">
                       <div className="w-16 h-16 rounded-3xl bg-[#0e0e0e] border border-[#1a1a1a] flex items-center justify-center text-3xl mx-auto mb-4 grayscale opacity-40">
-                        {activeTab === 'liked' ? '♥️' : activeTab === 'applied' ? '✅' : '🔍'}
+                        {activeTab === 'liked' ? '♥️' : activeTab === 'applied' ? '✅' : activeTab === 'reminded' ? '🔔' : '🔍'}
                       </div>
                       <h3 className="text-lg font-bold text-gray-200">
-                        {activeTab === 'liked' ? t('empty.saved') : activeTab === 'applied' ? t('empty.applied') : t('empty.noMatch')}
+                        {activeTab === 'liked' ? t('empty.saved') : activeTab === 'applied' ? t('empty.applied') : activeTab === 'reminded' ? 'No Reminders' : t('empty.noMatch')}
                       </h3>
                       <p className="text-gray-500 mt-2 text-sm max-w-sm mx-auto leading-relaxed">
-                        {activeTab === 'eligible' || activeTab === 'partial' || activeTab === 'eligibleLive' 
-                          ? (!hasProfile ? t('empty.profileNeeded') : t('empty.eligibleHint')) 
+                        {activeTab === 'eligible' || activeTab === 'partial' || activeTab === 'eligibleLive'
+                          ? (!hasProfile ? t('empty.profileNeeded') : t('empty.eligibleHint'))
                           : t('empty.generalHint')}
                       </p>
                     </div>
@@ -897,6 +924,8 @@ export default function DashboardPage() {
                             onLikeToggle={(liked) => handleLikeToggle(job, liked)}
                             isApplied={appliedSet.has(job.id)}
                             onApplyToggle={(applied) => handleApplyToggle(job, applied)}
+                            isReminded={remindedSet.has(job.id)}
+                            onRemindToggle={(reminded) => handleRemindToggle(job, reminded)}
                             onBeforeNavigate={saveNavState}
                           />
                         ))}

@@ -137,6 +137,63 @@ router.post('/guest', async (req, res) => {
     }
 });
 
+// POST /api/auth/google
+router.post('/google', async (req, res) => {
+    try {
+        const { token: supabaseToken } = req.body;
+        if (!supabaseToken) return res.status(400).json({ error: 'Missing token' });
+
+        const { getSupabase } = require('../db');
+        // Supabase REST endpoint to verify token
+        const sbUrl = process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co';
+        const sbKey = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMzQ4MjcsImV4cCI6MjA5MDcxMDgyN30.oFgPUbJkxavLy18g4ZFCNhLOHZZyQN_lIA_KBgce7k8';
+        
+        const response = await fetch(`${sbUrl}/auth/v1/user`, {
+            headers: {
+                'Authorization': `Bearer ${supabaseToken}`,
+                'apikey': sbKey
+            }
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            console.error('Supabase Auth error:', data);
+            return res.status(401).json({ error: 'Invalid Google token' });
+        }
+
+        const authUser = data;
+        const email = authUser.email;
+        const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || 'Google User';
+
+        if (!email) return res.status(400).json({ error: 'No email found in Google profile' });
+
+        const db = getDb();
+        let user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] })).rows[0];
+
+        if (!user) {
+            const id = authUser.id || generateId();
+            // Assign a random unguessable password
+            const password_hash = await bcrypt.hash(generateId() + generateId(), 10);
+            await db.execute({
+                sql: `INSERT INTO users (id, email, password_hash, full_name, age, category, state,
+                    qualification_type, qualification_status, current_year, current_semester, expected_graduation_year)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                args: [
+                    id, email, password_hash,
+                    fullName, 18, 'General', 'All India',
+                    'Class 12', 'Completed', 0, 0, 0
+                ]
+            });
+            user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] })).rows[0];
+        }
+
+        const token = signToken(user);
+        return res.json({ token, user: safeUser(user) });
+    } catch (err) {
+        console.error('Google login error:', err);
+        return res.status(500).json({ error: 'Server error during Google authentication' });
+    }
+});
+
 // GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
     const db = getDb();

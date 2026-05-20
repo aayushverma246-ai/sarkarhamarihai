@@ -1,1 +1,0 @@
-libsql://sarkar-new-aayush-verma-19.aws-ap-south-1.turso.io

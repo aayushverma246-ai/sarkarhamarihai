@@ -10,6 +10,23 @@
     },
     "headers": [
         {
+            "source": "/api/(.*)",
+            "headers": [
+                {
+                    "key": "Access-Control-Allow-Origin",
+                    "value": "*"
+                },
+                {
+                    "key": "Access-Control-Allow-Methods",
+                    "value": "GET, POST, PUT, DELETE, OPTIONS"
+                },
+                {
+                    "key": "Access-Control-Allow-Headers",
+                    "value": "Content-Type, Authorization"
+                }
+            ]
+        },
+        {
             "source": "/(.*)",
             "headers": [
                 {
@@ -24,6 +41,15 @@
                 {
                     "key": "Cache-Control",
                     "value": "public, s-maxage=300, stale-while-revalidate=300"
+                }
+            ]
+        },
+        {
+            "source": "/api/jobs/(eligible|partial|recommendations)(.*)",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
                 }
             ]
         },
@@ -78,20 +104,38 @@
         "api/index.js": {
             "includeFiles": "{backend/src/**,server.js,supabase/**,.env,backend/.env}",
             "maxDuration": 90
+        },
+        "api/cron/hourly-update.js": {
+            "includeFiles": "{backend/src/**,.env,backend/.env}",
+            "maxDuration": 90
+        },
+        "api/cron/deep-audit.js": {
+            "maxDuration": 90
+        },
+        "api/cron/refresh.js": {
+            "maxDuration": 60
+        },
+        "api/cron/discovery.js": {
+            "includeFiles": "{backend/src/**,.env,backend/.env}",
+            "maxDuration": 90
         }
     },
     "crons": [
         {
+            "path": "/api/cron/hourly-update",
+            "schedule": "0 18 * * *"
+        },
+        {
+            "path": "/api/cron/deep-audit",
+            "schedule": "0 19 * * *"
+        },
+        {
             "path": "/api/cron/daily",
-            "schedule": "30 19 * * *"
+            "schedule": "0 3 * * *"
         },
         {
-            "path": "/api/cron/status-change-notify",
-            "schedule": "30 20 * * *"
-        },
-        {
-            "path": "/api/cron/final-close-notify",
-            "schedule": "30 21 * * *"
+            "path": "/api/cron/verify",
+            "schedule": "0 20 * * *"
         }
     ]
 }

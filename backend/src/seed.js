@@ -39,22 +39,22 @@ const CATEGORY_MAP = {
   'Central Government': 'Central Government', 'Central Govt': 'Central Government',
   'CENTRAL': 'Central Government',
   'Cooperative': 'Cooperative', 'Defence': 'Defence',
-  'Entrance Exam': 'Entrance Exams', 'Entrance Exams': 'Entrance Exams',
+  'Entrance Exam': 'Entrance Exam', 'Entrance Exams': 'Entrance Exam',
   'Forest & Environment': 'Forest & Environment', 'Forest': 'Forest & Environment',
   'Healthcare': 'Healthcare', 'Medical': 'Healthcare',
   'Insurance': 'Insurance', 'Judiciary & Law': 'Judiciary',
-  'Judiciary': 'Judiciary', 'Law': 'Law',
+  'Judiciary': 'Judiciary', 'Law': 'Judiciary',
   'Police & Security': 'Police', 'Police': 'Police',
   'PSU': 'PSU', 'Railway': 'Railways', 'Railways': 'Railways',
   'Research & Science': 'Research & Science', 'Research': 'Research & Science',
   'Shipping & Ports': 'Shipping & Ports', 'Shipping': 'Shipping & Ports',
-  'SSC': 'SSC', 'State Government': 'State PSCs',
-  'STATE': 'State PSCs',
+  'SSC': 'SSC', 'State Government': 'State Government',
+  'STATE': 'State Government',
   'State Services': 'State PSCs', 'State PSCs': 'State PSCs',
   'Teaching & Education': 'Teaching', 'Teaching': 'Teaching',
   'Telecom': 'Telecom', 'UPSC': 'UPSC',
-  'Others': 'Others', 'Engineering': 'Engineering',
-  'Scholarships': 'Scholarships', 'Apprenticeships': 'Apprenticeships'
+  'Others': 'Central Government', 'Engineering': 'Engineering', 'Medical': 'Healthcare', 'Law': 'Judiciary',
+  'Scholarships': 'Central Government', 'Apprenticeships': 'Central Government'
 };
 
 function normalizeCategory(cat) {
@@ -65,25 +65,24 @@ function normalizeCategory(cat) {
   if (lower.includes('police') || lower.includes('security') || lower.includes('constable')) return 'Police';
   if (lower.includes('defence') || lower.includes('army') || lower.includes('navy')) return 'Defence';
   if (lower.includes('teach') || lower.includes('education') || lower.includes('professor')) return 'Teaching';
-  if (lower.includes('health') || lower.includes('medical') || lower.includes('nursing') || lower.includes('doctor') || lower.includes('hospital')) return 'Medical';
+  if (lower.includes('health') || lower.includes('medical') || lower.includes('nursing') || lower.includes('doctor') || lower.includes('hospital')) return 'Healthcare';
   if (lower.includes('research') || lower.includes('science') || lower.includes('csir') || lower.includes('icar')) return 'Research & Science';
   if (lower.includes('court') || lower.includes('judici') || lower.includes('magistrate')) return 'Judiciary';
-  if (lower.includes('law') || lower.includes('legal') || lower.includes('advocate')) return 'Law';
+  if (lower.includes('law') || lower.includes('legal') || lower.includes('advocate')) return 'Judiciary';
   if (lower.includes('engineer') || lower.includes('tech')) return 'Engineering';
   if (lower.includes('telecom') || lower.includes('bsnl') || lower.includes('mtnl')) return 'Telecom';
   if (lower.includes('shipping') || lower.includes('port') || lower.includes('shipyard')) return 'Shipping & Ports';
   if (lower.includes('forest') || lower.includes('wildlife') || lower.includes('environment')) return 'Forest & Environment';
-  if (lower.includes('health') || lower.includes('hospital') || lower.includes('aiims') || lower.includes('nhm')) return 'Healthcare';
   if (lower.includes('agriculture') || lower.includes('dairy') || lower.includes('cooperative') || lower.includes('nabard')) return 'Agriculture';
   if (lower.includes('insur')) return 'Insurance';
   if (lower.includes('psu') || lower.includes('corporation')) return 'PSU';
   if (lower.includes('ssc')) return 'SSC';
   if (lower.includes('upsc')) return 'UPSC';
   if (lower.includes('state') || lower.includes('psc')) return 'State PSCs';
-  if (lower.includes('entrance') || lower.includes('cet') || lower.includes('jee') || lower.includes('neet')) return 'Entrance Exams';
-  if (lower.includes('apprentice')) return 'Apprenticeships';
-  if (lower.includes('scholarship')) return 'Scholarships';
-  return 'Others';
+  if (lower.includes('entrance') || lower.includes('cet') || lower.includes('jee') || lower.includes('neet')) return 'Entrance Exam';
+  if (lower.includes('apprentice')) return 'Central Government';
+  if (lower.includes('scholarship')) return 'Central Government';
+  return 'Central Government';
 }
 
 function J(name, org, qual, fy, minA, maxA, s, e, sMin, sMax, cat, link, hi = '', syl = '', sel = '', ta = '', bn = '', state = 'All India', states = []) {
@@ -493,9 +492,9 @@ const STATES = [
   { c: 'OD', n: 'Odisha' }, { c: 'PB', n: 'Punjab' }, { c: 'RJ', n: 'Rajasthan' },
   { c: 'SK', n: 'Sikkim' }, { c: 'TN', n: 'Tamil Nadu' }, { c: 'TG', n: 'Telangana' },
   { c: 'TR', n: 'Tripura' }, { c: 'UP', n: 'Uttar Pradesh' }, { c: 'UK', n: 'Uttarakhand' },
-  { c: 'WB', n: 'West Bengal' }, { c: 'AN', n: 'Andaman & Nicobar' }, { c: 'CH', n: 'Chandigarh' },
+  { c: 'WB', n: 'West Bengal' }, { c: 'AN', n: 'Andaman & Nicobar Islands' }, { c: 'CH', n: 'Chandigarh' },
   { c: 'DL', n: 'Delhi' }, { c: 'JK', n: 'Jammu & Kashmir' }, { c: 'LA', n: 'Ladakh' },
-  { c: 'LD', n: 'Lakshadweep' }, { c: 'PY', n: 'Puducherry' }, { c: 'DN', n: 'Dadra & Nagar Haveli' },
+  { c: 'LD', n: 'Lakshadweep' }, { c: 'PY', n: 'Puducherry' }, { c: 'DN', n: 'Dadra & Nagar Haveli and Daman & Diu' },
 ];
 
 
@@ -505,67 +504,67 @@ STATES.forEach(({ c, n }, i) => {
 
   // 13 standard types
   const [s0, e0] = tl(i);
-  J(`${n} PSC State Civil Services 2026`, `${n} Public Service Commission`, 'Graduation', true, 21, 40, s0, e0, 44900, 209200, 'State Government', url, '', '', SP_STATE_CIVIL, '', '', n);
+  J(`${n} PSC State Civil Services 2026`, `${n} Public Service Commission`, 'Graduation', true, 21, 40, s0, e0, 44900, 209200, 'State PSCs', url, '', '', SP_STATE_CIVIL, '', '', n);
   const [s1, e1] = tl(i + 1);
-  J(`${n} PSC State Forest Service 2026`, `${n} PSC`, 'Graduation', true, 21, 35, s1, e1, 44900, 142400, 'State Government', url, '', '', SP_STATE_CIVIL, '', '', n);
+  J(`${n} PSC State Forest Service 2026`, `${n} PSC`, 'Graduation', true, 21, 35, s1, e1, 44900, 142400, 'State PSCs', url, '', '', SP_STATE_CIVIL, '', '', n);
   const [s2, e2] = tl(i + 2);
-  J(`${n} Police Constable GD 2026`, `${n} Police`, 'Class 10', false, 18, 25, s2, e2, 21700, 69100, 'State Government', url, '', '', SP_PARA, '', '', n);
+  J(`${n} Police Constable GD 2026`, `${n} Police`, 'Class 10', false, 18, 25, s2, e2, 21700, 69100, 'Police', url, '', '', SP_PARA, '', '', n);
   const [s3, e3] = tl(i + 3);
-  J(`${n} Police Sub Inspector SI 2026`, `${n} Police`, 'Graduation', true, 21, 28, s3, e3, 35400, 112400, 'State Government', url, '', '', SP_POLICE, '', '', n);
+  J(`${n} Police Sub Inspector SI 2026`, `${n} Police`, 'Graduation', true, 21, 28, s3, e3, 35400, 112400, 'Police', url, '', '', SP_POLICE, '', '', n);
   const [s4, e4] = tl(i + 4);
-  J(`${n} Police Head Constable HC 2026`, `${n} Police`, 'Class 12', false, 18, 25, s4, e4, 25500, 81100, 'State Government', url, '', '', SP_PARA, '', '', n);
+  J(`${n} Police Head Constable HC 2026`, `${n} Police`, 'Class 12', false, 18, 25, s4, e4, 25500, 81100, 'Police', url, '', '', SP_PARA, '', '', n);
   const [s5, e5] = tl(i + 5);
-  J(`${c}TET Primary Teacher Eligibility Test 2026`, `${n} Education Board`, 'Graduation', true, 18, 45, s5, e5, 25500, 81100, 'State Government', url, '', '', SP_TEACHING_CTET, '', '', n);
+  J(`${c}TET Primary Teacher Eligibility Test 2026`, `${n} Education Board`, 'Graduation', true, 18, 45, s5, e5, 25500, 81100, 'Teaching', url, '', '', SP_TEACHING_CTET, '', '', n);
   const [s6, e6] = tl(i + 6);
-  J(`${n} Government School TGT/PGT Recruitment 2026`, `${n} School Education Dept`, 'Post Graduation', true, 21, 40, s6, e6, 35400, 112400, 'State Government', url, '', '', SP_TEACHING, '', '', n);
+  J(`${n} Government School TGT/PGT Recruitment 2026`, `${n} School Education Dept`, 'Post Graduation', true, 21, 40, s6, e6, 35400, 112400, 'Teaching', url, '', '', SP_TEACHING, '', '', n);
   const [s7, e7] = tl(i + 7);
   J(`${n} State Staff Selection Group C & D 2026`, `${n} Staff Selection Board`, 'Class 12', false, 18, 35, s7, e7, 19900, 63200, 'State Government', url, '', '', SP_SSC_OTHER, '', '', n);
   const [s8, e8] = tl(i + 8);
   J(`${n} Revenue Inspector Patwari Lekhpal 2026`, `${n} Revenue Department`, 'Graduation', false, 18, 40, s8, e8, 25500, 81100, 'State Government', url, '', '', SP_SSC_OTHER, '', '', n);
   const [s9, e9] = tl(i + 9);
-  J(`${n} District Court Clerk Steno 2026`, `${n} District Courts`, 'Graduation', false, 18, 35, s9, e9, 19900, 63200, 'State Government', url, '', '', SP_JUDICIARY, '', '', n);
+  J(`${n} District Court Clerk Steno 2026`, `${n} District Courts`, 'Graduation', false, 18, 35, s9, e9, 19900, 63200, 'Judiciary', url, '', '', SP_JUDICIARY, '', '', n);
   const [s10, e10] = tl(i + 10);
-  J(`${n} Forest Guard Van Rakshak 2026`, `${n} Forest Department`, 'Class 12', false, 18, 28, s10, e10, 21700, 69100, 'State Government', url, '', '', SP_PARA, '', '', n);
+  J(`${n} Forest Guard Van Rakshak 2026`, `${n} Forest Department`, 'Class 12', false, 18, 28, s10, e10, 21700, 69100, 'Forest & Environment', url, '', '', SP_PARA, '', '', n);
   const [s11, e11] = tl(i + 11);
-  J(`${n} NHM CHO Staff Nurse 2026`, `National Health Mission ${n}`, 'Graduation', false, 21, 40, s11, e11, 25000, 75000, 'State Government', url, '', '', SP_HEALTH, '', '', n);
+  J(`${n} NHM CHO Staff Nurse 2026`, `National Health Mission ${n}`, 'Graduation', false, 21, 40, s11, e11, 25000, 75000, 'Healthcare', url, '', '', SP_HEALTH, '', '', n);
   const [s12, e12] = tl(i + 12);
-  J(`${n} Electricity Board JE 2026`, `${n} Electricity Board`, 'Graduation', true, 18, 32, s12, e12, 35400, 112400, 'State Government', url, '', '', SP_RAILWAY, '', '', n);
+  J(`${n} Electricity Board JE 2026`, `${n} Electricity Board`, 'Graduation', true, 18, 32, s12, e12, 35400, 112400, 'Engineering', url, '', '', SP_RAILWAY, '', '', n);
 
   // Additional variety to ensure 1500+ jobs
   const [s13, e13] = tl(i + 13);
   J(`${n} State Transport Driver/Conductor 2026`, `${n} State Road Transport`, 'Class 10', false, 18, 38, s13, e13, 18000, 50000, 'State Government', url, '', '', SP_RAILWAY, '', '', n);
   const [s14, e14] = tl(i + 14);
-  J(`${n} Civil Judge Junior Division 2026`, `${n} High Court`, 'Graduation', true, 21, 35, s14, e14, 56100, 177500, 'State Government', url, '', '', SP_JUDICIARY, '', '', n);
+  J(`${n} Civil Judge Junior Division 2026`, `${n} High Court`, 'Graduation', true, 21, 35, s14, e14, 56100, 177500, 'Judiciary', url, '', '', SP_JUDICIARY, '', '', n);
   const [s15, e15] = tl(i + 15);
-  J(`${n} Cooperative Bank Clerk 2026`, `${n} Cooperative Bank`, 'Graduation', false, 18, 30, s15, e15, 20000, 45000, 'State Government', url, '', '', SP_BANK_CLERK, '', '', n);
+  J(`${n} Cooperative Bank Clerk 2026`, `${n} Cooperative Bank`, 'Graduation', false, 18, 30, s15, e15, 20000, 45000, 'Cooperative', url, '', '', SP_BANK_CLERK, '', '', n);
   const [s16, e16] = tl(i + 16);
-  J(`${n} Fisheries Development Officer 2026`, `${n} Fisheries Dept`, 'Graduation', true, 21, 35, s16, e16, 35400, 112400, 'State Government', url, '', '', SP_SSC_OTHER, '', '', n);
+  J(`${n} Fisheries Development Officer 2026`, `${n} Fisheries Dept`, 'Graduation', true, 21, 35, s16, e16, 35400, 112400, 'Agriculture', url, '', '', SP_SSC_OTHER, '', '', n);
   const [s17, e17] = tl(i + 17);
-  J(`${n} Animal Husbandry Assistant 2026`, `${n} Animal Husbandry Dept`, 'Class 12', false, 18, 30, s17, e17, 21700, 69100, 'State Government', url, '', '', SP_SSC_OTHER, '', '', n);
+  J(`${n} Animal Husbandry Assistant 2026`, `${n} Animal Husbandry Dept`, 'Class 12', false, 18, 30, s17, e17, 21700, 69100, 'Agriculture', url, '', '', SP_SSC_OTHER, '', '', n);
   const [s18, e18] = tl(i + 18);
   J(`${n} Junior Librarian 2026`, `${n} Public Library Dept`, 'Graduation', false, 18, 35, s18, e18, 25500, 81100, 'State Government', url, '', '', SP_SSC_OTHER, '', '', n);
   const [s19, e19] = tl(i + 19);
-  J(`${n} Excise Sub Inspector 2026`, `${n} Excise Dept`, 'Graduation', true, 21, 28, s19, e19, 35400, 112400, 'State Government', url, '', '', SP_POLICE, '', '', n);
+  J(`${n} Excise Sub Inspector 2026`, `${n} Excise Dept`, 'Graduation', true, 21, 28, s19, e19, 35400, 112400, 'Police', url, '', '', SP_POLICE, '', '', n);
   const [s20, e20] = tl(i + 20);
   J(`${n} Rural Development Officer VDO 2026`, `${n} Panchayati Raj Dept`, 'Graduation', false, 18, 40, s20, e20, 25500, 81100, 'State Government', url, '', '', SP_SSC_OTHER, '', '', n);
   const [s21, e21] = tl(i + 21);
-  J(`${n} PWD Junior Engineer AE/JE 2026`, `${n} Public Works Dept`, 'Graduation', true, 21, 32, s21, e21, 44900, 142400, 'State Government', url, '', '', SP_RAILWAY, '', '', n);
+  J(`${n} PWD Junior Engineer AE/JE 2026`, `${n} Public Works Dept`, 'Graduation', true, 21, 32, s21, e21, 44900, 142400, 'Engineering', url, '', '', SP_RAILWAY, '', '', n);
   const [s22, e22] = tl(i + 22);
   J(`${n} Accounts Clerk 2026`, `${n} Finance Department`, 'Graduation', false, 18, 30, s22, e22, 19900, 63200, 'State Government', url, '', '', SP_BANK_CLERK, '', '', n);
   const [s23, e23] = tl(i + 23);
-  J(`${n} Govt College Lab Assistant 2026`, `${n} Higher Education Dept`, 'Class 12', false, 18, 30, s23, e23, 21700, 69100, 'State Government', url, '', '', SP_TEACHING, '', '', n);
+  J(`${n} Govt College Lab Assistant 2026`, `${n} Higher Education Dept`, 'Class 12', false, 18, 30, s23, e23, 21700, 69100, 'Teaching', url, '', '', SP_TEACHING, '', '', n);
   const [s24, e24] = tl(i + 24);
   J(`${n} Statistical Assistant 2026`, `${n} Planning & Statistics Dept`, 'Post Graduation', true, 21, 35, s24, e24, 35400, 112400, 'State Government', url, '', '', SP_SSC_OTHER, '', '', n);
   const [s25, e25] = tl(i + 25);
-  J(`${n} Agriculture Extension Officer 2026`, `${n} Agriculture Dept`, 'Graduation', true, 21, 30, s25, e25, 35400, 112400, 'State Government', url, '', '', SP_SSC_OTHER, '', '', n);
+  J(`${n} Agriculture Extension Officer 2026`, `${n} Agriculture Dept`, 'Graduation', true, 21, 30, s25, e25, 35400, 112400, 'Agriculture', url, '', '', SP_SSC_OTHER, '', '', n);
 });
 
 // ── INDIA POST — Postal Circle for every state (36 × 3 = 108) ──────────
 STATES.forEach(({ c, n }, i) => {
   const url = 'https://indiapostgdsonline.gov.in';
-  const [s0, e0] = tl(i); J(`${n} Postal Circle GDS Gramin Dak Sevak 2026`, `India Post — ${n} Circle`, 'Class 10', false, 18, 40, s0, e0, 12000, 14500, 'Others', url, '', '', SP_SSC_OTHER, '', '', n);
-  const [s1, e1] = tl(i + 1); J(`${n} Postal Circle Postman/Mail Guard 2026`, `India Post — ${n} Circle`, 'Class 12', false, 18, 27, s1, e1, 21700, 69100, 'Others', url, '', '', SP_SSC_OTHER, '', '', n);
-  const [s2, e2] = tl(i + 2); J(`${n} Postal Circle MTS 2026`, `India Post — ${n} Circle`, 'Class 10', false, 18, 25, s2, e2, 18000, 56900, 'Others', url, '', '', SP_SSC_OTHER, '', '', n);
+  const [s0, e0] = tl(i); J(`${n} Postal Circle GDS Gramin Dak Sevak 2026`, `India Post — ${n} Circle`, 'Class 10', false, 18, 40, s0, e0, 12000, 14500, 'Central Government', url, '', '', SP_SSC_OTHER, '', '', n);
+  const [s1, e1] = tl(i + 1); J(`${n} Postal Circle Postman/Mail Guard 2026`, `India Post — ${n} Circle`, 'Class 12', false, 18, 27, s1, e1, 21700, 69100, 'Central Government', url, '', '', SP_SSC_OTHER, '', '', n);
+  const [s2, e2] = tl(i + 2); J(`${n} Postal Circle MTS 2026`, `India Post — ${n} Circle`, 'Class 10', false, 18, 25, s2, e2, 18000, 56900, 'Central Government', url, '', '', SP_SSC_OTHER, '', '', n);
 });
 
 // ── TELECOM / BSNL / MTNL (12) ─────────────────────────────────────────
@@ -628,10 +627,10 @@ const highCourts = [
 
 highCourts.forEach((hc, i) => {
   const url = 'https://ecourts.gov.in';
-  const [s0, e0] = tl(i); J(`${hc} High Court Civil Judge Junior Division 2026`, `${hc} High Court`, 'Graduation', true, 21, 35, s0, e0, 56100, 177500, 'Law', url, '', '', SP_JUDICIARY);
-  const [s1, e1] = tl(i + 1); J(`${hc} High Court Stenographer 2026`, `${hc} High Court`, 'Class 12', false, 18, 30, s1, e1, 25500, 81100, 'Law', url, '', '', SP_SSC_OTHER);
-  const [s2, e2] = tl(i + 2); J(`${hc} High Court Clerk/Peon/Bailiff 2026`, `${hc} High Court`, 'Class 10', false, 18, 35, s2, e2, 18000, 56900, 'Law', url, '', '', SP_SSC_OTHER);
-  const [s3, e3] = tl(i + 3); J(`${hc} High Court Personal Assistant 2026`, `${hc} High Court`, 'Graduation', false, 18, 30, s3, e3, 35400, 112400, 'Law', url, '', '', SP_SSC_OTHER);
+  const [s0, e0] = tl(i); J(`${hc} High Court Civil Judge Junior Division 2026`, `${hc} High Court`, 'Graduation', true, 21, 35, s0, e0, 56100, 177500, 'Judiciary', url, '', '', SP_JUDICIARY);
+  const [s1, e1] = tl(i + 1); J(`${hc} High Court Stenographer 2026`, `${hc} High Court`, 'Class 12', false, 18, 30, s1, e1, 25500, 81100, 'Judiciary', url, '', '', SP_SSC_OTHER);
+  const [s2, e2] = tl(i + 2); J(`${hc} High Court Clerk/Peon/Bailiff 2026`, `${hc} High Court`, 'Class 10', false, 18, 35, s2, e2, 18000, 56900, 'Judiciary', url, '', '', SP_SSC_OTHER);
+  const [s3, e3] = tl(i + 3); J(`${hc} High Court Personal Assistant 2026`, `${hc} High Court`, 'Graduation', false, 18, 30, s3, e3, 35400, 112400, 'Judiciary', url, '', '', SP_SSC_OTHER);
 });
 
 // ── CENTRAL MINISTRIES / DEPARTMENTS (30) ──────────────────────────────
@@ -732,7 +731,7 @@ STATES.forEach(({ c, n }, i) => {
   let baseIdx = 30 + (i * 3); // Dynamic timeline offset
 
   // Municipalities / City Administration
-  let [s, e] = tl(baseIdx++); J(`${n} Municipal Corporation Junior Engineer 2026`, `${n} Municipalities`, 'Graduation', true, 18, 35, s, e, 35400, 112400, 'State Government', url, '', '', SP_RAILWAY);
+  let [s, e] = tl(baseIdx++); J(`${n} Municipal Corporation Junior Engineer 2026`, `${n} Municipalities`, 'Graduation', true, 18, 35, s, e, 35400, 112400, 'Engineering', url, '', '', SP_RAILWAY);
   [s, e] = tl(baseIdx++); J(`${n} Municipal Clerk / Tax Inspector 2026`, `${n} Municipalities`, 'Graduation', false, 18, 35, s, e, 25500, 81100, 'State Government', url, '', '', SP_SSC_OTHER);
   [s, e] = tl(baseIdx++); J(`${n} Municipal Sanitary Inspector 2026`, `${n} Municipalities`, 'Class 12', false, 18, 35, s, e, 21700, 69100, 'State Government', url, '', '', SP_SSC_OTHER);
 
@@ -746,38 +745,38 @@ STATES.forEach(({ c, n }, i) => {
   [s, e] = tl(baseIdx++); J(`${n} State Electricity Board Assistant Engineer AE 2026`, `${n} Electricity Dept`, 'Graduation', true, 21, 35, s, e, 56100, 177500, 'PSU', url, '', '', SP_PSU);
   [s, e] = tl(baseIdx++); J(`${n} Roadways Transport Driver 2026`, `${n} State Road Transport`, 'Class 10', false, 18, 40, s, e, 18000, 56900, 'State Government', url, '', '', SP_SSC_OTHER);
   [s, e] = tl(baseIdx++); J(`${n} Roadways Transport Conductor 2026`, `${n} State Road Transport`, 'Class 10', false, 18, 40, s, e, 18000, 56900, 'State Government', url, '', '', SP_SSC_OTHER);
-  [s, e] = tl(baseIdx++); J(`${n} Water Board Junior Engineer 2026`, `${n} Water Supply Dept`, 'Graduation', true, 18, 35, s, e, 35400, 112400, 'State Government', url, '', '', SP_RAILWAY);
+  [s, e] = tl(baseIdx++); J(`${n} Water Board Junior Engineer 2026`, `${n} Water Supply Dept`, 'Graduation', true, 18, 35, s, e, 35400, 112400, 'Engineering', url, '', '', SP_RAILWAY);
   [s, e] = tl(baseIdx++); J(`${n} Water Board Meter Reader / Clerk 2026`, `${n} Water Supply Dept`, 'Class 12', false, 18, 35, s, e, 19900, 63200, 'State Government', url, '', '', SP_SSC_OTHER);
 
   // Women, Child Development & Healthcare
   [s, e] = tl(baseIdx++); J(`${n} Anganwadi Supervisor 2026`, `${n} WCD Dept`, 'Graduation', false, 18, 40, s, e, 25500, 81100, 'State Government', url, '', '', SP_SSC_OTHER);
   [s, e] = tl(baseIdx++); J(`${n} Anganwadi Worker / Helper 2026`, `${n} WCD Dept`, 'Class 10', false, 18, 45, s, e, 10000, 20000, 'State Government', url, '', '', SP_SSC_OTHER);
-  [s, e] = tl(baseIdx++); J(`${n} Govt Hospital ANM / GNM Nursing 2026`, `${n} Health Dept`, 'Class 12', false, 18, 35, s, e, 21700, 69100, 'Medical', url, '', '', SP_HEALTH);
-  [s, e] = tl(baseIdx++); J(`${n} State Medical Officer / Asst Surgeon 2026`, `${n} Health Dept`, 'Graduation', false, 21, 40, s, e, 56100, 177500, 'Medical', url, '', '', SP_RESEARCH);
-  [s, e] = tl(baseIdx++); J(`${n} State Pharmacist / Lab Technician 2026`, `${n} Health Dept`, 'Graduation', false, 18, 35, s, e, 29200, 92300, 'Medical', url, '', '', SP_HEALTH);
+  [s, e] = tl(baseIdx++); J(`${n} Govt Hospital ANM / GNM Nursing 2026`, `${n} Health Dept`, 'Class 12', false, 18, 35, s, e, 21700, 69100, 'Healthcare', url, '', '', SP_HEALTH);
+  [s, e] = tl(baseIdx++); J(`${n} State Medical Officer / Asst Surgeon 2026`, `${n} Health Dept`, 'Graduation', false, 21, 40, s, e, 56100, 177500, 'Healthcare', url, '', '', SP_RESEARCH);
+  [s, e] = tl(baseIdx++); J(`${n} State Pharmacist / Lab Technician 2026`, `${n} Health Dept`, 'Graduation', false, 18, 35, s, e, 29200, 92300, 'Healthcare', url, '', '', SP_HEALTH);
 
   // Specific State Departments
-  [s, e] = tl(baseIdx++); J(`${n} Horticulture / Agriculture Assistant 2026`, `${n} Agriculture Dept`, 'Class 12', false, 18, 35, s, e, 21700, 69100, 'State Government', url, '', '', SP_SSC_OTHER);
-  [s, e] = tl(baseIdx++); J(`${n} Sericulture / Dairy Inspector 2026`, `${n} Animal Husbandry`, 'Graduation', false, 18, 35, s, e, 25500, 81100, 'State Government', url, '', '', SP_SSC_OTHER);
+  [s, e] = tl(baseIdx++); J(`${n} Horticulture / Agriculture Assistant 2026`, `${n} Agriculture Dept`, 'Class 12', false, 18, 35, s, e, 21700, 69100, 'Agriculture', url, '', '', SP_SSC_OTHER);
+  [s, e] = tl(baseIdx++); J(`${n} Sericulture / Dairy Inspector 2026`, `${n} Animal Husbandry`, 'Graduation', false, 18, 35, s, e, 25500, 81100, 'Agriculture', url, '', '', SP_SSC_OTHER);
   [s, e] = tl(baseIdx++); J(`${n} Civil Supplies / Food Inspector 2026`, `${n} Food Dept`, 'Graduation', false, 21, 35, s, e, 35400, 112400, 'State Government', url, '', '', SP_SSC_OTHER);
   [s, e] = tl(baseIdx++); J(`${n} Legal Metrology Inspector 2026`, `${n} Dept of Weights & Measures`, 'Graduation', false, 21, 35, s, e, 35400, 112400, 'State Government', url, '', '', SP_SSC_OTHER);
-  [s, e] = tl(baseIdx++); J(`${n} Pollution Control Board Scientist B 2026`, `${n} State Pollution Control Board`, 'Post Graduation', false, 21, 35, s, e, 56100, 177500, 'State Government', url, '', '', SP_RESEARCH);
+  [s, e] = tl(baseIdx++); J(`${n} Pollution Control Board Scientist B 2026`, `${n} State Pollution Control Board`, 'Post Graduation', false, 21, 35, s, e, 56100, 177500, 'Forest & Environment', url, '', '', SP_RESEARCH);
   [s, e] = tl(baseIdx++); J(`${n} Transport Dept RTO / Motor Vehicle Inspector 2026`, `${n} Transport Dept`, 'Graduation', true, 21, 35, s, e, 35400, 112400, 'State Government', url, '', '', SP_RAILWAY);
 
   // Lower Administration & Judicial
   [s, e] = tl(baseIdx++); J(`${n} District Collectorate LDC / Stenographer 2026`, `${n} Revenue Dept`, 'Class 12', false, 18, 35, s, e, 19900, 63200, 'State Government', url, '', '', SP_SSC_OTHER);
-  [s, e] = tl(baseIdx++); J(`${n} District Court Peon / Process Server 2026`, `${n} District Courts`, 'Class 10', false, 18, 35, s, e, 18000, 56900, 'Law', url, '', '', SP_SSC_OTHER);
+  [s, e] = tl(baseIdx++); J(`${n} District Court Peon / Process Server 2026`, `${n} District Courts`, 'Class 10', false, 18, 35, s, e, 18000, 56900, 'Judiciary', url, '', '', SP_SSC_OTHER);
   [s, e] = tl(baseIdx++); J(`${n} State Translation Officer / Rajbhasha Adhikari 2026`, `${n} Official Language Dept`, 'Post Graduation', false, 21, 35, s, e, 35400, 112400, 'State Government', url, '', '', SP_SSC_OTHER);
   [s, e] = tl(baseIdx++); J(`${n} Govt IT / e-Governance Assistant 2026`, `${n} State IT Dept`, 'Graduation', false, 18, 35, s, e, 25500, 81100, 'State Government', url, '', '', SP_SSC_OTHER);
 
   // Specialized State Police branches
-  [s, e] = tl(baseIdx++); J(`${n} Excise / Prohibition Constable 2026`, `${n} Excise Dept`, 'Class 10', false, 18, 25, s, e, 19900, 63200, 'State Government', url, '', '', SP_PARA);
-  [s, e] = tl(baseIdx++); J(`${n} Jail Warder / Prison Guard 2026`, `${n} Prisons Dept`, 'Class 12', false, 18, 27, s, e, 19900, 63200, 'State Government', url, '', '', SP_PARA);
-  [s, e] = tl(baseIdx++); J(`${n} Fire Service Fireman 2026`, `${n} Fire Dept`, 'Class 12', false, 18, 28, s, e, 19900, 63200, 'State Government', url, '', '', SP_PARA);
-  [s, e] = tl(baseIdx++); J(`${n} Traffic Police Constable 2026`, `${n} Traffic Police`, 'Class 12', false, 18, 25, s, e, 21700, 69100, 'State Government', url, '', '', SP_PARA);
-  [s, e] = tl(baseIdx++); J(`${n} Armed Police / IRB Constable 2026`, `${n} State Armed Police`, 'Class 10', false, 18, 25, s, e, 21700, 69100, 'State Government', url, '', '', SP_PARA);
-  [s, e] = tl(baseIdx++); J(`${n} Cyber Crime Cell Sub-Inspector 2026`, `${n} Cyber Police`, 'Graduation', false, 21, 30, s, e, 35400, 112400, 'State Government', url, '', '', SP_POLICE);
-  [s, e] = tl(baseIdx++); J(`${n} Home Guard / Civic Volunteer 2026`, `${n} Home Guards`, 'Class 8', false, 18, 45, s, e, 15000, 25000, 'State Government', url, '', '', SP_PARA);
+  [s, e] = tl(baseIdx++); J(`${n} Excise / Prohibition Constable 2026`, `${n} Excise Dept`, 'Class 10', false, 18, 25, s, e, 19900, 63200, 'Police', url, '', '', SP_PARA);
+  [s, e] = tl(baseIdx++); J(`${n} Jail Warder / Prison Guard 2026`, `${n} Prisons Dept`, 'Class 12', false, 18, 27, s, e, 19900, 63200, 'Police', url, '', '', SP_PARA);
+  [s, e] = tl(baseIdx++); J(`${n} Fire Service Fireman 2026`, `${n} Fire Dept`, 'Class 12', false, 18, 28, s, e, 19900, 63200, 'Police', url, '', '', SP_PARA);
+  [s, e] = tl(baseIdx++); J(`${n} Traffic Police Constable 2026`, `${n} Traffic Police`, 'Class 12', false, 18, 25, s, e, 21700, 69100, 'Police', url, '', '', SP_PARA);
+  [s, e] = tl(baseIdx++); J(`${n} Armed Police / IRB Constable 2026`, `${n} State Armed Police`, 'Class 10', false, 18, 25, s, e, 21700, 69100, 'Police', url, '', '', SP_PARA);
+  [s, e] = tl(baseIdx++); J(`${n} Cyber Crime Cell Sub-Inspector 2026`, `${n} Cyber Police`, 'Graduation', false, 21, 30, s, e, 35400, 112400, 'Police', url, '', '', SP_POLICE);
+  [s, e] = tl(baseIdx++); J(`${n} Home Guard / Civic Volunteer 2026`, `${n} Home Guards`, 'Class 8', false, 18, 45, s, e, 15000, 25000, 'Police', url, '', '', SP_PARA);
 });
 
 // ── AUTONOMOUS BODIES / CONSTITUTIONAL / AGENCIES (35) ─────────────────
@@ -964,8 +963,8 @@ broRoles.forEach((role, i) => {
 
 // 12. EXHAUSTIVE EXPANSION: All Micro-level districts, panchayats, and municipal bodies 
 const microRoles = [
-  'District Court Clerk', 'District Court Peon', 'District Hospital Nurse', 
-  'Anganwadi Worker', 'ASHA Health Worker', 'Gram Panchayat Secretary', 
+  'District Court Clerk', 'District Court Peon', 'District Hospital Nurse',
+  'Anganwadi Worker', 'ASHA Health Worker', 'Gram Panchayat Secretary',
   'Panchayat Rozgar Sevak', 'Block Development Officer Assistant',
   'Municipal Corporation Tax Inspector', 'Municipal Safai Karamchari',
   'Talathi / Patwari', 'Zilla Parishad Teacher', 'Zilla Parishad Engineer'
@@ -1005,12 +1004,51 @@ STATES.forEach(({ n, c }, i) => {
   });
 });
 
+
+// ── EXHAUSTIVE NAMED STATE EXAMS (PSC, Police, TET, Electricity) ────────────
+const namedPSCs = [
+  { c: 'AP', n: 'Andhra Pradesh', org: 'APPSC' }, { c: 'AR', n: 'Arunachal Pradesh', org: 'APPSC' }, { c: 'AS', n: 'Assam', org: 'APSC' },
+  { c: 'BR', n: 'Bihar', org: 'BPSC' }, { c: 'CG', n: 'Chhattisgarh', org: 'CGPSC' }, { c: 'GA', n: 'Goa', org: 'GPSC' },
+  { c: 'GJ', n: 'Gujarat', org: 'GPSC' }, { c: 'HR', n: 'Haryana', org: 'HPSC' }, { c: 'HP', n: 'Himachal Pradesh', org: 'HPPSC' },
+  { c: 'JH', n: 'Jharkhand', org: 'JPSC' }, { c: 'KA', n: 'Karnataka', org: 'KPSC' }, { c: 'KL', n: 'Kerala', org: 'KPSC' },
+  { c: 'MP', n: 'Madhya Pradesh', org: 'MPPSC' }, { c: 'MH', n: 'Maharashtra', org: 'MPSC' }, { c: 'MN', n: 'Manipur', org: 'MPSC' },
+  { c: 'ML', n: 'Meghalaya', org: 'MPSC' }, { c: 'MZ', n: 'Mizoram', org: 'MPSC' }, { c: 'NL', n: 'Nagaland', org: 'NPSC' },
+  { c: 'OD', n: 'Odisha', org: 'OPSC' }, { c: 'PB', n: 'Punjab', org: 'PPSC' }, { c: 'RJ', n: 'Rajasthan', org: 'RPSC' },
+  { c: 'SK', n: 'Sikkim', org: 'SPSC' }, { c: 'TN', n: 'Tamil Nadu', org: 'TNPSC' }, { c: 'TG', n: 'Telangana', org: 'TSPSC' },
+  { c: 'TR', n: 'Tripura', org: 'TPSC' }, { c: 'UP', n: 'Uttar Pradesh', org: 'UPPSC' }, { c: 'UK', n: 'Uttarakhand', org: 'UKPSC' },
+  { c: 'WB', n: 'West Bengal', org: 'WBPSC' }
+];
+
+namedPSCs.forEach(({ n, org }, i) => {
+  let [s, e] = tl(i);
+  J(`${org} Civil Services Examination 2026`, org, 'Graduation', true, 21, 40, s, e, 56100, 177500, 'State PSCs', `https://${n.toLowerCase().replace(/\s/g, '')}.gov.in`, '', '', SP_STATE_CIVIL, '', '', n);
+  J(`${n} Police Constable 2026`, `${n} Police Recruitment Board`, 'Class 12', false, 18, 25, s, e, 21700, 69100, 'Police', `https://police.${n.toLowerCase().replace(/\s/g, '')}.gov.in`, '', '', SP_PARA, '', '', n);
+  J(`${n} Police Sub-Inspector (SI) 2026`, `${n} Police Recruitment Board`, 'Graduation', true, 21, 28, s, e, 35400, 112400, 'Police', `https://police.${n.toLowerCase().replace(/\s/g, '')}.gov.in`, '', '', SP_POLICE, '', '', n);
+  J(`${n} Teacher Eligibility Test (${n.substring(0, 2).toUpperCase()}TET) 2026`, `${n} Education Board`, 'Graduation', true, 18, 40, s, e, 35400, 112400, 'Teaching', `https://schooleducation.${n.toLowerCase().replace(/\s/g, '')}.gov.in`, '', '', SP_TEACHING_CTET, '', '', n);
+  J(`${n} State Electricity Board JE/AE 2026`, `${n} Electricity Board`, 'Graduation', true, 21, 35, s, e, 44900, 142400, 'Engineering', `https://energy.${n.toLowerCase().replace(/\s/g, '')}.gov.in`, '', '', SP_RAILWAY, '', '', n);
+});
+
+// Missing Central & Apex Bodies
+const missingCentral = [
+  ['NIA Inspector/Sub-Inspector 2026', 'National Investigation Agency', 'Graduation', 21, 30, 44900, 142400, 'Police'],
+  ['NCB Intelligence Officer 2026', 'Narcotics Control Bureau', 'Graduation', 20, 27, 44900, 142400, 'Police'],
+  ['PM Lateral Entry Joint Secretary 2026', 'DoPT', 'Post Graduation', 35, 50, 144200, 218200, 'Central Government'],
+  ['IRDAI Assistant Manager 2026', 'IRDAI', 'Graduation', 21, 30, 44500, 89150, 'Insurance'],
+  ['PFRDA Officer Grade A 2026', 'PFRDA', 'Post Graduation', 21, 30, 44500, 89150, 'Banking'],
+  ['Central Information Commission Officer 2026', 'CIC', 'Graduation', 21, 35, 44900, 142400, 'Central Government']
+];
+
+missingCentral.forEach(([name, org, qual, minA, maxA, minS, maxS, cat], i) => {
+  let [s, e] = tl(i);
+  J(name, org, qual, false, minA, maxA, s, e, minS, maxS, cat, 'https://india.gov.in', '', '', SP_CENTRAL, '', '', 'All India');
+});
+
 // ── ASYNC SEED ─────────────────────────────────────────────────────────────
 async function seedDatabase() {
   const db = getDb();
 
   // Version-based reseed: bump this whenever seed data changes
-  const SEED_VERSION = 18;
+  const SEED_VERSION = 20;
   try { await db.execute('CREATE TABLE IF NOT EXISTS seed_meta (key TEXT PRIMARY KEY, value TEXT)'); } catch (_) { }
   let currentVersion = 0;
   try {
@@ -1028,7 +1066,7 @@ async function seedDatabase() {
   if (currentVersion < 18) {
     console.log(`  Seed version ${currentVersion} → ${SEED_VERSION}. PURGING data to standardize categories...`);
     // STRICT: ONLY delete jobs, NEVER delete users or applied data
-    await db.execute('DELETE FROM jobs');
+    // Removed DELETE query to avoid Supabase REST API issues
   } else {
     console.log(`  Seed version ${currentVersion} → ${SEED_VERSION}. Upserting jobs...`);
   }
@@ -1063,7 +1101,7 @@ async function seedDatabase() {
     ]
   }));
 
-  // batch in groups of 200 for reliable HTTP transport to Turso (avoid timeouts)
+  // batch in groups of 200 for reliable HTTP transport (avoid timeouts)
   const BATCH = 200;
   for (let i = 0; i < stmts.length; i += BATCH) {
     const batch = stmts.slice(i, i + BATCH);
@@ -1076,7 +1114,7 @@ async function seedDatabase() {
       } catch (err) {
         retries--;
         if (retries > 0) {
-          console.log(`  Batch ${i}-${i + BATCH} retry (${3-retries}/3): ${err.message}`);
+          console.log(`  Batch ${i}-${i + BATCH} retry (${3 - retries}/3): ${err.message}`);
           await new Promise(r => setTimeout(r, 2000)); // Wait 2s before retry
         } else {
           console.error(`  Batch ${i}-${i + BATCH} FAILED after 3 retries:`, err.message);
@@ -1137,7 +1175,7 @@ async function seedBatch(offset, limit) {
   if (chunk.length === 0) return { inserted: 0, offset, total: jobs.length, done: true };
 
   const stmts = chunk.map(j => ({ sql: INSERT_SQL, args: mapJobToArgs(j) }));
-  // Sub-batch in groups of 100 for reliable Turso transport
+  // Sub-batch in groups of 100 for reliable transport
   for (let i = 0; i < stmts.length; i += 100) {
     await db.batch(stmts.slice(i, i + 100), 'write');
   }
@@ -1148,10 +1186,10 @@ async function seedBatch(offset, limit) {
 
 async function seedFinalize() {
   const db = getDb();
-  await db.execute({ sql: "INSERT OR REPLACE INTO seed_meta (key, value) VALUES ('seed_version', ?)", args: ['18'] });
+  await db.execute({ sql: "INSERT OR REPLACE INTO seed_meta (key, value) VALUES ('seed_version', ?)", args: ['20'] });
   const count = Number((await db.execute('SELECT COUNT(*) as cnt FROM jobs')).rows[0].cnt);
-  console.log(`  [seed-finalize] Version set to 18. Total jobs in DB: ${count}`);
-  return { version: 18, totalJobs: count };
+  console.log(`  [seed-finalize] Version set to 20. Total jobs in DB: ${count}`);
+  return { version: 20, totalJobs: count };
 }
 
-module.exports = { seedDatabase, seedInit, seedBatch, seedFinalize, getJobCount: () => jobs.length };
+module.exports = { seedDatabase, seedInit, seedBatch, seedFinalize, getJobCount: () => jobs.length, jobs };

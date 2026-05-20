@@ -163,6 +163,7 @@ async function executeViaRest(originalSql, transformed, args) {
 
           if (eqMatch) q = q.eq(eqMatch[1], eqMatch[2]);
           else if (numEqMatch) q = q.eq(numEqMatch[1], Number(numEqMatch[2]));
+      else if (neqMatch) q = q.neq(neqMatch[1], neqMatch[2]);
           else if (neqMatch) q = q.neq(neqMatch[1], neqMatch[2]);
           else if (isNullMatch) q = q.is(isNullMatch[1], null);
           else if (inMatch) {
@@ -300,6 +301,7 @@ async function executeViaRest(originalSql, transformed, args) {
     for (const cond of conditions) {
       const eqMatch = cond.match(/^(\w+)\s*=\s*\|\|\|([^|]*)\|\|\|$/);
       const numEqMatch = cond.match(/^(\w+)\s*=\s*(-?\d+(?:\.\d+)?)$/);
+      const neqMatch = cond.match(/^(\w+)\s*!=\s*\|\|\|([^|]*)\|\|\|$/);
       if (eqMatch) q = q.eq(eqMatch[1], eqMatch[2]);
       else if (numEqMatch) q = q.eq(numEqMatch[1], Number(numEqMatch[2]));
     }

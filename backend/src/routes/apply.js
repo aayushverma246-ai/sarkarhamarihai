@@ -1,9 +1,16 @@
 const express = require('express');
-const { getDb } = require('../db');
+const { createClient } = require('@supabase/supabase-js');
 const auth = require('../middleware/auth');
 const router = express.Router();
 
-// Reuse the same status computation logic from jobs.js (IST timezone)
+function getSb() {
+  return createClient(
+    process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEzNDgyNywiZXhwIjoyMDkwNzEwODI3fQ.wbX4lhJKE8OtzIl2RJamsFA71DRwo-B7QCL4UzAsr9A',
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+}
+
 const getTodayIST = () => {
     const today = new Date();
     const istOffset = 5.5 * 60 * 60 * 1000;
@@ -14,16 +21,16 @@ const getTodayIST = () => {
 function computeFormStatus(job, todayStr) {
     const start = job.application_start_date;
     const end = job.application_end_date;
+    if (!start || !end) return 'CLOSED';
     if (todayStr < start) return 'UPCOMING';
     if (todayStr <= end) return 'LIVE';
-    const endParts = end.split('-').map(Number);
-    const todayParts = todayStr.split('-').map(Number);
-    const endDays = endParts[0] * 365 + endParts[1] * 30 + endParts[2];
-    const todayDays = todayParts[0] * 365 + todayParts[1] * 30 + todayParts[2];
-    const diffDays = todayDays - endDays;
+    const endDate = new Date(end);
+    const todayDate = new Date(todayStr);
+    const diffDays = Math.floor((todayDate - endDate) / (1000 * 60 * 60 * 24));
     if (diffDays <= 30) return 'RECENTLY_CLOSED';
     return 'CLOSED';
 }
+
 function withStatus(job) {
     const todayStr = getTodayIST();
     let parsedStates = [];
@@ -38,162 +45,196 @@ function withStatus(job) {
     };
 }
 
+// GET /api/apply/applied — get all applied jobs for current user
 router.get('/applied', auth, async (req, res) => {
     try {
-        const db = getDb();
-        const todayStr = getTodayIST();
-        // Step 1: Get applied job IDs (simple, no JOIN)
-        const refs = (await db.execute({
-            sql: 'SELECT job_id FROM applied_jobs WHERE user_id = ? ORDER BY created_at DESC',
-            args: [req.user.id]
-        })).rows;
-        if (!refs.length) return res.json([]);
+        const sb = getSb();
+        // Step 1: Get applied job IDs
+        const { data: refs, error: refErr } = await sb.from('applied_jobs')
+            .select('job_id')
+            .eq('user_id', req.user.id)
+            .order('created_at', { ascending: false });
+        
+        if (refErr) throw refErr;
+        if (!refs || refs.length === 0) return res.json([]);
+        
         const ids = refs.map(r => r.job_id);
-        // Step 2: Fetch those jobs (IN clause, no JOIN required)
-        const placeholders = ids.map(() => '?').join(',');
-        const jobs = (await db.execute({ sql: `SELECT * FROM jobs WHERE id IN (${placeholders})`, args: ids })).rows;
-        res.json(jobs.map(j => withStatus(j, todayStr)));
+        
+        // Step 2: Fetch those jobs
+        const { data: jobs, error: jobErr } = await sb.from('jobs')
+            .select('*')
+            .in('id', ids);
+        
+        if (jobErr) throw jobErr;
+        res.json((jobs || []).map(j => withStatus(j)));
     } catch (err) {
-        console.error(err);
+        console.error('GET /applied error:', err.message);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
+// GET /api/apply/reminders — get all reminded jobs for current user
+router.get('/reminders', auth, async (req, res) => {
+    try {
+        const sb = getSb();
+        const { data: refs, error: refErr } = await sb.from('job_reminders')
+            .select('job_id')
+            .eq('user_id', req.user.id);
+        
+        if (refErr) throw refErr;
+        if (!refs || refs.length === 0) return res.json([]);
+        
+        const ids = refs.map(r => r.job_id);
+        
+        const { data: jobs, error: jobErr } = await sb.from('jobs')
+            .select('*')
+            .in('id', ids);
+        
+        if (jobErr) throw jobErr;
+        res.json((jobs || []).map(j => withStatus(j)));
+    } catch (err) {
+        console.error('GET /reminders error:', err.message);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// GET /api/apply/status/:job_id
 router.get('/status/:job_id', auth, async (req, res) => {
     try {
-        const db = getDb();
-        const result = await db.execute({
-            sql: 'SELECT * FROM applied_jobs WHERE user_id = ? AND job_id = ?',
-            args: [req.user.id, req.params.job_id]
-        });
-        res.json({ applied: result.rows.length > 0 });
+        const sb = getSb();
+        const { data } = await sb.from('applied_jobs')
+            .select('id')
+            .eq('user_id', req.user.id)
+            .eq('job_id', req.params.job_id)
+            .limit(1);
+        res.json({ applied: (data || []).length > 0 });
     } catch (err) {
-        console.error(err);
+        console.error('GET /status error:', err.message);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
+// POST /api/apply/toggle — toggle applied status
 router.post('/toggle', auth, async (req, res) => {
     try {
         const { job_id } = req.body;
         if (!job_id) return res.status(400).json({ error: 'job_id is required' });
 
-        const db = getDb();
+        const sb = getSb();
 
         // Check if job exists
-        const jobResult = await db.execute({
-            sql: 'SELECT * FROM jobs WHERE id = ?',
-            args: [job_id]
-        });
-        if (jobResult.rows.length === 0) {
+        const { data: jobData } = await sb.from('jobs')
+            .select('id').eq('id', job_id).limit(1);
+        if (!jobData || jobData.length === 0) {
             return res.status(404).json({ error: 'Job not found' });
         }
 
         // Check current status
-        const appliedResult = await db.execute({
-            sql: 'SELECT * FROM applied_jobs WHERE user_id = ? AND job_id = ?',
-            args: [req.user.id, job_id]
-        });
+        const { data: existing } = await sb.from('applied_jobs')
+            .select('id')
+            .eq('user_id', req.user.id)
+            .eq('job_id', job_id)
+            .limit(1);
 
-        const isApplied = appliedResult.rows.length > 0;
-
-        if (isApplied) {
+        if (existing && existing.length > 0) {
             // Remove applied
-            await db.execute({
-                sql: 'DELETE FROM applied_jobs WHERE user_id = ? AND job_id = ?',
-                args: [req.user.id, job_id]
-            });
+            await sb.from('applied_jobs')
+                .delete()
+                .eq('user_id', req.user.id)
+                .eq('job_id', job_id);
             res.json({ applied: false });
         } else {
             // Add applied
             const id = 'app_' + Math.random().toString(36).substring(2, 9);
-            await db.execute({
-                sql: 'INSERT INTO applied_jobs (id, user_id, job_id) VALUES (?, ?, ?)',
-                args: [id, req.user.id, job_id]
-            });
-
-            // AI is now handled strictly by the frontend calling /api/ai/recommendations
+            const { error } = await sb.from('applied_jobs')
+                .insert({ id, user_id: req.user.id, job_id });
+            if (error) {
+                // Might be duplicate — that's fine
+                if (error.code === '23505') return res.json({ applied: true });
+                throw error;
+            }
             res.json({ applied: true });
         }
     } catch (err) {
-        console.error(err);
+        console.error('POST /toggle error:', err.message);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
-// GET Reminder status
+// GET /api/apply/reminder/:job_id
 router.get('/reminder/:job_id', auth, async (req, res) => {
     try {
-        const db = getDb();
-        const result = await db.execute({
-            sql: 'SELECT * FROM job_reminders WHERE user_id = ? AND job_id = ?',
-            args: [req.user.id, req.params.job_id]
-        });
-        res.json({ reminders_enabled: result.rows.length > 0 });
+        const sb = getSb();
+        const { data } = await sb.from('job_reminders')
+            .select('id')
+            .eq('user_id', req.user.id)
+            .eq('job_id', req.params.job_id)
+            .limit(1);
+        res.json({ reminders_enabled: (data || []).length > 0 });
     } catch (err) {
-        console.error(err);
+        console.error('GET /reminder error:', err.message);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
-// POST Toggle Reminder
+// POST /api/apply/reminder/toggle
 router.post('/reminder/toggle', auth, async (req, res) => {
     try {
         const { job_id } = req.body;
         if (!job_id) return res.status(400).json({ error: 'job_id is required' });
 
-        const db = getDb();
+        const sb = getSb();
 
-        const jobResult = await db.execute({
-            sql: 'SELECT * FROM jobs WHERE id = ?',
-            args: [job_id]
-        });
-        if (jobResult.rows.length === 0) {
+        // Check if job exists
+        const { data: jobData } = await sb.from('jobs')
+            .select('id').eq('id', job_id).limit(1);
+        if (!jobData || jobData.length === 0) {
             return res.status(404).json({ error: 'Job not found' });
         }
 
-        const reminderResult = await db.execute({
-            sql: 'SELECT * FROM job_reminders WHERE user_id = ? AND job_id = ?',
-            args: [req.user.id, job_id]
-        });
+        const { data: existing } = await sb.from('job_reminders')
+            .select('id')
+            .eq('user_id', req.user.id)
+            .eq('job_id', job_id)
+            .limit(1);
 
-        const isReminding = reminderResult.rows.length > 0;
-
-        if (isReminding) {
-            await db.execute({
-                sql: 'DELETE FROM job_reminders WHERE user_id = ? AND job_id = ?',
-                args: [req.user.id, job_id]
-            });
+        if (existing && existing.length > 0) {
+            await sb.from('job_reminders')
+                .delete()
+                .eq('user_id', req.user.id)
+                .eq('job_id', job_id);
             res.json({ reminders_enabled: false });
         } else {
             const id = 'rem_' + Math.random().toString(36).substring(2, 9);
-            await db.execute({
-                sql: 'INSERT INTO job_reminders (id, user_id, job_id) VALUES (?, ?, ?)',
-                args: [id, req.user.id, job_id]
-            });
+            const { error } = await sb.from('job_reminders')
+                .insert({ id, user_id: req.user.id, job_id });
+            if (error) {
+                if (error.code === '23505') return res.json({ reminders_enabled: true });
+                throw error;
+            }
             res.json({ reminders_enabled: true });
         }
     } catch (err) {
-        console.error(err);
+        console.error('POST /reminder/toggle error:', err.message);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
-// DELETE /api/applied-exam
+// DELETE /api/apply/applied-exam
 router.delete('/applied-exam', auth, async (req, res) => {
     try {
         const { exam_id } = req.body;
         if (!exam_id) return res.status(400).json({ error: 'exam_id is required' });
 
-        const db = getDb();
-        await db.execute({
-            sql: 'DELETE FROM applied_jobs WHERE user_id = ? AND job_id = ?',
-            args: [req.user.id, exam_id]
-        });
+        const sb = getSb();
+        await sb.from('applied_jobs')
+            .delete()
+            .eq('user_id', req.user.id)
+            .eq('job_id', exam_id);
 
         res.json({ success: true, message: 'Unmarked as applied' });
     } catch (err) {
-        console.error(err);
+        console.error('DELETE /applied-exam error:', err.message);
         res.status(500).json({ error: 'Server error' });
     }
 });

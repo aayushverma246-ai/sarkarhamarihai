@@ -8,8 +8,7 @@ export default function ProfilePage() {
   const navigate = useNavigate();
   const cached = getCachedUser();
   const [user, setUser] = useState<any>(cached);
-  const [eligibleCount, setEligibleCount] = useState(0);
-  const [likedCount, setLikedCount] = useState(0);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -25,10 +24,8 @@ export default function ProfilePage() {
     const load = async () => {
       setLoading(true);
       try {
-        // Fetch each piece independently so one failure doesn't crash the whole page
+        // Fetch user profile
         let me: any = null;
-        let eligible: any[] = [];
-        let liked: any[] = [];
 
         try { me = await api.getMe(); } catch (meErr: any) {
           // Only redirect on explicit auth failure, not on network errors
@@ -38,21 +35,9 @@ export default function ProfilePage() {
           me = cached; // Fall back to cached user data
         }
 
-        try {
-          const res = await api.getEligibleJobs();
-          eligible = Array.isArray(res) ? res : [];
-        } catch { eligible = []; }
-
-        try {
-          const res = await api.getLikedJobs();
-          liked = Array.isArray(res) ? res : [];
-        } catch { liked = []; }
-
         const resolvedUser = (me && me.email) ? me : cached;
         setUser(resolvedUser);
         if (me && me.email) setCachedUser(resolvedUser);
-        setEligibleCount(eligible.length);
-        setLikedCount(liked.length);
         setForm({
           full_name: resolvedUser.full_name || '',
           age: resolvedUser.age ? String(resolvedUser.age) : '',
@@ -98,10 +83,7 @@ export default function ProfilePage() {
         setUser(updated);
         setCachedUser(updated);
       }
-      try {
-        const eligible = await api.getEligibleJobs();
-        setEligibleCount(Array.isArray(eligible) ? eligible.length : 0);
-      } catch { /* non-critical */ }
+
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
@@ -129,17 +111,7 @@ export default function ProfilePage() {
           <p className="text-gray-600 text-sm mt-0.5">Your eligibility is computed from these details</p>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          <div className="bg-[#0e0e0e] rounded-lg border border-[#141414] p-4">
-            <p className="text-[11px] text-red-700 uppercase tracking-wide">Eligible Jobs</p>
-            <p className="text-3xl font-bold text-red-400 mt-1">{loading ? '—' : eligibleCount}</p>
-          </div>
-          <div className="bg-[#0e0e0e] rounded-lg border border-[#141414] p-4">
-            <p className="text-[11px] text-gray-600 uppercase tracking-wide">Saved Jobs</p>
-            <p className="text-3xl font-bold text-gray-300 mt-1">{loading ? '—' : likedCount}</p>
-          </div>
-        </div>
+
 
         <div className="bg-[#0e0e0e] rounded-xl border border-[#1a1a1a] p-6">
           {loading ? (
@@ -203,20 +175,26 @@ export default function ProfilePage() {
                       </select>
                     </div>
                   </div>
-                  {form.qualification_status === 'Pursuing' && (
-                    <div className="grid grid-cols-3 gap-3 p-3 bg-[#0a0a0a] rounded-lg border border-[#151515]">
-                      {[
-                        { label: 'Year', field: 'current_year', ph: '3' },
-                        { label: 'Semester', field: 'current_semester', ph: '5' },
-                        { label: 'Grad Year', field: 'expected_graduation_year', ph: '2026' },
-                      ].map(({ label, field, ph }) => (
-                        <div key={field}>
-                          <label className="block text-xs text-gray-500 mb-1">{label}</label>
-                          <input type="text" inputMode="numeric" value={(form as any)[field]} onChange={e => handleNum(field, e.target.value)} placeholder={ph} className={inputClass} />
+                  <div className={`grid gap-3 p-3 bg-[#0a0a0a] rounded-lg border border-[#151515] ${form.qualification_status === 'Pursuing' && !['Class 10', 'Class 12'].includes(form.qualification_type) ? 'grid-cols-3' : 'grid-cols-1'}`}>
+                    {form.qualification_status === 'Pursuing' && !['Class 10', 'Class 12'].includes(form.qualification_type) && (
+                      <>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Year</label>
+                          <input type="text" inputMode="numeric" value={form.current_year} onChange={e => handleNum('current_year', e.target.value)} placeholder="e.g. 3" className={inputClass} />
                         </div>
-                      ))}
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Semester</label>
+                          <input type="text" inputMode="numeric" value={form.current_semester} onChange={e => handleNum('current_semester', e.target.value)} placeholder="e.g. 6" className={inputClass} />
+                        </div>
+                      </>
+                    )}
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        {form.qualification_status === 'Completed' ? 'Passing Year' : 'Grad Year'}
+                      </label>
+                      <input type="text" inputMode="numeric" value={form.expected_graduation_year} onChange={e => handleNum('expected_graduation_year', e.target.value)} placeholder="e.g. 2026" className={inputClass} />
                     </div>
-                  )}
+                  </div>
                 </div>
               </section>
 

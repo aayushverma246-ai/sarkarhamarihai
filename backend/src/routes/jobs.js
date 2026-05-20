@@ -57,9 +57,59 @@ function withStatus(job, todayStr) {
         } catch (_) {}
     }
 
+    // ── On-the-fly normalization so filters ALWAYS match canonical values ──
+    // This is the safety net: even if DB has 'Medical', 'Law', 'Entrance Exams',
+    // the API will always return the canonical category.
+    let normalizedCategory = job.job_category;
+    if (normalizedCategory) {
+        const canonical = normalizeCategory(normalizedCategory);
+        if (canonical) normalizedCategory = canonical;
+        // Smart re-categorization based on job name for state exams
+        // that were blanket-tagged as 'State Government' or 'State PSCs'
+        if (normalizedCategory === 'State Government' || normalizedCategory === 'State PSCs') {
+            const name = (job.job_name || '').toLowerCase();
+            if (/\bpsc\b|\bcivil services\b|\bstate services\b/.test(name)) {
+                normalizedCategory = 'State PSCs';
+            } else if (/\bpolice\b|\bconstable\b|\bsub inspector\b|\b(?:si)\b|\bhead constable\b|\bjail\b|\bprison\b|\bfire\s*(?:service|man)\b|\btraffic police\b|\barmed police\b|\bcyber\s*(?:crime|police)\b|\bhome guard\b|\bexcise\b/.test(name)) {
+                normalizedCategory = 'Police';
+            } else if (/\btet\b|\bteacher\b|\btgt\b|\bpgt\b|\bprimary teacher\b|\bschool\b|\beducation\b|\blab assistant\b/.test(name)) {
+                normalizedCategory = 'Teaching';
+            } else if (/\bforest\b|\bvan rakshak\b|\bwildlife\b|\bpollution\b/.test(name)) {
+                normalizedCategory = 'Forest & Environment';
+            } else if (/\bnhm\b|\bnursing\b|\bstaff nurse\b|\bcho\b|\banm\b|\bgnm\b|\bpharmacist\b|\bmedical officer\b|\bsurgeon\b|\bhospital\b|\bhealth\b/.test(name)) {
+                normalizedCategory = 'Healthcare';
+            } else if (/\bcourt\b|\bjudge\b|\bjudicial\b|\bsteno.*court\b|\bpeon.*court\b|\bbailiff\b/.test(name)) {
+                normalizedCategory = 'Judiciary';
+            } else if (/\belectricity\b|\bengineer\b|\bje\b|\bjunior engineer\b|\bwater board\b/.test(name)) {
+                normalizedCategory = 'Engineering';
+            } else if (/\bcooperative\b|\bbank clerk\b/.test(name)) {
+                normalizedCategory = 'Cooperative';
+            } else if (/\bagriculture\b|\bhorticulture\b|\bdairy\b|\bfisheries\b|\banimal husbandry\b|\bsericulture\b/.test(name)) {
+                normalizedCategory = 'Agriculture';
+            } else if (/\btransport\b|\bdriver\b|\bconductor\b|\brto\b|\bmotor vehicle\b|\broadways\b/.test(name)) {
+                normalizedCategory = 'State Government';
+            }
+            // else keep as State Government for generic state exams
+        }
+    }
+
+    let normalizedState = job.state;
+    if (normalizedState) {
+        const canonical = normalizeState(normalizedState);
+        if (canonical) normalizedState = canonical;
+    }
+
+    // Normalize states array entries too
+    const normalizedStatesArr = parsedStates.map(s => {
+        const c = normalizeState(s);
+        return c || s;
+    });
+
     return { 
         ...job, 
-        states: parsedStates,
+        job_category: normalizedCategory || job.job_category,
+        state: normalizedState || job.state,
+        states: normalizedStatesArr,
         form_status: computeFormStatus(job, todayStr), 
         allows_final_year_students: !!job.allows_final_year_students,
         is_verified: isVerified,
@@ -73,11 +123,26 @@ function meetsQualification(user, job) {
     if (!user.qualification_type) return false;
     const userLevel = qualificationOrder[user.qualification_type] || 0;
     const jobLevel = qualificationOrder[job.qualification_required] || 0;
-    if (userLevel === 0) return false;
-    if (user.qualification_status === 'Completed') return userLevel >= jobLevel;
+    if (userLevel === 0 || jobLevel === 0) return false;
+    
+    if (user.qualification_status === 'Completed') {
+        // Completed users are eligible for jobs at or below their qualification level
+        return userLevel >= jobLevel;
+    }
+    
     if (user.qualification_status === 'Pursuing') {
+        // Pursuing users have COMPLETED the level below, so they match lower-level jobs
         if (userLevel > jobLevel) return true;
-        if (userLevel === jobLevel && job.allows_final_year_students) return true;
+        
+        // For same-level jobs, only eligible if job allows final year AND user is in final year
+        if (userLevel === jobLevel && job.allows_final_year_students) {
+            const currentYearStr = getTodayIST().substring(0, 4);
+            const currentYear = parseInt(currentYearStr);
+            const expectedGradYear = parseInt(user.expected_graduation_year);
+            if (expectedGradYear > 0 && expectedGradYear === currentYear) {
+                return true;
+            }
+        }
     }
     return false;
 }
@@ -188,7 +253,7 @@ router.get('/all-minimal', async (req, res) => {
         }
 
         const db = getDb();
-        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, job_category, state, states, application_start_date, application_end_date, vacancies, official_application_link';
+        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, job_category, state, states, application_start_date, application_end_date, vacancies, official_application_link, last_verified_at, created_at';
         
         // Sequential cursor pagination — guarantees every row appears exactly once.
         const limit = 1000;
@@ -283,7 +348,7 @@ router.get('/', async (req, res) => {
         const limit = Math.min(parseInt(limitParam) || 100, 5000);
         const offset = parseInt(offsetParam) || 0;
         
-        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link';
+        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link, last_verified_at, created_at';
         
         // Build Supabase SDK query with filters
         const buildSbQuery = () => {
@@ -370,7 +435,7 @@ router.get('/eligible', auth, async (req, res) => {
         
         const hasCompleteProfile = !!(user.qualification_type && user.age && user.age > 0);
         
-        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link';
+        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link, last_verified_at, created_at';
         const { whereStr, args } = buildFilters(req, null);
         
         // Optimized database fetch
@@ -388,14 +453,33 @@ router.get('/eligible', auth, async (req, res) => {
                     allEligible.push(j);
                 }
             }
-            if ((j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j)) {
+            // Broad fallback only used for incomplete profiles
+            if (!hasCompleteProfile && (j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j)) {
                 broadlyEligible.push(j);
             }
         }
         
-        let finalResult = allEligible.length > 0 ? allEligible : broadlyEligible.slice(0, 100);
+        // If user has complete profile, return strict matches only (even if 0).
+        // Fallback to broadly eligible ONLY for incomplete profiles.
+        let finalResult = hasCompleteProfile ? allEligible : broadlyEligible.slice(0, 100);
         
-        res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
+        // Debug logging for troubleshooting eligibility
+        console.log('[Eligible Debug]', JSON.stringify({
+            userId: user.id,
+            qualification_type: user.qualification_type,
+            qualification_status: user.qualification_status,
+            expected_graduation_year: user.expected_graduation_year,
+            age: user.age,
+            state: user.state,
+            hasCompleteProfile,
+            totalJobsFetched: jobs.length,
+            strictEligible: allEligible.length,
+            broadlyEligible: broadlyEligible.length,
+            finalCount: finalResult.length,
+            currentYear: getTodayIST().substring(0, 4),
+        }));
+        
+        res.set('Cache-Control', 'no-store, max-age=0');
         return res.json(finalResult);
     } catch (err) {
         console.error('GET /api/jobs/eligible error:', err);
@@ -413,7 +497,7 @@ router.get('/partial', auth, async (req, res) => {
         
         const hasCompleteProfile = !!(user.qualification_type && user.age && user.age > 0);
         
-        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link';
+        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link, last_verified_at, created_at';
         const { whereStr, args } = buildFilters(req, null);
         
         const query = `SELECT ${selectFields} FROM jobs ${whereStr} ORDER BY application_start_date ASC LIMIT 500`;
@@ -426,18 +510,20 @@ router.get('/partial', auth, async (req, res) => {
         
         for (const j of jobs) {
             if (hasCompleteProfile) {
-                // Partial means they meet qualification OR age, but NOT both. Or if it's All India fallback scenarios.
+                // Partial means they meet qualification OR age, but NOT both.
                 const isPartial = (meetsQualification(user, j) || meetsAge(user, j)) && !(meetsQualification(user, j) && meetsAge(user, j)) && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j);
                 if (isPartial) allPartial.push(j);
             }
-            if (j.form_status === 'UPCOMING' && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j)) {
+            // Fallback only for incomplete profiles
+            if (!hasCompleteProfile && j.form_status === 'UPCOMING' && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j)) {
                 fallbackJobs.push(j);
             }
         }
         
-        let finalResult = allPartial.length > 0 ? allPartial : fallbackJobs.slice(0, 50);
+        // Strict matches for complete profiles; fallback only for incomplete ones
+        let finalResult = hasCompleteProfile ? allPartial : fallbackJobs.slice(0, 50);
         
-        res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
+        res.set('Cache-Control', 'no-store, max-age=0');
         return res.json(finalResult);
     } catch (err) {
         console.error('GET /api/jobs/partial error:', err);
@@ -448,14 +534,16 @@ router.get('/partial', auth, async (req, res) => {
 // GET /api/jobs/liked
 router.get('/liked', auth, async (req, res) => {
     try {
-        const db = getDb();
+        const sb = getSupabase();
         const todayStr = getTodayIST();
-        const likedRows = (await db.execute({ sql: 'SELECT job_id FROM liked_jobs WHERE user_id = ? ORDER BY created_at DESC', args: [req.user.id] })).rows;
-        if (!likedRows.length) return res.json([]);
+        const { data: likedRows } = await sb.from('liked_jobs')
+            .select('job_id')
+            .eq('user_id', req.user.id)
+            .order('created_at', { ascending: false });
+        if (!likedRows || likedRows.length === 0) return res.json([]);
         const ids = likedRows.map(r => r.job_id);
-        const placeholders = ids.map(() => '?').join(',');
-        const jobs = (await db.execute({ sql: `SELECT * FROM jobs WHERE id IN (${placeholders})`, args: ids })).rows;
-        return res.json(jobs.map(job => withStatus(job, todayStr)));
+        const { data: jobs } = await sb.from('jobs').select('*').in('id', ids);
+        return res.json((jobs || []).map(job => withStatus(job, todayStr)));
     } catch (err) {
         console.error('GET /api/jobs/liked error:', err);
         return res.status(500).json({ error: 'Failed to fetch liked jobs', details: err.message });
@@ -468,7 +556,7 @@ router.get('/live', async (req, res) => {
         const db = getDb();
         const todayStr = getTodayIST();
         
-        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link';
+        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link, last_verified_at, created_at';
         const { whereStr, args } = buildFilters(req, 'LIVE');
         
         const query = `SELECT ${selectFields} FROM jobs ${whereStr} ORDER BY application_end_date ASC LIMIT 500`;
@@ -489,7 +577,7 @@ router.get('/upcoming', async (req, res) => {
         const db = getDb();
         const todayStr = getTodayIST();
         
-        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link';
+        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link, last_verified_at, created_at';
         const { whereStr, args } = buildFilters(req, 'UPCOMING');
         
         const query = `SELECT ${selectFields} FROM jobs ${whereStr} ORDER BY application_start_date ASC LIMIT 500`;
@@ -504,89 +592,20 @@ router.get('/upcoming', async (req, res) => {
     }
 });
 
-// GET /api/jobs/recommendations - Get AI recommendations based on applied exams
+// GET /api/jobs/recommendations - now handled by /api/ai/recommendations
 router.get('/recommendations', auth, async (req, res) => {
     try {
-        const db = getDb();
+        const sb = getSupabase();
         const todayStr = getTodayIST();
-        
-        // Get user's applied exams
-        const appliedResult = await db.execute({
-            sql: `SELECT j.* FROM applied_jobs a JOIN jobs j ON a.job_id = j.id WHERE a.user_id = ?`,
-            args: [req.user.id]
-        });
-        const appliedExams = appliedResult.rows;
-        const appliedIds = new Set(appliedExams.map(e => e.id));
-        
-        // If no applied exams, return LIVE non-technical exams as recommendations
-        if (appliedExams.length === 0) {
-            console.log('[recommendations] No applied exams, returning default recommendations');
-            const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link';
-            const result = await db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date ASC`);
-            const jobs = result.rows.map(job => withStatus(job, todayStr));
-            const defaultRecs = jobs
-                .filter(j => j.form_status === 'LIVE' && meetsTechnicalCriteria(j))
-                .slice(0, 20);
-            return res.json(defaultRecs);
-        }
-        
-        // Build syllabus profile from applied exams
-        const combinedSyllabus = appliedExams.map(e => e.syllabus || e.structured_syllabus_json || '').join(' ').toLowerCase();
-        const categories = [...new Set(appliedExams.map(e => e.job_category))];
-        
-        // Fetch all candidate exams (not applied)
-        const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link, syllabus, structured_syllabus_json';
-        const allJobs = (await db.execute(`SELECT ${selectFields} FROM jobs`)).rows;
-        const candidateJobs = allJobs
-            .filter(j => !appliedIds.has(j.id))
-            .map(job => withStatus(job, todayStr));
-        
-        // Score each candidate based on syllabus overlap and category match
-        const scoredJobs = candidateJobs.map(job => {
-            let score = 0;
-            
-            // Category match bonus
-            if (categories.includes(job.job_category)) score += 30;
-            
-            // Syllabus keyword overlap
-            const jobSyllabus = (job.syllabus || job.structured_syllabus_json || '').toLowerCase();
-            if (combinedSyllabus && jobSyllabus) {
-                const words1 = new Set(combinedSyllabus.split(/\W+/).filter(w => w.length > 3));
-                const words2 = new Set(jobSyllabus.split(/\W+/).filter(w => w.length > 3));
-                if (words1.size > 0 && words2.size > 0) {
-                    const intersection = [...words1].filter(x => words2.has(x)).length;
-                    const overlap = intersection / Math.min(words1.size, words2.size);
-                    score += Math.round(overlap * 70); // Up to 70 points for overlap
-                }
-            }
-            
-            // Status bonus (LIVE exams get priority)
-            if (job.form_status === 'LIVE') score += 20;
-            else if (job.form_status === 'UPCOMING') score += 10;
-            
-            return { ...job, recommendation_score: score };
-        });
-        
-        // Sort by score and return top recommendations
-        const recommendations = scoredJobs
-            .filter(j => j.recommendation_score > 0)
-            .sort((a, b) => b.recommendation_score - a.recommendation_score)
-            .slice(0, 30);
-        
-        // FALLBACK: If scoring yields nothing, return same-category LIVE exams
-        if (recommendations.length === 0) {
-            console.log('[recommendations] No scored recommendations, using category fallback');
-            const fallback = candidateJobs
-                .filter(j => categories.includes(j.job_category) && j.form_status === 'LIVE')
-                .slice(0, 20);
-            return res.json(fallback);
-        }
-        
-        res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
-        return res.json(recommendations);
+        const { data: popular } = await sb.from('jobs')
+            .select('id, job_name, organization, job_category, form_status, application_start_date, application_end_date, salary_min, salary_max, qualification_required, official_application_link, state, states, vacancies')
+            .in('form_status', ['LIVE', 'UPCOMING'])
+            .order('application_end_date', { ascending: false })
+            .limit(30);
+        return res.json((popular || []).map(j => withStatus(j, todayStr)));
     } catch (err) {
         console.error('GET /api/jobs/recommendations error:', err);
-        return res.status(500).json({ error: 'Failed to fetch recommendations', details: err.message });
+        return res.status(500).json({ error: 'Failed to fetch recommendations' });
     }
 });
 
@@ -606,38 +625,48 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/jobs/:id/like
 router.post('/:id/like', auth, async (req, res) => {
-    const jobId = req.params.id;
-    const userId = req.user.id;
-    const db = getDb();
-    const job = (await db.execute({ sql: 'SELECT id, job_name FROM jobs WHERE id = ?', args: [jobId] })).rows[0];
-    if (!job) return res.status(404).json({ error: 'Job not found' });
-
     try {
-        await ensureVercelUser(db, req.user);
-        await db.execute({
-            sql: 'INSERT INTO liked_jobs (id, user_id, job_id) VALUES (?, ?, ?) ON CONFLICT (user_id, job_id) DO NOTHING',
-            args: [generateId(), userId, jobId]
-        });
+        const sb = getSupabase();
+        const jobId = req.params.id;
+        const userId = req.user.id;
+        
+        // Check job exists
+        const { data: jobData } = await sb.from('jobs').select('id').eq('id', jobId).limit(1);
+        if (!jobData || jobData.length === 0) return res.status(404).json({ error: 'Job not found' });
+        
+        // Upsert (insert, ignore if exists)
+        const { error } = await sb.from('liked_jobs')
+            .upsert({ id: generateId(), user_id: userId, job_id: jobId }, { onConflict: 'user_id,job_id', ignoreDuplicates: true });
+        if (error && error.code !== '23505') throw error;
         return res.json({ liked: true });
     } catch (err) {
-        console.error('Like error:', err);
+        console.error('Like error:', err.message);
         return res.status(500).json({ error: 'Server error' });
     }
 });
 
 // DELETE /api/jobs/:id/like
 router.delete('/:id/like', auth, async (req, res) => {
-    const db = getDb();
-    await ensureVercelUser(db, req.user);
-    await db.execute({ sql: 'DELETE FROM liked_jobs WHERE user_id = ? AND job_id = ?', args: [req.user.id, req.params.id] });
-    return res.json({ liked: false });
+    try {
+        const sb = getSupabase();
+        await sb.from('liked_jobs').delete().eq('user_id', req.user.id).eq('job_id', req.params.id);
+        return res.json({ liked: false });
+    } catch (err) {
+        console.error('Unlike error:', err.message);
+        return res.status(500).json({ error: 'Server error' });
+    }
 });
 
 // GET /api/jobs/:id/liked-status
 router.get('/:id/liked-status', auth, async (req, res) => {
-    const db = getDb();
-    const row = (await db.execute({ sql: 'SELECT id FROM liked_jobs WHERE user_id = ? AND job_id = ?', args: [req.user.id, req.params.id] })).rows[0];
-    return res.json({ liked: !!row });
+    try {
+        const sb = getSupabase();
+        const { data } = await sb.from('liked_jobs').select('id').eq('user_id', req.user.id).eq('job_id', req.params.id).limit(1);
+        return res.json({ liked: (data || []).length > 0 });
+    } catch (err) {
+        console.error('Liked-status error:', err.message);
+        return res.json({ liked: false });
+    }
 });
 
 // POST /api/jobs/admin — add a job
