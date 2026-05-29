@@ -128,101 +128,42 @@ router.post('/profile-setup', auth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────
 // POST /api/auth/ensure-profile
 // Lightweight endpoint called on login — ensures user has a DB row.
-// If user doesn't exist yet, creates a minimal profile.
-// When migrating old users, updates their ID across ALL related tables.
+// The auth middleware already resolves the correct DB user ID.
 // ─────────────────────────────────────────────────────────────────────
 router.post('/ensure-profile', auth, async (req, res) => {
     try {
-        const supabaseUserId = req.user.id;
+        const userId = req.user.id;
         const email = req.user.email || '';
 
-        if (!supabaseUserId) {
+        if (!userId) {
             return res.status(400).json({ error: 'No user ID found in token' });
         }
 
         const db = getDb();
 
-        // Check by Supabase ID first
-        let user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [supabaseUserId] })).rows[0];
+        // Check by resolved ID (middleware already resolved DB id)
+        let user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [userId] })).rows[0];
 
-        if (user) {
-            return res.json({ user: safeUser(user) });
-        }
-
-        // Check by email (migration from old system)
-        if (email) {
+        if (!user && email) {
             user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] })).rows[0];
         }
 
-        if (user) {
-            const oldId = user.id;
-
-            // Migrate user ID across ALL related tables
-            try {
-                // Update main users table
-                await db.execute({ sql: 'UPDATE users SET id = ? WHERE email = ?', args: [supabaseUserId, email] });
-
-                // Update all related Turso tables that reference user_id
-                const relatedTables = [
-                    { table: 'notifications', col: 'user_id' },
-                    { table: 'roadmaps', col: 'user_id' },
-                    { table: 'tracker_plans', col: 'user_id' },
-                    { table: 'tracker_user_stats', col: 'user_id' },
-                    { table: 'tracker_user_targets', col: 'user_id' },
-                ];
-                for (const { table, col } of relatedTables) {
-                    try {
-                        await db.execute({ sql: `UPDATE ${table} SET ${col} = ? WHERE ${col} = ?`, args: [supabaseUserId, oldId] });
-                    } catch (_) { /* table might not exist yet */ }
-                }
-
-                // Update Supabase tables (liked_jobs, user_applications, reminders)
-                const sbUrl = process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co';
-                const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-                if (sbKey) {
-                    const supabaseTables = ['liked_jobs', 'user_applications', 'reminders'];
-                    for (const tbl of supabaseTables) {
-                        try {
-                            await fetch(`${sbUrl}/rest/v1/${tbl}?user_id=eq.${encodeURIComponent(oldId)}`, {
-                                method: 'PATCH',
-                                headers: {
-                                    'Authorization': `Bearer ${sbKey}`,
-                                    'apikey': sbKey,
-                                    'Content-Type': 'application/json',
-                                    'Prefer': 'return=minimal',
-                                },
-                                body: JSON.stringify({ user_id: supabaseUserId }),
-                            });
-                        } catch (_) { /* non-critical */ }
-                    }
-                }
-
-                console.log(`Migrated user ${oldId} → ${supabaseUserId} (${email})`);
-            } catch (migErr) {
-                console.warn('ID migration error:', migErr.message);
-            }
-
-            user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ? OR email = ?', args: [supabaseUserId, email] })).rows[0];
-        } else {
-            // Create minimal profile — use Google metadata if available
-            const fullName = req.user.full_name || req.user.name || '';
-            try {
-                const password_hash = await bcrypt.hash(generateId() + generateId(), 10);
-                await db.execute({
-                    sql: `INSERT INTO users (id, email, password_hash, full_name, age, category, state,
-                        qualification_type, qualification_status, current_year, current_semester, expected_graduation_year)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                      ON CONFLICT (id) DO NOTHING`,
-                    args: [
-                        supabaseUserId, email, password_hash,
-                        fullName, 0, 'General', 'All India',
-                        'Graduation', 'Completed', 0, 0, 0
-                    ]
-                });
-            } catch (insErr) {
-                console.warn('Insert conflict:', insErr.message);
-            }
-            user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ? OR email = ?', args: [supabaseUserId, email] })).rows[0];
+        if (!user) {
+            // Create minimal profile for new users
+            const fullName = req.user.full_name || '';
+            const password_hash = await bcrypt.hash(generateId() + generateId(), 10);
+            await db.execute({
+                sql: `INSERT INTO users (id, email, password_hash, full_name, age, category, state,
+                    qualification_type, qualification_status, current_year, current_semester, expected_graduation_year)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  ON CONFLICT (id) DO NOTHING`,
+                args: [
+                    userId, email, password_hash,
+                    fullName, 0, 'General', 'All India',
+                    'Graduation', 'Completed', 0, 0, 0
+                ]
+            });
+            user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ? OR email = ?', args: [userId, email] })).rows[0];
         }
 
         if (!user) {
