@@ -58,6 +58,7 @@ async function authMiddleware(req, res, next) {
                     id: authUser.id,
                     email: authUser.email || '',
                     role: authUser.role || 'authenticated',
+                    full_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || '',
                 };
                 return next();
             }

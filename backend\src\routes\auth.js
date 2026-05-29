@@ -133,45 +133,68 @@ router.post('/profile-setup', auth, async (req, res) => {
 router.post('/ensure-profile', auth, async (req, res) => {
     try {
         const supabaseUserId = req.user.id;
-        const email = req.user.email;
+        const email = req.user.email || '';
+
+        if (!supabaseUserId) {
+            return res.status(400).json({ error: 'No user ID found in token' });
+        }
 
         const db = getDb();
 
         // Check by Supabase ID first
         let user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [supabaseUserId] })).rows[0];
 
-        if (!user) {
-            // Check by email (migration from old system)
-            user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] })).rows[0];
+        if (user) {
+            return res.json({ user: safeUser(user) });
+        }
 
-            if (user) {
-                // Migrate: update their ID to Supabase user ID
+        // Check by email (migration from old system)
+        if (email) {
+            user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] })).rows[0];
+        }
+
+        if (user) {
+            // Migrate: update their ID to Supabase user ID
+            try {
                 await db.execute({
                     sql: 'UPDATE users SET id = ? WHERE email = ?',
                     args: [supabaseUserId, email]
                 });
-                user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [supabaseUserId] })).rows[0];
-            } else {
-                // Create minimal profile
+            } catch (migErr) {
+                // ID conflict — user might already exist with this ID, just fetch
+                console.warn('ID migration conflict, fetching existing:', migErr.message);
+            }
+            user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ? OR email = ?', args: [supabaseUserId, email] })).rows[0];
+        } else {
+            // Create minimal profile — use Google metadata if available
+            const fullName = req.user.full_name || req.user.name || '';
+            try {
                 const password_hash = await bcrypt.hash(generateId() + generateId(), 10);
                 await db.execute({
                     sql: `INSERT INTO users (id, email, password_hash, full_name, age, category, state,
                         qualification_type, qualification_status, current_year, current_semester, expected_graduation_year)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      ON CONFLICT (id) DO NOTHING`,
                     args: [
-                        supabaseUserId, email || '', password_hash,
-                        '', 0, 'General', 'All India',
+                        supabaseUserId, email, password_hash,
+                        fullName, 0, 'General', 'All India',
                         'Graduation', 'Completed', 0, 0, 0
                     ]
                 });
-                user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [supabaseUserId] })).rows[0];
+            } catch (insErr) {
+                console.warn('Insert conflict, trying to fetch existing:', insErr.message);
             }
+            user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ? OR email = ?', args: [supabaseUserId, email] })).rows[0];
+        }
+
+        if (!user) {
+            return res.status(500).json({ error: 'Failed to create or find user profile' });
         }
 
         return res.json({ user: safeUser(user) });
     } catch (err) {
         console.error('Ensure profile error:', err);
-        return res.status(500).json({ error: 'Server error ensuring profile' });
+        return res.status(500).json({ error: 'Server error ensuring profile', details: err.message });
     }
 });
 
