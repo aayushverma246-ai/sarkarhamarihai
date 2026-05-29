@@ -74,7 +74,7 @@ class VerificationEngine {
         if (!this.hasTimeBudget()) break;
         const cs = computeChecksum(rec);
         if (cs !== rec.sync_checksum) {
-          try { await this.db.execute({ sql: "UPDATE jobs SET sync_checksum = ?, verification_status = 'verified', last_synced_at = datetime('now') WHERE id = ?", args: [cs, rec.id] }); report.checksumUpdates++; } catch (e) { /* non-fatal */ }
+          try { await this.db.execute({ sql: "UPDATE jobs SET sync_checksum = ?, discovery_source = 'deep_scraped', last_synced_at = CURRENT_TIMESTAMP WHERE id = ?", args: [cs, rec.id] }); report.checksumUpdates++; } catch (e) { /* non-fatal */ }
         }
       }
 
@@ -109,7 +109,7 @@ class VerificationEngine {
           if (correct !== rec.form_status) { await this.db.execute({ sql: "UPDATE jobs SET form_status = ? WHERE id = ?", args: [correct, rec.id] }); report.statusUpdates++; }
         }
         const cs = computeChecksum(rec);
-        await this.db.execute({ sql: "UPDATE jobs SET sync_checksum = ?, verification_status = 'verified', last_synced_at = datetime('now') WHERE id = ?", args: [cs, rec.id] });
+        await this.db.execute({ sql: "UPDATE jobs SET sync_checksum = ?, discovery_source = 'deep_scraped', last_synced_at = CURRENT_TIMESTAMP WHERE id = ?", args: [cs, rec.id] });
         report.verified++;
       }
       report.durationMs = this.elapsed(); report.success = true;
@@ -137,6 +137,134 @@ class VerificationEngine {
     return report;
   }
 
+  /** Run Scraping Verification: visits official links in a small batch and verifies/updates database details */
+  async runScrapingVerification(limit = 6) {
+    this.startTime = Date.now();
+    this.runId = `vs_${Date.now().toString(36)}`;
+    const report = { runId: this.runId, type: 'scraping_verification', processed: 0, updated: 0, mismatches: 0, errors: [] };
+
+    // Lazy-load to avoid cold start overhead
+    const { scrapeExamData } = require('../services/scraper');
+
+    try {
+      const r = await this.db.execute(`
+        SELECT id, job_name, organization, official_application_link, application_start_date, application_end_date, salary_min, salary_max, selection_process
+        FROM jobs 
+        ORDER BY last_synced_at ASC NULLS FIRST 
+        LIMIT ${limit}
+      `);
+
+      const records = r.rows || [];
+      report.processed = records.length;
+
+      for (const rec of records) {
+        if (!this.hasTimeBudget()) {
+          report.errors.push('Time budget exceeded mid-scraping loop');
+          break;
+        }
+
+        try {
+          const scraped = await scrapeExamData(rec.job_name, rec.organization, rec.official_application_link);
+
+          if (scraped.scraped_successfully) {
+            let needsUpdate = false;
+            const updateArgs = [];
+            const updateFields = [];
+
+            // Compare & update Start Date
+            if (scraped.application_start_date && scraped.application_start_date !== rec.application_start_date) {
+              needsUpdate = true;
+              report.mismatches++;
+              await logMismatch({ runId: this.runId, recordId: rec.id, fieldName: 'application_start_date', actualValue: scraped.application_start_date, severity: 'warning' }, this.db);
+              updateFields.push("application_start_date = ?");
+              updateArgs.push(scraped.application_start_date);
+            }
+            // Compare & update End Date
+            if (scraped.application_end_date && scraped.application_end_date !== rec.application_end_date) {
+              needsUpdate = true;
+              report.mismatches++;
+              await logMismatch({ runId: this.runId, recordId: rec.id, fieldName: 'application_end_date', actualValue: scraped.application_end_date, severity: 'warning' }, this.db);
+              updateFields.push("application_end_date = ?");
+              updateArgs.push(scraped.application_end_date);
+            }
+
+            // Compare & update Min Salary
+            if (scraped.salary_min != null && scraped.salary_min !== rec.salary_min) {
+              needsUpdate = true;
+              updateFields.push("salary_min = ?");
+              updateArgs.push(scraped.salary_min);
+            }
+            // Compare & update Max Salary
+            if (scraped.salary_max != null && scraped.salary_max !== rec.salary_max) {
+              needsUpdate = true;
+              updateFields.push("salary_max = ?");
+              updateArgs.push(scraped.salary_max);
+            }
+
+            // Compare & update Selection Stages
+            if (scraped.selection_process && scraped.selection_process !== rec.selection_process && scraped.selection_process.trim().length > 15) {
+              needsUpdate = true;
+              updateFields.push("selection_process = ?");
+              updateArgs.push(scraped.selection_process);
+            }
+
+            // Update checksum, status and stamp
+            updateFields.push("discovery_source = 'deep_scraped'");
+            updateFields.push("last_synced_at = ?");
+            updateArgs.push(new Date().toISOString());
+
+            // Recompute active form state if dates were updated
+            const finalStart = scraped.application_start_date || rec.application_start_date;
+            const finalEnd = scraped.application_end_date || rec.application_end_date;
+            if (finalStart && finalEnd) {
+              const correctStatus = computeFormStatus(finalStart, finalEnd);
+              updateFields.push("form_status = ?");
+              updateArgs.push(correctStatus);
+            }
+
+            if (needsUpdate) {
+              updateArgs.push(rec.id);
+              const sql = `UPDATE jobs SET ${updateFields.join(', ')} WHERE id = ?`;
+              await this.db.execute({ sql, args: updateArgs });
+              report.updated++;
+            } else {
+              // Just mark synced
+              await this.db.execute({
+                sql: `UPDATE jobs SET discovery_source = 'deep_scraped', last_synced_at = ? WHERE id = ?`,
+                args: [new Date().toISOString(), rec.id]
+              });
+            }
+          } else {
+            report.errors.push(`Failed to scrape exam details for ${rec.id}: ${scraped.error}`);
+          }
+        } catch (jobErr) {
+          report.errors.push(`Error executing scraping job for ${rec.id}: ${jobErr.message}`);
+        }
+      }
+
+      report.durationMs = this.elapsed();
+      report.success = true;
+
+      await logOperation({
+        runId: this.runId,
+        operation: 'scraping_verification',
+        source: 'scraper_hub',
+        totalRecords: report.processed,
+        verified: report.processed - report.errors.length,
+        mismatches: report.mismatches,
+        synced: report.updated,
+        durationMs: report.durationMs
+      }, this.db);
+
+      return report;
+    } catch (err) {
+      report.success = false;
+      report.error = err.message;
+      report.durationMs = this.elapsed();
+      return report;
+    }
+  }
+
   /** Aggregated dashboard data */
   async getDashboardData() {
     const metrics = getMetrics();
@@ -145,7 +273,7 @@ class VerificationEngine {
     let dbStats = {};
     try {
       const total = await this.db.execute('SELECT COUNT(*) as cnt FROM jobs');
-      const verified = await this.db.execute("SELECT COUNT(*) as cnt FROM jobs WHERE verification_status = 'verified'");
+      const verified = await this.db.execute("SELECT COUNT(*) as cnt FROM jobs WHERE discovery_source = 'deep_scraped'");
       const catDist = await this.db.execute('SELECT job_category, COUNT(*) as cnt FROM jobs GROUP BY job_category ORDER BY cnt DESC');
       const statusDist = await this.db.execute('SELECT form_status, COUNT(*) as cnt FROM jobs GROUP BY form_status ORDER BY cnt DESC');
       dbStats = { totalRecords: Number(total.rows[0]?.cnt || 0), verifiedRecords: Number(verified.rows[0]?.cnt || 0), categoryDistribution: catDist.rows || [], statusDistribution: statusDist.rows || [] };

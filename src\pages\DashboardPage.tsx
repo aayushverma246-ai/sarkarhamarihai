@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef, startTransition } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, getCachedUser } from '../api';
+import { useAppDispatch, useAppSelector } from '../store';
+import { selectCurrentUser, selectJobsState } from '../store/selectors';
+import { fetchAllJobsAction, fetchAppliedJobsAction, toggleLikeAction, toggleApplyAction, toggleReminderAction } from '../store/actions/jobActions';
 import { Job } from '../types';
 import Navbar from '../components/Navbar';
 import JobCard from '../components/JobCard';
@@ -10,9 +13,8 @@ import { useLanguage } from '../i18n/LanguageContext';
 import RecommendationsWidget from '../components/RecommendationsWidget';
 import GovLoader from '../components/GovLoader';
 import { LayoutDashboard, Sparkles, Search, XCircle, ChevronDown } from 'lucide-react';
-import { meetsTechnicalCriteria, meetsAge, meetsQualification } from '../utils';
 
-import { CANONICAL_STATES, CANONICAL_CATEGORIES, indianStatesCanonical } from '../data/states';
+import { CANONICAL_STATES, CANONICAL_CATEGORIES } from '../data/states';
 
 export type TabKey = 'eligible' | 'eligibleLive' | 'partial' | 'live' | 'upcoming' | 'closed' | 'liked' | 'applied' | 'reminded' | 'all';
 
@@ -22,15 +24,18 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
   const cachedUser = getCachedUser();
-  const [user, setUser] = useState<any>(cachedUser || { full_name: 'Guest' });
 
-  const [rawAllJobs, setRawAllJobs] = useState<Job[]>([]);
-  const [rawEligibleJobs, setRawEligibleJobs] = useState<Job[]>([]);
-  const [rawPartialJobs, setRawPartialJobs] = useState<Job[]>([]);
-  const [likedJobs, setLikedJobs] = useState<Job[]>([]);
-  const [appliedJobs, setAppliedJobs] = useState<Job[]>([]);
-  const [remindedJobs, setRemindedJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
+  const dispatch = useAppDispatch();
+  const user = useAppSelector(selectCurrentUser) || cachedUser || { full_name: 'Guest' };
+  const {
+    allJobs: rawAllJobs,
+    rawEligibleJobs,
+    rawPartialJobs,
+    likedJobs,
+    appliedJobs,
+    remindedJobs,
+    loading
+  } = useAppSelector(selectJobsState);
   const [isCriticalLoaded, setIsCriticalLoaded] = useState(false);
 
   const [criticalError, setCriticalError] = useState<string | null>(null);
@@ -159,15 +164,11 @@ export default function DashboardPage() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [dbCategories, setDbCategories] = useState<string[]>([]);
-  const [dbStates, setDbStates] = useState<string[]>([]);
 
-  // Preload categories and states from DB for instant dropdowns
+  // Preload categories from DB for instant dropdowns
   useEffect(() => {
     api.getCategories().then(cats => {
       if (Array.isArray(cats) && cats.length > 1) setDbCategories(cats);
-    }).catch(() => { });
-    api.getStates().then(states => {
-      if (Array.isArray(states) && states.length > 0) setDbStates(states);
     }).catch(() => { });
   }, []);
 
@@ -323,98 +324,19 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!cachedUser) { navigate('/login'); return; }
 
-    const isMockGuest = localStorage.getItem('sarkar_token')?.startsWith('mock_guest_token_');
-
     const loadData = async () => {
-      setLoading(true);
       setIsCriticalLoaded(false);
-
       try {
-        // ── PHASE 1: Fetch user & accurately filtered jobs via exact SQL ──────
-        let authFailed = false;
-
-        const [me, jobsResponse] = await Promise.all([
-          api.getMe().catch(err => {
-            if (!isMockGuest && err.message && (err.message.includes('Session expired') || err.message.includes('401'))) {
-              authFailed = true;
-            }
-            return cachedUser || { full_name: 'Guest', age: 0 };
-          }),
-          api.getJobsAllMinimal().catch(err => {
-            console.error('getJobsAllMinimal failed:', err);
-            return { jobs: [] };
-          }),
-        ]);
-
-        if (authFailed && !isMockGuest) {
-          navigate('/login');
-          return;
-        }
-
-        const resolvedUser = (me && me.full_name) ? me : (cachedUser || { full_name: 'Guest', age: 0 });
-
-        // The database ALREADY exact-matched 'state' and 'category'. 
-        const validJobs = Array.isArray(jobsResponse?.jobs) ? jobsResponse.jobs : [];
-        setRawAllJobs(validJobs);
-
-        // Compute eligible/partial purely from the localized DB payload
-        const hasCompleteProfile = !!(resolvedUser?.qualification_type && resolvedUser?.age && resolvedUser.age > 0);
-        let strictlyEligible: Job[] = [];
-        let broadlyEligible: Job[] = [];
-        let strictPartial: Job[] = [];
-        let broadlyUpcoming: Job[] = [];
-
-        for (const j of validJobs) {
-          if (hasCompleteProfile) {
-            const isEligible = meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j) && meetsTechnicalCriteria(j);
-            if (isEligible) strictlyEligible.push(j);
-          }
-          if ((j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(j)) {
-            broadlyEligible.push(j);
-          }
-          if (hasCompleteProfile) {
-            const isPartial = (meetsQualification(resolvedUser, j) || meetsAge(resolvedUser, j)) && !(meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j)) && meetsTechnicalCriteria(j);
-            if (isPartial) strictPartial.push(j);
-          }
-          if (j.form_status === 'UPCOMING' && meetsTechnicalCriteria(j)) {
-            broadlyUpcoming.push(j);
-          }
-        }
-
-        const finalEligible = strictlyEligible.length > 0 ? strictlyEligible : broadlyEligible.slice(0, 100);
-        const finalPartial = strictPartial.length > 0 ? strictPartial : broadlyUpcoming.slice(0, 50);
-
-        setUser(resolvedUser);
-        setRawEligibleJobs(finalEligible);
-        setRawPartialJobs(finalPartial);
-
-        // ── RELEASE GovLoader immediately once jobs are ready ─────────────────
+        await dispatch(fetchAllJobsAction());
         setIsCriticalLoaded(true);
-        setLoading(false);
-
-        // ── PHASE 2: Load liked/applied silently in background (non-blocking) ──
-        Promise.all([
-          api.getLikedJobs().catch(() => []),
-          api.getAppliedJobs().catch(() => []),
-          api.getRemindedJobs().catch(() => []),
-          api.getNotifications().catch(() => { }),
-        ]).then(([liked, applied, reminded]) => {
-          setLikedJobs(Array.isArray(liked) ? liked : []);
-          setAppliedJobs(Array.isArray(applied) ? applied : []);
-          setRemindedJobs(Array.isArray(reminded) ? reminded : []);
-        });
-
       } catch (err: any) {
         console.error('Dashboard load failed:', err);
         setCriticalError(err.message || 'Failed to connect to official servers. Please check your connection.');
-        setLoading(false);
       }
     };
 
     const handleAppliedSync = () => {
-      api.getAppliedJobs().then(applied => {
-        setAppliedJobs(Array.isArray(applied) ? applied : []);
-      });
+      dispatch(fetchAppliedJobsAction());
     };
 
     window.addEventListener('app:appliedToggled', handleAppliedSync);
@@ -430,31 +352,19 @@ export default function DashboardPage() {
       clearInterval(hourlyRefresh);
     };
     // eslint-disable-next-line
-  }, []); // Only fetch once on mount. Filters are now instant client-side!
+  }, [dispatch]); // Only fetch once on mount. Filters are now instant client-side!
 
-  const handleLikeToggle = useCallback((job: Job, isBecomingLiked: boolean) => {
-    if (!isBecomingLiked) {
-      setLikedJobs((prev) => prev.filter((j) => j.id !== job.id));
-    } else {
-      setLikedJobs((prev) => [...prev, job]);
-    }
-  }, []);
+  const handleLikeToggle = useCallback((job: Job, currentlyLiked: boolean) => {
+    dispatch(toggleLikeAction(job, currentlyLiked));
+  }, [dispatch]);
 
-  const handleApplyToggle = useCallback((job: Job, isBecomingApplied: boolean) => {
-    if (!isBecomingApplied) {
-      setAppliedJobs((prev) => prev.filter((j) => j.id !== job.id));
-    } else {
-      setAppliedJobs((prev) => [...prev, job]);
-    }
-  }, []);
+  const handleApplyToggle = useCallback((job: Job, currentlyApplied: boolean) => {
+    dispatch(toggleApplyAction(job, currentlyApplied));
+  }, [dispatch]);
 
-  const handleRemindToggle = useCallback((job: Job, isBecomingReminded: boolean) => {
-    if (!isBecomingReminded) {
-      setRemindedJobs((prev) => prev.filter((j) => j.id !== job.id));
-    } else {
-      setRemindedJobs((prev) => [...prev, job]);
-    }
-  }, []);
+  const handleRemindToggle = useCallback((job: Job, currentlyReminded: boolean) => {
+    dispatch(toggleReminderAction(job, currentlyReminded));
+  }, [dispatch]);
 
   // RENDER CONTROL: GovLoader Integration (STAGE 1)
   if (criticalError) {
@@ -543,14 +453,14 @@ export default function DashboardPage() {
     let jobs = tabJobs(activeTab);
 
     // 1. STRICT State Filter
-    // When a specific state is selected:
-    //   - Show jobs explicitly tagged for that state OR 'All India'
-    //   - EXCLUDE jobs with no state, empty state, or a different specific state
+    // "All India" (default) = show ALL jobs (no state filtering)
+    // Specific state selected = show ONLY jobs tagged for that exact state
+    //   (NOT "All India" jobs — those flood the results and defeat the filter)
     if (selectedState && selectedState !== 'All India') {
       const lowerFilter = selectedState.toLowerCase();
       jobs = jobs.filter(j => {
         const jobState = (j.state || '').trim().toLowerCase();
-        // STRICT: Only exact match for the selected state
+        // Exact match for the selected state only
         if (jobState === lowerFilter) return true;
         // Match within multi-state array (for multi-state jobs)
         if (j.states && Array.isArray(j.states) && j.states.length > 0) {
@@ -941,7 +851,7 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="animate-fadeIn">
-                <RecommendationsWidget externalSearch={search} externalCategory={category} />
+                <RecommendationsWidget externalSearch={search} externalCategory={category} externalState={selectedState} />
               </div>
             )}
           </div>

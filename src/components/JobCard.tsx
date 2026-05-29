@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, getCachedUser } from '../api';
+import { getCachedUser } from '../api';
 import { Job } from '../types';
 import { useLanguage } from '../i18n/LanguageContext';
 import { CheckCircle2, Send, Eye, Clock, Bell } from 'lucide-react';
@@ -30,69 +30,35 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
 
   // STRICT RULE: If missing timestamps entirely, do not display.
   // Use last_verified_at as primary (matches JobDetailsPage), with fallbacks.
-  if (!(job as any).last_verified_at && !job.last_updated && !job.verified_at && !job.last_checked_at && !job.created_at) {
+  if (!(job as any).last_verified_at && !(job as any).last_updated && !(job as any).verified_at && !(job as any).last_checked_at && !(job as any).created_at) {
     return null;
   }
 
-  const activeTimestamp = (job as any).last_verified_at || job.verified_at || job.last_updated || job.last_checked_at || job.created_at;
+  const activeTimestamp = (job as any).last_verified_at || (job as any).verified_at || (job as any).last_updated || (job as any).last_checked_at || (job as any).created_at;
 
-  const handleLike = async (e: React.MouseEvent) => {
+  const handleLike = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     if (!user) return;
 
-    // Optimistic UI toggle immediately for that snappy, refined feel
-    const newLikedStatus = !isLiked;
-    onLikeToggle(newLikedStatus);
     // Trigger heartbeat pulse
     setLikeBeat(true);
     setTimeout(() => setLikeBeat(false), 400);
-
-    try {
-      if (newLikedStatus) {
-        await api.likeJob(job.id);
-      } else {
-        await api.unlikeJob(job.id);
-      }
-      window.dispatchEvent(new Event('app:likeToggled'));
-    } catch (err) {
-      console.error(err);
-      // Revert the UI if the server request fails
-      onLikeToggle(isLiked);
-    }
+    onLikeToggle(isLiked);
   };
 
-  const handleApply = async (e: React.MouseEvent) => {
+  const handleApply = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     if (!user) return;
-
-    const newAppliedStatus = !isApplied;
-    onApplyToggle(newAppliedStatus);
-
-    try {
-      await api.toggleApplied(job.id);
-      window.dispatchEvent(new Event('app:appliedToggled'));
-    } catch (err) {
-      console.error(err);
-      onApplyToggle(isApplied);
-    }
+    onApplyToggle(isApplied);
   };
 
-  const handleReminder = async (e: React.MouseEvent) => {
+  const handleReminder = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     if (!user) return;
-
-    const newStatus = !isReminded;
-    onRemindToggle?.(newStatus);
-    
-    try {
-      await api.toggleReminder(job.id);
-    } catch (err) {
-      console.error(err);
-      onRemindToggle?.(isReminded);
-    }
+    onRemindToggle?.(isReminded);
   };
 
   const isLive = job.form_status === 'LIVE';
@@ -147,7 +113,7 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
   let isEligible = false;
   if (user && userAge !== null && user.qualification_type) {
     const meetsAge = userAge >= job.minimum_age && userAge <= job.maximum_age;
-    
+
     const qualRank: Record<string, number> = {
       '10th': 1,
       '12th': 2,
@@ -155,11 +121,11 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
       'Graduation': 3,
       'Post Graduation': 4
     };
-    
+
     const userRank = qualRank[user.qualification_type] || 0;
     const reqRank = qualRank[job.qualification_required] || 0;
     const meetsQual = userRank >= reqRank;
-    
+
     isEligible = meetsAge && meetsQual;
   }
 
@@ -233,17 +199,16 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
         <div className="flex flex-col gap-2 flex-shrink-0">
           <button
             onClick={handleLike}
-            className={`relative p-2.5 rounded-xl border flex items-center justify-center transition-all group overflow-hidden ${
-              isLiked
-                ? 'bg-red-500/10 border-red-500/30 text-red-500'
-                : 'bg-[#191919] border-[#252525] text-gray-500 hover:text-gray-300 hover:bg-[#202020]'
-            }`}
+            className={`relative p-2.5 rounded-xl border flex items-center justify-center transition-all group overflow-hidden ${isLiked
+              ? 'bg-red-500/10 border-red-500/30 text-red-500'
+              : 'bg-[#191919] border-[#252525] text-gray-500 hover:text-gray-300 hover:bg-[#202020]'
+              }`}
           >
             <svg className={`w-4 h-4 ${likeBeat ? 'animate-heartbeat' : ''}`} viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
             </svg>
           </button>
- 
+
           {/* Restore Mark as Applied for liked exams strictly according to precision override */}
           {(isLive || isRecentlyClosed || job.form_status === 'CLOSED' || isLiked) && (
             <button
@@ -259,11 +224,10 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
           {(!isLive) && (
             <button
               onClick={handleReminder}
-              className={`p-2.5 rounded-xl border flex items-center justify-center transition-all group ${
-                isReminded
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-500'
-                  : 'bg-[#191919] border-[#252525] text-gray-500 hover:text-gray-300 hover:bg-[#202020]'
-              }`}
+              className={`p-2.5 rounded-xl border flex items-center justify-center transition-all group ${isReminded
+                ? 'bg-amber-500/10 border-amber-500/30 text-amber-500'
+                : 'bg-[#191919] border-[#252525] text-gray-500 hover:text-gray-300 hover:bg-[#202020]'
+                }`}
               title={isReminded ? 'Reminder Set' : 'Remind me when opens'}
             >
               <Bell className="w-5 h-5 group-hover:scale-110 transition-transform duration-300" />
@@ -273,11 +237,10 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
           {/* Mark as Applied (Globally exposed as requested) */}
           <button
             onClick={handleApply}
-            className={`p-2.5 rounded-xl border flex items-center justify-center transition-all group ${
-              isApplied
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'
-                : 'bg-[#191919] border-[#252525] text-gray-500 hover:text-gray-300 hover:bg-[#202020]'
-            }`}
+            className={`p-2.5 rounded-xl border flex items-center justify-center transition-all group ${isApplied
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500'
+              : 'bg-[#191919] border-[#252525] text-gray-500 hover:text-gray-300 hover:bg-[#202020]'
+              }`}
             title={isApplied ? t('job.applied') : "Mark as Applied"}
           >
             {isApplied ? (
@@ -288,7 +251,7 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
           </button>
         </div>
       </div>
- 
+
       <div className="grid grid-cols-2 gap-2 mt-4">
         <div className="bg-[#090909]/40 rounded-lg p-2.5 border border-[#141414]">
           <p className="text-[10px] text-gray-700 font-bold uppercase tracking-wider">{t('job.age')}</p>
@@ -305,7 +268,7 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
           </div>
         )}
       </div>
- 
+
       {(isLive || job.form_status === 'UPCOMING') && (
         <div className="flex items-center justify-between mt-4">
           <p className="text-[10px] text-gray-700 font-medium">
@@ -337,9 +300,9 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
       )}
       {/* Hover Reveal Arrow Indicator */}
       <div className="absolute bottom-5 right-5 opacity-0 group-hover:opacity-100 transform translate-x-2 group-hover:translate-x-0 transition-all duration-300 text-green-600 dark:text-green-500">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-          </svg>
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+        </svg>
       </div>
 
     </div>

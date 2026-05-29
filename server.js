@@ -181,6 +181,7 @@ app.use('/api/syllabus', require('./backend/src/routes/syllabus'));
 app.use('/api/cron', cronRouter);
 app.use('/api/tracker', require('./backend/src/routes/tracker')); // ADDED: Tracker API Routes
 app.use('/api/ai', require('./backend/src/routes/ai')); // NEW AI rebuild route
+app.use('/api/exam', require('./backend/src/routes/exam')); // NEW Exam dynamic stats routes
 app.use('/api/health', require('./backend/src/routes/health')); // Robust DB monitors
 app.use('/api/audit', require('./backend/src/routes/audit')); // Data audit system
 app.use('/api/verifier', require('./backend/src/routes/verifier')); // Dynamic Data Verifier System

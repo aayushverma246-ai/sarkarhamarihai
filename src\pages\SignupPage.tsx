@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, setToken, setCachedUser } from '../api';
+import { api, setCachedUser } from '../api';
+import { supabase } from '../utils/supabase';
 import { indianStates } from '../data/states';
 import Logo from '../assets/logo';
+import GovLoader from '../components/GovLoader';
 
 export default function SignupPage() {
   const navigate = useNavigate();
@@ -49,14 +51,61 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
-      const { token, user } = await api.signup({
-        ...form,
+      // Step 1: Create user in Supabase Auth
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: form.email,
+        password: form.password,
+        options: {
+          data: {
+            full_name: form.full_name,
+          }
+        }
+      });
+
+      if (signUpError) {
+        throw new Error(signUpError.message);
+      }
+
+      if (!data.user) {
+        throw new Error('Signup failed. Please try again.');
+      }
+
+      // If email confirmation is required, Supabase won't return a session
+      if (!data.session) {
+        // Auto sign-in to get a session (works if email confirmation is disabled)
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: form.email,
+          password: form.password,
+        });
+
+        if (signInError) {
+          // Email confirmation might be required
+          setError('Account created! Please check your email to confirm, then log in.');
+          setLoading(false);
+          return;
+        }
+
+        if (!signInData.session) {
+          setError('Account created! Please check your email to confirm, then log in.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Step 2: Create profile in our database
+      const profileData = {
+        full_name: form.full_name,
         age: ageNum,
+        category: form.category,
+        state: form.state,
+        qualification_type: form.qualification_type,
+        qualification_status: form.qualification_status,
         current_year: parseInt(form.current_year) || 0,
         current_semester: parseInt(form.current_semester) || 0,
         expected_graduation_year: parseInt(form.expected_graduation_year) || 0,
-      });
-      setToken(token);
+      };
+
+      const { user } = await api.setupProfile(profileData);
       setCachedUser(user);
       navigate('/dashboard');
     } catch (err) {
@@ -65,8 +114,6 @@ export default function SignupPage() {
       setLoading(false);
     }
   };
-
-  const inputClass = "w-full px-3.5 py-2.5 rounded-lg bg-[#141414] border border-[#252525] text-gray-200 focus:ring-1 focus:ring-red-700 focus:border-red-700 outline-none transition-all text-sm placeholder-gray-600";
 
   return (
     <div className="min-h-screen bg-[#050505] flex flex-col cap-safe-all relative overflow-hidden font-sans selection:bg-red-600/30 selection:text-white pb-8">
@@ -225,10 +272,9 @@ export default function SignupPage() {
           <button
             onClick={async () => {
               setLoading(true);
-              const { supabase } = await import('../utils/supabase');
               const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
               const redirectUrl = isNative
-                ? 'https://sarkarhamarihai.vercel.app/auth/callback'
+                ? 'https://sarkarhamaraihai.vercel.app/auth/callback'
                 : window.location.origin + '/auth/callback';
               await supabase.auth.signInWithOAuth({
                 provider: 'google',

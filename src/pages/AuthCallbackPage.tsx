@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
-import { api, setToken, setCachedUser } from '../api';
+import { api, setCachedUser } from '../api';
 import GovLoader from '../components/GovLoader';
 
 export default function AuthCallbackPage() {
@@ -19,11 +19,11 @@ export default function AuthCallbackPage() {
                 if (sessionError) throw sessionError;
                 if (!session) throw new Error('No session found. Please try logging in again.');
 
-                // Send the Supabase access token to our backend to exchange for our native JWT
-                const { token, user } = await api.loginWithGoogle(session.access_token);
+                // Ensure the user has a profile in our database
+                // The Supabase access token is used as the Bearer token automatically by api.ts
+                const { user } = await api.ensureProfile();
                 
                 if (mounted) {
-                    setToken(token);
                     setCachedUser(user);
                     navigate('/dashboard', { replace: true });
                 }
@@ -48,7 +48,7 @@ export default function AuthCallbackPage() {
                     {error}
                 </div>
             ) : (
-                <GovLoader message="Completing Google Authentication..." />
+                <GovLoader message="Completing Authentication..." />
             )}
         </div>
     );

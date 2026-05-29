@@ -147,7 +147,7 @@ router.get('/run', async (req, res) => {
     }
 
     // ── Step 4: Apply fixes ────────────────────────────────────────────
-    
+
     // 4a. Remove invalid entries
     if (invalidIds.length > 0) {
       for (const id of invalidIds) {
@@ -283,6 +283,114 @@ router.get('/report', async (req, res) => {
   res.json({ success: true, report: lastAuditReport });
 });
 
+// ── GET /api/audit/scrape-job — Run scrape for single job ──────────────────
+router.get('/scrape-job', async (req, res) => {
+  const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+  const authHeader = req.headers.authorization || '';
+  const secret = req.query.secret || authHeader.replace('Bearer ', '');
+  if (secret !== cronSecret && req.query.force !== 'true') {
+    return res.status(401).json({ error: 'Unauthorized — provide ?secret=YOUR_CRON_SECRET' });
+  }
+
+  const { id } = req.query;
+  if (!id) {
+    // raw text parsing playground
+    const { job_name, organization, link } = req.query;
+    if (!job_name || !organization) {
+      return res.status(400).json({ error: 'Missing parameter: id OR (job_name AND organization)' });
+    }
+    const { scrapeExamData } = require('../services/scraper');
+    const result = await scrapeExamData(job_name, organization, link);
+    return res.json({ success: true, fromRawQuery: true, data: result });
+  }
+
+  const db = getDb();
+  try {
+    const jobRes = await db.execute({
+      sql: 'SELECT * FROM jobs WHERE id = ?',
+      args: [id]
+    });
+    const job = jobRes.rows?.[0];
+    if (!job) return res.status(404).json({ error: `Job with ID ${id} not found` });
+
+    const { scrapeExamData } = require('../services/scraper');
+    const scraped = await scrapeExamData(job.job_name, job.organization, job.official_application_link);
+
+    if (scraped.scraped_successfully) {
+      const updateArgs = [];
+      const updateFields = [];
+
+      if (scraped.application_start_date) {
+        updateFields.push("application_start_date = ?");
+        updateArgs.push(scraped.application_start_date);
+      }
+      if (scraped.application_end_date) {
+        updateFields.push("application_end_date = ?");
+        updateArgs.push(scraped.application_end_date);
+      }
+      if (scraped.salary_min != null) {
+        updateFields.push("salary_min = ?");
+        updateArgs.push(scraped.salary_min);
+      }
+      if (scraped.salary_max != null) {
+        updateFields.push("salary_max = ?");
+        updateArgs.push(scraped.salary_max);
+      }
+      if (scraped.selection_process && scraped.selection_process.trim().length > 15) {
+        updateFields.push("selection_process = ?");
+        updateArgs.push(scraped.selection_process);
+      }
+
+      updateFields.push("discovery_source = 'deep_scraped'");
+      updateFields.push("last_synced_at = ?");
+      updateArgs.push(new Date().toISOString());
+
+      const finalStart = scraped.application_start_date || job.application_start_date;
+      const finalEnd = scraped.application_end_date || job.application_end_date;
+      if (finalStart && finalEnd) {
+        const { computeFormStatus } = require('../engines/validator');
+        const correctStatus = computeFormStatus(finalStart, finalEnd);
+        updateFields.push("form_status = ?");
+        updateArgs.push(correctStatus);
+      }
+
+      updateArgs.push(id);
+      await db.execute({
+        sql: `UPDATE jobs SET ${updateFields.join(', ')} WHERE id = ?`,
+        args: updateArgs
+      });
+
+      return res.json({ success: true, updated: true, scrapedData: scraped });
+    } else {
+      return res.status(500).json({ success: false, error: scraped.error, logs: scraped.logs });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /api/audit/scrape-batch — Run batch scraper ──────────────────────
+router.get('/scrape-batch', async (req, res) => {
+  const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+  const authHeader = req.headers.authorization || '';
+  const secret = req.query.secret || authHeader.replace('Bearer ', '');
+  if (secret !== cronSecret && req.query.force !== 'true') {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const limit = Math.min(Number(req.query.limit) || 5, 20);
+  const db = getDb();
+
+  try {
+    const { VerificationEngine } = require('../engines/verification-engine');
+    const engine = new VerificationEngine(db, { timeBudgetMs: 50000 });
+    const result = await engine.runScrapingVerification(limit);
+    return res.json({ success: true, result });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /api/audit/stats — Quick DB stats without modification ─────────────
 router.get('/stats', async (req, res) => {
   try {
@@ -314,4 +422,26 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+// ── GET /api/audit/deep-audited-sync — Triggers deep autonomous validation & rectification ──
+router.get('/deep-audited-sync', async (req, res) => {
+  const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+  const authHeader = req.headers.authorization || '';
+  const secret = req.query.secret || authHeader.replace('Bearer ', '');
+  if (secret !== cronSecret && req.query.force !== 'true') {
+    return res.status(401).json({ error: 'Unauthorized — provide ?secret=YOUR_CRON_SECRET' });
+  }
+
+  const limit = Math.min(Number(req.query.limit) || 5, 20);
+  const id = req.query.id || null;
+
+  try {
+    const { runDeepAudit } = require('../../scripts/db_deep_audit');
+    const result = await runDeepAudit({ heal: true, limit, recordId: id });
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
+

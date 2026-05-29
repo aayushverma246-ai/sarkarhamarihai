@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, getCachedUser } from '../api';
-import { Job, Roadmap as RoadmapType } from '../types';
+import { Job } from '../types';
 import Navbar from '../components/Navbar';
 import GovLoader from '../components/GovLoader';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -68,7 +68,7 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 function getSelectionSteps(selectionProcess: string): string[] | null {
   if (!selectionProcess || !selectionProcess.trim()) return null;
   const raw = selectionProcess.trim();
-  
+
   // 0. JSON array
   if (raw.startsWith('[') && raw.endsWith(']')) {
     try {
@@ -76,14 +76,14 @@ function getSelectionSteps(selectionProcess: string): string[] | null {
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed.map(s => String(s).trim()).filter(Boolean);
       }
-    } catch (_) {}
+    } catch (_) { }
   }
-  
+
   // 1. Pipe delimited
   if (raw.includes('|')) {
     return raw.split('|').map(s => s.trim()).filter(Boolean);
   }
-  
+
   // 2. Arrow delimited (→, =>, ->)
   if (raw.includes('→') || raw.includes('=>') || raw.includes('->')) {
     return raw.split(/→|=>|->/).map(s => s.trim()).filter(Boolean);
@@ -105,7 +105,7 @@ function getSelectionSteps(selectionProcess: string): string[] | null {
 
   // 5. Comma separated lists (if reasonably short and has multiple commas)
   if (raw.split(',').length >= 3 && raw.length < 150) {
-     return raw.split(',').map(s => s.trim()).filter(Boolean);
+    return raw.split(',').map(s => s.trim()).filter(Boolean);
   }
 
   // Last resort: just return the whole string as one step
@@ -560,13 +560,13 @@ export default function JobDetailsPage() {
         if (cached) {
           // Auth-required calls are non-critical — load them independently
           // using .catch so any 401 failures don't crash the whole page
-          api.getMe().then(me => { if (me) setUser(me); }).catch(() => {});
-          api.getLikedStatus(id).then(s => setLiked(s?.liked ?? false)).catch(() => {});
-          api.getAppliedStatus(id).then(s => setApplied(s?.applied ?? false)).catch(() => {});
-          api.getReminderStatus(id).then(s => setReminding(s?.reminders_enabled ?? false)).catch(() => {});
+          api.getMe().then(me => { if (me) setUser(me); }).catch(() => { });
+          api.getLikedStatus(id).then(s => setLiked(s?.liked ?? false)).catch(() => { });
+          api.getAppliedStatus(id).then(s => setApplied(s?.applied ?? false)).catch(() => { });
+          api.getReminderStatus(id).then(s => setReminding(s?.reminders_enabled ?? false)).catch(() => { });
         }
-        try { 
-          const r = await api.getRoadmap(id); 
+        try {
+          const r = await api.getRoadmap(id);
           setRoadmap(r.roadmap_content);
         } catch { /* none yet */ }
       } catch (err) {
@@ -582,23 +582,26 @@ export default function JobDetailsPage() {
     if (!cached) { navigate('/login'); return; }
     if (!job) return;
 
-    // Snappy Optimistic UI Toggle
+    // Snappy Optimistic UI Toggle for both like and applied
     setLikeLoading(true);
-    const newLikedStatus = !liked;
-    setLiked(newLikedStatus);
+    const newStatus = !liked;
+    setLiked(newStatus);
+    setApplied(newStatus);
 
     try {
-      if (newLikedStatus) {
+      if (newStatus) {
         await api.likeJob(job.id);
       } else {
         await api.unlikeJob(job.id);
       }
-      // Broadcast to the Navbar Notification Bell
+      // Broadcast to the Navbar Notification Bell and store sync
       window.dispatchEvent(new Event('app:likeToggled'));
+      window.dispatchEvent(new Event('app:appliedToggled'));
     } catch (err) {
       console.error(err);
       // Revert if server fails
       setLiked(liked);
+      setApplied(applied);
     } finally {
       setLikeLoading(false);
     }
@@ -608,14 +611,18 @@ export default function JobDetailsPage() {
     if (!cached) { navigate('/login'); return; }
     if (!job) return;
     setAppliedLoading(true);
-    const newAppliedStatus = !applied;
-    setApplied(newAppliedStatus);
+    const newStatus = !applied;
+    setApplied(newStatus);
+    setLiked(newStatus);
 
     try {
       await api.toggleApplied(job.id);
+      window.dispatchEvent(new Event('app:likeToggled'));
+      window.dispatchEvent(new Event('app:appliedToggled'));
     } catch (err) {
       console.error(err);
       setApplied(applied);
+      setLiked(liked);
     } finally {
       setAppliedLoading(false);
     }
@@ -734,7 +741,7 @@ export default function JobDetailsPage() {
       console.error('[V14 MasterPlan] API Fail:', err);
       // Client-side fallback
       const syllabus = (job as any).syllabus || job.job_name;
-      const kw = syllabus.split(/[,;|(\n]/).map((s:string) => s.trim()).filter((s:string) => s.length > 2);
+      const kw = syllabus.split(/[,;|(\n]/).map((s: string) => s.trim()).filter((s: string) => s.length > 2);
       const chunk = Math.max(1, Math.ceil(kw.length / 4));
       const fallback = {
         overview: { exam_name: job.job_name, readiness_score: 15, feasibility_status: 'Achievable', recommended_daily_hours: 4, days_remaining: 90, key_insight: 'Start with fundamentals, build daily consistency.', is_ready: true },
@@ -985,7 +992,7 @@ export default function JobDetailsPage() {
                   {daysRemaining === 0 ? "⚠️ Closing Today" : `⏳ ${daysRemaining} ${daysRemaining === 1 ? 'day left' : t('job.daysLeft')}`}
                 </span>
               )}
-              
+
               {(isRecentlyClosed || job.form_status === 'CLOSED' || job.form_status === 'UPCOMING') && !applied && (
                 <span className={`inline-flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-xl text-xs sm:text-sm font-black flex-1 sm:flex-none uppercase tracking-wider text-center leading-tight whitespace-normal ${isRecentlyClosed
                   ? 'bg-orange-950/40 border border-orange-900/30 text-orange-500 shadow-xl shadow-orange-900/20'
@@ -1244,18 +1251,18 @@ export default function JobDetailsPage() {
               </button>
               <button
                 onClick={async () => {
-                   setShowUnmarkConfirm(false);
-                   setAppliedLoading(true);
-                   try {
-                     await api.unmarkApplied(job.id);
-                     setApplied(false);
-                     setShowUnmarkSuccess(true);
-                     setTimeout(() => setShowUnmarkSuccess(false), 3000);
-                   } catch (err) {
-                     console.error(err);
-                   } finally {
-                     setAppliedLoading(false);
-                   }
+                  setShowUnmarkConfirm(false);
+                  setAppliedLoading(true);
+                  try {
+                    await api.unmarkApplied(job.id);
+                    setApplied(false);
+                    setShowUnmarkSuccess(true);
+                    setTimeout(() => setShowUnmarkSuccess(false), 3000);
+                  } catch (err) {
+                    console.error(err);
+                  } finally {
+                    setAppliedLoading(false);
+                  }
                 }}
                 className="flex-1 px-4 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-900/20"
               >

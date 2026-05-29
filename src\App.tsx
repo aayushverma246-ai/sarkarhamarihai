@@ -1,6 +1,6 @@
 import React, { Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { getToken, getCachedUser } from './api';
+import { getCachedUser } from './api';
 import GovLoader from './components/GovLoader';
 import { LanguageProvider } from './i18n/LanguageContext';
 
@@ -21,9 +21,9 @@ const VerifierDashboard = React.lazy(() => import('./pages/VerifierDashboard'));
 const LandingPage = React.lazy(() => import('./pages/LandingPage'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const token = getToken();
+  // Check for cached user — set by both Supabase auth and guest login flows
   const user = getCachedUser();
-  if (!token || !user) {
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
   return <>{children}</>;
@@ -39,11 +39,10 @@ function SuspenseFallback() {
   );
 }
 
-// Smart root redirect: if logged in → dashboard, else → login
+// Smart root redirect: if logged in → dashboard, else → landing page
 function RootRedirect() {
-  const token = getToken();
   const user = getCachedUser();
-  if (token && user) {
+  if (user) {
     return <Navigate to="/dashboard" replace />;
   }
   return <LandingPage />;

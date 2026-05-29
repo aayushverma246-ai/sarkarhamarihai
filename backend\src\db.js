@@ -102,6 +102,9 @@ async function executeViaPg(transformed, args) {
  * Falls back to raw fetch against PostgREST for complex queries.
  */
 async function executeViaRest(originalSql, transformed, args) {
+  if (transformed && transformed.trim() === 'SELECT 1') {
+    return { rows: [{ '?column?': 1 }], rowsAffected: 0 };
+  }
   const sb = getSupabaseClient();
 
   // ── SELECT queries ──
@@ -115,7 +118,20 @@ async function executeViaRest(originalSql, transformed, args) {
 
     // Columns
     const cols = selectCols.trim() === '*' ? '*' : selectCols.trim();
-    query = query.select(cols);
+    const countMatch = cols.match(/COUNT\s*\(\s*(distinct\s+)?(\w+|\*)\s*\)\s+as\s+(\w+)/i);
+
+    if (countMatch) {
+      const isDistinct = !!countMatch[1];
+      const fieldName = countMatch[2];
+
+      if (fieldName === '*' && !isDistinct) {
+        query = query.select('*', { count: 'exact', head: true });
+      } else {
+        query = query.select(fieldName);
+      }
+    } else {
+      query = query.select(cols);
+    }
 
     // Parse WHERE conditions (simple equality/comparison)
     const whereMatch = rest.match(/WHERE\s+(.+?)(?:\s+ORDER|\s+LIMIT|\s+GROUP|$)/is);
@@ -136,14 +152,14 @@ async function executeViaRest(originalSql, transformed, args) {
         if (orParts.length > 1) {
           // Complex OR condition
           const orArr = orParts.map(part => {
-             const eqMatch = part.match(/^\s*(\w+)\s*=\s*'([^']*)'\s*$/);
-             if (eqMatch) return `${eqMatch[1]}.eq.${eqMatch[2]}`;
-             const numMatch = part.match(/^\s*(\w+)\s*=\s*(-?\d+)\s*$/);
-             if (numMatch) return `${numMatch[1]}.eq.${numMatch[2]}`;
-             return '';
+            const eqMatch = part.match(/^\s*(\w+)\s*=\s*'([^']*)'\s*$/);
+            if (eqMatch) return `${eqMatch[1]}.eq.${eqMatch[2]}`;
+            const numMatch = part.match(/^\s*(\w+)\s*=\s*(-?\d+)\s*$/);
+            if (numMatch) return `${numMatch[1]}.eq.${numMatch[2]}`;
+            return '';
           }).filter(x => x !== '');
           if (orArr.length > 0) {
-             q = q.or(orArr.join(','));
+            q = q.or(orArr.join(','));
           }
           return q;
         }
@@ -163,7 +179,6 @@ async function executeViaRest(originalSql, transformed, args) {
 
           if (eqMatch) q = q.eq(eqMatch[1], eqMatch[2]);
           else if (numEqMatch) q = q.eq(numEqMatch[1], Number(numEqMatch[2]));
-      else if (neqMatch) q = q.neq(neqMatch[1], neqMatch[2]);
           else if (neqMatch) q = q.neq(neqMatch[1], neqMatch[2]);
           else if (isNullMatch) q = q.is(isNullMatch[1], null);
           else if (inMatch) {
@@ -203,12 +218,30 @@ async function executeViaRest(originalSql, transformed, args) {
       query = query.limit(parseInt(limitMatch[1]));
     }
 
-    // COUNT(*) special case
-    if (cols.match(/COUNT\s*\(\s*\*?\s*\)\s+as\s+\w+/i) || cols.match(/COUNT\s*\(\s*\*\s*\)/i)) {
-      const { count, error } = await sb.from(table).select('*', { count: 'exact', head: true });
-      if (error) throw new Error(error.message);
-      const alias = (cols.match(/COUNT\s*\(\s*\*?\s*\)\s+as\s+(\w+)/i) || [])[1] || 'count';
-      return { rows: [{ [alias]: count }], rowsAffected: 0 };
+    // COUNT(*) or COUNT(DISTINCT column) special case
+    if (countMatch) {
+      const isDistinct = !!countMatch[1];
+      const fieldName = countMatch[2];
+      const alias = countMatch[3];
+
+      if (fieldName === '*' && !isDistinct) {
+        const { count, error } = await query;
+        if (error) throw new Error(error.message);
+        return { rows: [{ [alias]: count }], rowsAffected: 0 };
+      } else {
+        const { data, error } = await query;
+        if (error) throw new Error(error.message);
+
+        const rows = data || [];
+        let cnt = 0;
+        if (isDistinct) {
+          const uniques = new Set(rows.map(r => r[fieldName]).filter(val => val !== null && val !== undefined));
+          cnt = uniques.size;
+        } else {
+          cnt = rows.filter(r => r[fieldName] !== null && r[fieldName] !== undefined).length;
+        }
+        return { rows: [{ [alias]: cnt }], rowsAffected: 0 };
+      }
     }
 
     const { data, error } = await query;
@@ -280,7 +313,7 @@ async function executeViaRest(originalSql, transformed, args) {
       const col = pair.substring(0, eqIdx).trim();
       let rawVal = pair.substring(eqIdx + 1).trim();
       let val = resolveArgs(rawVal);
-      
+
       if (val.startsWith('|||') && val.endsWith('|||')) {
         val = val.slice(3, -3);
       } else if (val === 'null') {
@@ -382,7 +415,7 @@ async function execute(sqlOrObj, argsParam) {
       // JOINs: manually handle the common patterns via multiple SDK calls
       return await executeJoinFallback(sql, transformed, queryArgs);
     }
-    console.error('[DB] REST error:', err.message);
+    console.error('[DB] REST error:', err.message, err.stack, 'SQL:', sql, 'transformed:', transformed, 'args:', queryArgs);
     throw err;
   }
 }

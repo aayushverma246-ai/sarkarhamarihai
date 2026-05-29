@@ -3,7 +3,7 @@ require('dotenv').config();
 
 const apiKey = process.env.GEMINI_API_KEY_NEW ? process.env.GEMINI_API_KEY_NEW.trim() : null;
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
-const MODEL_NAME = "gemini-2.0-flash";
+const MODEL_NAME = "gemini-flash-latest";
 
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 

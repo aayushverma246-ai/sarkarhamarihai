@@ -1,5 +1,7 @@
 // Central API client for SarkarHamariHai
-// All requests go through here — handles JWT auth, errors, and base URL.
+// All requests go through here — handles Supabase auth, errors, and base URL.
+
+import { supabase } from './utils/supabase';
 
 // In Capacitor (mobile app): Must use the absolute production URL
 // because relative '/api' resolves to the WebView's fake hostname.
@@ -12,7 +14,7 @@ function getApiBase(): string {
     if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform()) {
         // Prefer env var if it's already absolute, otherwise use production
         if (envUrl && envUrl.startsWith('http')) return envUrl;
-        return 'https://sarkarhamarihai.vercel.app/api';
+        return 'https://sarkarhamaraihai.vercel.app/api';
     }
 
     return envUrl || 'http://localhost:3001/api';
@@ -20,9 +22,21 @@ function getApiBase(): string {
 
 const API_BASE: string = getApiBase();
 
-
-const TOKEN_KEY = 'sarkar_token';
 const USER_KEY = 'sarkar_user';
+
+// ── Supabase Session Token Helper ────────────────────────────────────
+// Gets the current Supabase access token for API requests
+async function getSupabaseToken(): Promise<string | null> {
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        return session?.access_token || null;
+    } catch {
+        return null;
+    }
+}
+
+// ── Legacy token support (for guest mock tokens) ─────────────────────
+const TOKEN_KEY = 'sarkar_token';
 
 export function getToken(): string | null {
     return localStorage.getItem(TOKEN_KEY);
@@ -50,6 +64,19 @@ export function getCachedUser(): any | null {
 
 export function setCachedUser(user: any): void {
     localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+// ── Check if user is authenticated (Supabase session OR guest token) ──
+export async function isAuthenticated(): Promise<boolean> {
+    // Check Supabase session first
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) return true;
+    } catch { /* ignore */ }
+
+    // Check legacy/guest token
+    const token = getToken();
+    return !!token;
 }
 
 // ── In-memory API cache (makes back-navigation instant) ──────────────────
@@ -89,7 +116,12 @@ async function request<T>(
     }
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    const token = getToken();
+
+    // Get auth token: try Supabase session first, then fall back to legacy token
+    const supabaseToken = await getSupabaseToken();
+    const legacyToken = getToken();
+    const token = supabaseToken || legacyToken;
+
     if (requiresAuth || token) {
         if (token) headers['Authorization'] = `Bearer ${token}`;
     }
@@ -124,7 +156,7 @@ async function request<T>(
 
         if (res.status === 401) {
             // ZERO FAILURE GUEST LOGIN: If this is an offline mock token, suppress logout
-            if (token?.startsWith('mock_guest_token_')) {
+            if (legacyToken?.startsWith('mock_guest_token_')) {
                 console.warn('[Offline Mode] Backend returned 401 for mock guest token, suppressing logout.');
                 return null as unknown as T; // Return null to prevent UI crashes requiring array
             }
@@ -152,7 +184,7 @@ async function request<T>(
 
         // Handle abort/timeout
         if (err.name === 'AbortError') {
-            if (token?.startsWith('mock_guest_token_')) return null as unknown as T;
+            if (legacyToken?.startsWith('mock_guest_token_')) return null as unknown as T;
             throw new Error('Request timed out. Please check your connection.');
         }
 
@@ -164,7 +196,7 @@ async function request<T>(
         }
 
         // Zero-failure fallback for network errors when running mock token
-        if (token?.startsWith('mock_guest_token_')) {
+        if (legacyToken?.startsWith('mock_guest_token_')) {
             console.warn('[Offline Mode] Network request failed completely. Graceful degradation.');
             return null as unknown as T;
         }
@@ -187,12 +219,11 @@ const FIVE_MIN = THIRTY_SEC;
 const TWO_MIN = THIRTY_SEC;
 
 export const api = {
-    // Auth
-    loginWithGoogle: (supabaseToken: string) =>
-        request<{ token: string; user: any }>('POST', '/auth/google', { token: supabaseToken }),
-    signup: (data: any) => request<{ token: string; user: any }>('POST', '/auth/signup', data),
-    login: (email: string, password: string) =>
-        request<{ token: string; user: any }>('POST', '/auth/login', { email, password }),
+    // Auth — Supabase handles signup/login now, these are profile endpoints
+    setupProfile: (data: any) =>
+        request<{ user: any }>('POST', '/auth/profile-setup', data, true),
+    ensureProfile: () =>
+        request<{ user: any }>('POST', '/auth/ensure-profile', {}, true),
     getMe: () => cachedGet<any>('/auth/me', THIRTY_SEC, true),
     updateMe: (data: any) => {
         invalidateCache('/auth/me');
@@ -357,6 +388,12 @@ export const api = {
         return request<any>('POST', '/tracker/plan/evaluate', {}, true);
     },
     toggleTrackerSession: (sessionId: string, is_completed: boolean) => request<any>('PUT', `/tracker/session/${sessionId}/toggle`, { is_completed }, true),
-    syllabusMatch: (appliedExams: any[]) => request<any[]>('POST', '/syllabus/match', { appliedExams }, true),
-    aiMatch: (appliedExams: any[], page = 1, search = '', category = '') => request<any>('POST', '/ai/recommendations', { appliedExams, page, search, category }, true),
+    syllabusMatch: (appliedExams: any[]) => {
+        const minimalExams = (appliedExams || []).map(e => ({ id: typeof e === 'string' ? e : e.id }));
+        return request<any[]>('POST', '/syllabus/match', { appliedExams: minimalExams }, true);
+    },
+    aiMatch: (appliedExams: any[], page = 1, search = '', category = '', state = '') => {
+        const minimalExams = (appliedExams || []).map(e => ({ id: typeof e === 'string' ? e : e.id }));
+        return request<any>('POST', '/ai/recommendations', { appliedExams: minimalExams, page, search, category, state }, true);
+    },
 };

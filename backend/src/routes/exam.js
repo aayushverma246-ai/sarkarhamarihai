@@ -5,14 +5,22 @@ const { estimateLiveData } = require('../services/lyzr');
 
 // GET /api/exam/live-stats?id=...
 // or GET /api/exam/live-stats/:id
-router.get('/live-stats/:id', async (req, res) => {
+router.get('/live-stats/:id?', async (req, res) => {
     try {
         const db = getDb();
-        const job = (await db.execute({ sql: 'SELECT * FROM jobs WHERE id = ?', args: [req.params.id] })).rows[0];
+        const targetId = req.params.id || req.query.id;
+
+        let job;
+        if (targetId) {
+            job = (await db.execute({ sql: 'SELECT * FROM jobs WHERE id = ?', args: [targetId] })).rows[0];
+        } else {
+            job = (await db.execute('SELECT * FROM jobs LIMIT 1')).rows[0];
+        }
+
         if (!job) return res.status(404).json({ error: 'Exam not found' });
 
         const stats = await estimateLiveData(job.job_name, job.organization);
-        
+
         // Update DB
         await db.execute({
             sql: 'UPDATE jobs SET vacancies = ?, applicants_count = ? WHERE id = ?',

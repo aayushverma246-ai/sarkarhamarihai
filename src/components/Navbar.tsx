@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api, clearToken } from '../api';
+import { supabase } from '../utils/supabase';
 import Logo from '../assets/logo';
 import { useLanguage, LANGUAGE_NAMES, LangCode } from '../i18n/LanguageContext';
 import { LANGUAGE_FLAGS } from '../i18n/translations';
@@ -105,7 +106,10 @@ export default function Navbar({ user }: Props) {
       : 'text-gray-500 hover:text-gray-300 hover:bg-[#151515]'
     }`;
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (_) { /* non-critical */ }
     clearToken();
     if (document.startViewTransition) {
       document.startViewTransition(() => navigate('/login'));

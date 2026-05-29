@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
     const engine = new VerificationEngine(db, { timeBudgetMs: MAX_MS });
 
     // Determine which task to run this cycle
-    const cycle = _cycleCounter % 3;
+    const cycle = _cycleCounter % 4;
     _cycleCounter++;
 
     let result;
@@ -56,6 +56,10 @@ module.exports = async (req, res) => {
         taskName = 'stale_detection';
         result = await engine.detectStaleRecords(200);
         break;
+      case 3:
+        taskName = 'scraping_verification';
+        result = await engine.runScrapingVerification(6); // Scrape the 6 most stale active exams per cron cycle
+        break;
     }
 
     const elapsed = Date.now() - startTime;
@@ -64,7 +68,7 @@ module.exports = async (req, res) => {
       success: true,
       task: taskName,
       cycle: _cycleCounter - 1,
-      nextTask: ['full_verification', 'incremental_verification', 'stale_detection'][_cycleCounter % 3],
+      nextTask: ['full_verification', 'incremental_verification', 'stale_detection', 'scraping_verification'][_cycleCounter % 4],
       result,
       elapsed_ms: elapsed,
       timestamp: new Date().toISOString(),

@@ -1,81 +1,45 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, setToken, setCachedUser } from '../api';
+import { useAppDispatch, useAppSelector } from '../store';
+import { selectAuth } from '../store/selectors';
+import { loginAction, guestLoginAction } from '../store/actions/authActions';
 import Logo from '../assets/logo';
 import GovLoader from '../components/GovLoader';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
+  const { loading, error } = useAppSelector(selectAuth);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
     try {
-      const { token, user } = await api.login(email, password);
-      setToken(token);
-      setCachedUser(user);
+      await dispatch(loginAction(email, password));
       navigate('/dashboard');
-      // Keep loading=true through navigation so loader stays visible
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
-      setLoading(false);
+      // Handled by Redux select
     }
   };
 
-  const handleGuestLogin = async () => {
-    setError('');
-    setLoading(true);
-
-    try {
-      // Ironclad single request guest auth — use absolute URL in Capacitor
-      const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
-      const baseUrl = isNative
-        ? 'https://sarkarhamarihai.vercel.app/api'
-        : ((import.meta as any).env.VITE_API_URL || 'http://localhost:3001/api');
-      const res = await fetch(`${baseUrl}/auth/guest`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+  const handleGuestLogin = () => {
+    dispatch(guestLoginAction())
+      .then(() => {
+        navigate('/dashboard');
+      })
+      .catch(() => {
+        navigate('/dashboard');
       });
-      
-      const data = await res.json();
-      
-      if (!res.ok || !data.token) {
-        throw new Error(data.error || 'Failed to authenticate guest.');
-      }
-
-      setToken(data.token);
-      setCachedUser(data.user);
-      navigate('/dashboard');
-    } catch (err: any) {
-      console.warn('[Guest Login] Error, falling back to pure offline mode', err);
-      // Zero-Failure Guarantee: Offline Fallback
-      const ts = Date.now();
-      setToken('mock_guest_token_' + ts);
-      setCachedUser({
-        id: 'offline_guest_' + ts,
-        email: 'guest@sarkar.app',
-        full_name: 'Guest User',
-        age: 25,
-        category: 'General',
-        state: 'All India',
-        qualification_type: 'Graduation',
-        qualification_status: 'Completed',
-      });
-      navigate('/dashboard');
-    }
   };
 
   return (
     <div className="min-h-screen bg-[#050505] flex flex-col cap-safe-all relative overflow-hidden font-sans selection:bg-red-600/30 selection:text-white">
-      
+
       {/* Subtle Dot Grid Background */}
       <div className="absolute inset-0 z-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#333 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
-      
+
       {/* Soft Ambient Glows */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[500px] bg-red-900/10 rounded-full blur-[120px] pointer-events-none z-0" />
       <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-black rounded-full blur-[100px] pointer-events-none z-0" />
@@ -112,9 +76,9 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs text-gray-400 mb-2 font-medium tracking-wide ml-1">Email or User ID</label>
+              <label className="block text-xs text-gray-400 mb-2 font-medium tracking-wide ml-1">Email</label>
               <input
-                type="text"
+                type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -152,11 +116,11 @@ export default function LoginPage() {
 
           <button
             onClick={async () => {
-              setLoading(true);
+              dispatch({ type: 'AUTH_START' });
               const { supabase } = await import('../utils/supabase');
               const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
               const redirectUrl = isNative
-                ? 'https://sarkarhamarihai.vercel.app/auth/callback'
+                ? 'https://sarkarhamaraihai.vercel.app/auth/callback'
                 : window.location.origin + '/auth/callback';
               await supabase.auth.signInWithOAuth({
                 provider: 'google',
@@ -167,11 +131,11 @@ export default function LoginPage() {
             className="w-full py-3.5 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-gray-200 font-medium text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-3 mb-3 active:scale-[0.98] rounded-xl shadow-sm"
           >
             <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
-              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-              <path fill="none" d="M0 0h48v48H0z"/>
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+              <path fill="none" d="M0 0h48v48H0z" />
             </svg>
             Continue with Google
           </button>
@@ -183,7 +147,7 @@ export default function LoginPage() {
           >
             Continue as Guest
           </button>
-          
+
           <p className="mt-8 text-center text-sm text-gray-500 font-medium">
             New here?{' '}
             <Link to="/signup" className="text-red-500 font-semibold hover:text-red-400 transition-colors">Create an account</Link>

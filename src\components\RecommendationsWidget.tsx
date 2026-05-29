@@ -1,8 +1,11 @@
-import { useState, useEffect, useRef, useCallback, memo } from 'react';
-import { api } from '../api';
+import { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
 import { Job } from '../types';
 import { RefreshCcw, Zap, Heart, CheckCircle, ClipboardList, BookOpen, ExternalLink, Target, AlertTriangle, UserX, Info, Brain, Clock, Shield, ArrowRight, BarChart3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAppDispatch, useAppSelector } from '../store';
+import { selectCurrentUser, selectJobsState, selectRecsState } from '../store/selectors';
+import { fetchRecommendationsAction } from '../store/actions/recommendationActions';
+import { toggleLikeAction, toggleApplyAction } from '../store/actions/jobActions';
 
 /* ─── Types ─── */
 interface RJob extends Job {
@@ -26,6 +29,7 @@ interface RJob extends Job {
 interface Props {
     externalSearch?: string;
     externalCategory?: string;
+    externalState?: string;
 }
 
 /* ── Skeleton Card ── */
@@ -137,6 +141,37 @@ const RecommendationCard = memo(function RecommendationCard({ job, isApplied, is
     onToggleApply: () => void; onToggleLike: () => void; onNavigate: (url: string) => void; onOpenDetails: (job: RJob) => void;
 }) {
     const isLive = job.form_status === 'LIVE';
+    const isRecentlyClosed = job.form_status === 'RECENTLY_CLOSED';
+    const isUpcoming = job.form_status === 'UPCOMING';
+
+    // Calculate countdown terms
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let daysRemaining = null;
+    let daysUntilOpen = null;
+    let daysSinceClosed = null;
+
+    if (isLive && job.application_end_date) {
+        const end = new Date(job.application_end_date);
+        end.setHours(0, 0, 0, 0);
+        const diffTime = end.getTime() - today.getTime();
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays >= 0) daysRemaining = diffDays;
+    } else if (isUpcoming && job.application_start_date) {
+        const start = new Date(job.application_start_date);
+        start.setHours(0, 0, 0, 0);
+        const diffTime = start.getTime() - today.getTime();
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays > 0) daysUntilOpen = diffDays;
+    } else if (isRecentlyClosed && job.application_end_date) {
+        const end = new Date(job.application_end_date);
+        end.setHours(0, 0, 0, 0);
+        const diffTime = today.getTime() - end.getTime();
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays >= 0) daysSinceClosed = diffDays;
+    }
+
     const diffLabels: Record<string, { text: string; color: string; icon: string }> = {
         low: { text: 'Easy Transition', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', icon: '✅' },
         medium: { text: 'Moderate Gap', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20', icon: '⚡' },
@@ -150,10 +185,25 @@ const RecommendationCard = memo(function RecommendationCard({ job, isApplied, is
                 {/* Header */}
                 <div className="flex items-start gap-4 mb-3">
                     <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className={`px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-widest ${isLive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : job.form_status === 'UPCOMING' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/15' : 'bg-white/5 text-gray-600 border border-white/5'}`}>
-                                {isLive ? '● LIVE' : job.form_status === 'UPCOMING' ? '◷ UPCOMING' : '○ CLOSED'}
+                        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+                            <span className={`px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-widest ${isLive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20' : isUpcoming ? 'bg-amber-500/10 text-amber-400 border border-amber-500/15' : isRecentlyClosed ? 'bg-orange-500/10 text-orange-400 border border-orange-500/15' : 'bg-white/5 text-gray-600 border border-white/5'}`}>
+                                {isLive ? '● LIVE' : isUpcoming ? '◷ UPCOMING' : isRecentlyClosed ? '○ RECENTLY CLOSED' : '○ CLOSED'}
                             </span>
+                            {daysRemaining !== null && (
+                                <span className="px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/15">
+                                    {daysRemaining === 0 ? '⚠️ Closing Today' : daysRemaining === 1 ? '⌛ 1 Day Left' : `⌛ ${daysRemaining} Days Left`}
+                                </span>
+                            )}
+                            {daysUntilOpen !== null && (
+                                <span className="px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-widest bg-amber-500/10 text-amber-400 border border-amber-500/15">
+                                    {`⏳ Opens in ${daysUntilOpen}d`}
+                                </span>
+                            )}
+                            {daysSinceClosed !== null && (
+                                <span className="px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-widest bg-red-500/10 text-red-400 border border-red-500/15">
+                                    {`Closed ${daysSinceClosed}d ago`}
+                                </span>
+                            )}
                             <span className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded-md border ${diff.color}`}>
                                 {diff.icon} {diff.text}
                             </span>
@@ -186,13 +236,14 @@ const RecommendationCard = memo(function RecommendationCard({ job, isApplied, is
             {/* Action buttons */}
             <div className="px-5 pb-4 flex items-center gap-2">
                 <button onClick={(e) => { e.stopPropagation(); onToggleLike(); }}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center border transition-all ${isLiked ? 'bg-red-600 border-red-500 text-white' : 'bg-transparent border-white/10 text-gray-600 hover:text-red-400 hover:border-red-500/30'}`}>
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center border transition-all ${isLiked ? 'bg-red-600 border-red-500 text-white' : 'bg-transparent border-white/10 text-gray-600 hover:text-red-400 hover:border-red-500/30'}`}
+                    title={isLiked ? "Saved to Targets" : "Track Exam"}>
                     <Heart size={14} fill={isLiked ? "currentColor" : "none"} />
                 </button>
                 <button onClick={(e) => { e.stopPropagation(); onToggleApply(); }}
                     className={`h-9 px-3 rounded-xl flex items-center gap-1.5 border transition-all text-[9px] font-bold uppercase tracking-wider ${isApplied ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-transparent border-white/10 text-gray-600 hover:text-emerald-400 hover:border-emerald-500/30'}`}>
                     {isApplied ? <CheckCircle size={12} /> : <ClipboardList size={12} />}
-                    {isApplied ? 'Applied' : 'Track'}
+                    {isApplied ? 'Applied' : 'Mark Applied'}
                 </button>
             </div>
 
@@ -217,138 +268,120 @@ const RecommendationCard = memo(function RecommendationCard({ job, isApplied, is
 /* ═══════════════════════════════════════════════════════════════
    MAIN WIDGET — ZERO FAILURE, ZERO ERROR UI
    ═══════════════════════════════════════════════════════════════ */
-export default function RecommendationsWidget({ externalSearch = '', externalCategory = 'All' }: Props) {
-    const recsRef = useRef<RJob[]>([]);
-    const [recs, _setRecs] = useState<RJob[]>(() => {
-        try {
-            const saved = localStorage.getItem('ai_recs_cache');
-            const parsed = saved ? JSON.parse(saved) : [];
-            recsRef.current = parsed;
-            return parsed;
-        } catch { return []; }
-    });
-    const setRecs = useCallback((data: RJob[] | ((prev: RJob[]) => RJob[])) => {
-        _setRecs(prev => {
-            const next = typeof data === 'function' ? data(prev) : data;
-            recsRef.current = next;
-            return next;
-        });
-    }, []);
+export default function RecommendationsWidget({ externalSearch = '', externalCategory = 'All', externalState = 'All India' }: Props) {
+    const dispatch = useAppDispatch();
 
-    const [appliedJobs, setAppliedJobs] = useState<Job[]>([]);
-    const [likedJobs, setLikedJobs] = useState<Job[]>([]);
-    const [userProfile, setUserProfile] = useState<any>(null);
-    const [page, setPage] = useState(1);
-    const [hasMore, setHasMore] = useState(false);
+    // Select from Redux store
+    const userProfile = useAppSelector(selectCurrentUser);
+    const { appliedJobs, likedJobs } = useAppSelector(selectJobsState);
+    const {
+        recs,
+        loading: showSkeleton,
+        loadingMore,
+        refreshing,
+        page,
+        hasMore
+    } = useAppSelector(selectRecsState);
+
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('All');
-    const [showSkeleton, setShowSkeleton] = useState(recsRef.current.length === 0);
-    const [loadingMore, setLoadingMore] = useState(false);
-    const [refreshing, setRefreshing] = useState(false);
+    const [stateFilter, setStateFilter] = useState('All India');
     const [selectedJob, setSelectedJob] = useState<RJob | null>(null);
 
     const navigate = useNavigate();
     const isMounted = useRef(true);
-    const fetchIdRef = useRef(0);
+    const searchRef = useRef(search);
+    const categoryRef = useRef(category);
+    const stateRef = useRef(stateFilter);
+
+    useEffect(() => {
+        searchRef.current = search;
+        categoryRef.current = category;
+        stateRef.current = stateFilter;
+    }, [search, category, stateFilter]);
 
     useEffect(() => {
         try {
             const s = JSON.parse(sessionStorage.getItem('recs_nav_state') || '{}');
             if (s.search) setSearch(s.search);
             if (s.category) setCategory(s.category);
+            if (s.state) setStateFilter(s.state);
         } catch { }
     }, []);
     useEffect(() => () => { isMounted.current = false; }, []);
 
+    // Combine applied and liked jobs into candidates for matching
+    const combinedExams = useMemo(() => {
+        const ids = new Set<string>();
+        const list: Job[] = [];
+        for (const j of [...(appliedJobs || []), ...(likedJobs || [])]) {
+            if (!ids.has(j.id)) { ids.add(j.id); list.push(j); }
+        }
+        return list;
+    }, [appliedJobs, likedJobs]);
+
     /* ── CORE LOADER ── */
     const loadData = useCallback(async (pageNum = 1) => {
-        const fetchId = ++fetchIdRef.current;
-        if (pageNum > 1) setLoadingMore(true);
-        else if (recsRef.current.length > 0) setRefreshing(true);
-
+        if (combinedExams.length === 0) return;
         try {
-            const [applied, liked, me] = await Promise.all([
-                api.getAppliedJobs().catch(() => [] as Job[]),
-                api.getLikedJobs().catch(() => [] as Job[]),
-                api.getMe().catch(() => null)
-            ]);
-            if (fetchId !== fetchIdRef.current || !isMounted.current) return;
-
-            setAppliedJobs(applied || []);
-            setLikedJobs(liked || []);
-            if (me) setUserProfile(me);
-
-            const combinedExams: Job[] = [];
-            const ids = new Set<string>();
-            for (const j of [...(applied || []), ...(liked || [])]) {
-                if (!ids.has(j.id)) { ids.add(j.id); combinedExams.push(j); }
-            }
-
-            let res: any = null;
-            let attempts = 0;
-
-            while (!res && attempts < 3) {
-                try {
-                    res = await api.aiMatch(combinedExams, pageNum, search, category === 'All' ? '' : category);
-                } catch (e) {
-                    attempts++;
-                    if (attempts >= 3) break;
-                    await new Promise(r => setTimeout(r, 2000 * attempts));
-                }
-            }
-
-            if (!res || !isMounted.current || fetchId !== fetchIdRef.current) {
-                setLoadingMore(false);
-                setRefreshing(false);
-                return;
-            }
-
-            const newData = (res.data || []).map((r: any) => ({
-                ...r,
-                explanation: r.explanation || "Syllabus overlap match."
-            }));
-
-            if (pageNum === 1) {
-                setRecs(newData);
-                try { localStorage.setItem('ai_recs_cache', JSON.stringify(newData.slice(0, 8))); } catch { }
-            } else {
-                setRecs(prev => [...prev, ...newData]);
-            }
-            setHasMore(res.hasMore || false);
-            setPage(res.page || pageNum);
-
-        } catch {
-            // SILENT — keep cached data visible
-        } finally {
-            if (fetchId === fetchIdRef.current && isMounted.current) {
-                setShowSkeleton(false);
-                setLoadingMore(false);
-                setRefreshing(false);
-            }
+            await dispatch(fetchRecommendationsAction(
+                combinedExams,
+                pageNum,
+                searchRef.current,
+                categoryRef.current,
+                stateRef.current === 'All India' ? '' : stateRef.current
+            ));
+        } catch (err) {
+            console.error('[RecommendationsWidget load failed]', err);
         }
-    }, [search, category, setRecs]);
+    }, [combinedExams, dispatch]);
 
-    const handleToggleApply = async (job: Job) => {
-        try { await api.toggleApplied(job.id); setAppliedJobs(await api.getAppliedJobs().catch(() => []) || []); } catch { }
-    };
-    const handleToggleLike = async (job: Job) => {
-        try {
-            if (likedJobs.some(j => j.id === job.id)) await api.unlikeJob(job.id);
-            else await api.likeJob(job.id);
-            setLikedJobs(await api.getLikedJobs().catch(() => []) || []);
-        } catch { }
-    };
+    const handleToggleApply = useCallback((job: Job) => {
+        const isApplied = appliedJobs.some(j => j.id === job.id);
+        dispatch(toggleApplyAction(job, isApplied));
+    }, [dispatch, appliedJobs]);
+
+    const handleToggleLike = useCallback((job: Job) => {
+        const isLiked = likedJobs.some(j => j.id === job.id);
+        dispatch(toggleLikeAction(job, isLiked));
+    }, [dispatch, likedJobs]);
 
     useEffect(() => { setSearch(externalSearch); }, [externalSearch]);
     useEffect(() => { setCategory(externalCategory); }, [externalCategory]);
+    useEffect(() => { setStateFilter(externalState); }, [externalState]);
 
     useEffect(() => {
-        const timer = setTimeout(() => loadData(1), 300);
+        const timer = setTimeout(() => {
+            if (combinedExams.length > 0) {
+                loadData(1);
+            }
+        }, 300);
         return () => clearTimeout(timer);
-    }, [search, category, loadData]);
+    }, [search, category, stateFilter, combinedExams.length, loadData]);
+
+    const isRestoringScroll = useRef(false);
+    useEffect(() => {
+        if (recs.length > 0 && !showSkeleton) {
+            try {
+                const s = JSON.parse(sessionStorage.getItem('recs_nav_state') || '{}');
+                if (s.scrollPosition && s.scrollPosition > 0 && !isRestoringScroll.current) {
+                    isRestoringScroll.current = true;
+                    requestAnimationFrame(() => {
+                        window.scrollTo({ top: s.scrollPosition, behavior: 'instant' });
+                        requestAnimationFrame(() => {
+                            window.scrollTo({ top: s.scrollPosition, behavior: 'instant' });
+                            isRestoringScroll.current = false;
+                            s.scrollPosition = 0;
+                            sessionStorage.setItem('recs_nav_state', JSON.stringify(s));
+                        });
+                    });
+                }
+            } catch { }
+        }
+    }, [recs.length, showSkeleton]);
 
     const handleNavigation = (url: string) => {
-        sessionStorage.setItem('recs_nav_state', JSON.stringify({ search, category, page }));
+        sessionStorage.setItem('recs_nav_state', JSON.stringify({ search, category, state: stateFilter, page, scrollPosition: window.scrollY }));
         navigate(url);
     };
 
@@ -425,7 +458,7 @@ export default function RecommendationsWidget({ externalSearch = '', externalCat
             ) : recs.length > 0 ? (
                 <div className="space-y-4">
                     <p className="text-[10px] text-gray-600 font-bold uppercase tracking-wider px-1">
-                        {recs.length} exam{recs.length !== 1 ? 's' : ''} with ≥70% syllabus overlap {hasMore && '· more available'}
+                        {recs.length} exam{recs.length !== 1 ? 's' : ''} with strong syllabus overlap {hasMore && '· more available'}
                     </p>
                     {recs.map(job => (
                         <RecommendationCard key={job.id} job={job}
@@ -449,7 +482,7 @@ export default function RecommendationsWidget({ externalSearch = '', externalCat
             ) : (
                 <div className="text-center py-14 bg-[#0c0c0c] light-card border border-white/[0.04] light-border rounded-2xl">
                     <Brain size={32} className="mx-auto text-red-500/15 mb-3" />
-                    <h3 className="text-sm font-bold text-gray-400 mb-1.5">No Matches Found (≥70%)</h3>
+                    <h3 className="text-sm font-bold text-gray-400 mb-1.5">No Matches Found</h3>
                     <p className="text-gray-600 text-xs max-w-sm mx-auto">Apply to or save more exams to unlock syllabus-matched recommendations.</p>
                     <button onClick={() => navigate('/')} className="mt-5 px-5 py-2 bg-white/[0.04] hover:bg-white/[0.08] text-gray-400 text-[10px] font-bold uppercase tracking-wider rounded-xl border border-white/[0.04] transition-all">Browse Exams</button>
                 </div>

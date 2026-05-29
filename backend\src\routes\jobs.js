@@ -41,9 +41,44 @@ function computeFormStatus(job, todayStr) {
     const endDays = endParts[0] * 365 + endParts[1] * 30 + endParts[2];
     const todayDays = todayParts[0] * 365 + todayParts[1] * 30 + todayParts[2];
     const diffDays = todayDays - endDays;
-    
+
     if (diffDays <= 30) return 'RECENTLY_CLOSED';
     return 'CLOSED';
+}
+
+// ── State name patterns for inferring state from job name ──
+const _STATE_NAME_PATTERNS = CANONICAL_STATES.map(s => ({
+    name: s,
+    re: new RegExp('\\b' + s.replace(/[&]/g, '\\&').replace(/\s+/g, '\\s+') + '\\b', 'i')
+}));
+// Add common abbreviations
+const _STATE_ABBR_MAP = {
+    'AP': 'Andhra Pradesh', 'AR': 'Arunachal Pradesh', 'AS': 'Assam',
+    'BR': 'Bihar', 'CG': 'Chhattisgarh', 'GA': 'Goa', 'GJ': 'Gujarat',
+    'HR': 'Haryana', 'HP': 'Himachal Pradesh', 'JH': 'Jharkhand',
+    'KA': 'Karnataka', 'KL': 'Kerala', 'MP': 'Madhya Pradesh',
+    'MH': 'Maharashtra', 'MN': 'Manipur', 'ML': 'Meghalaya',
+    'MZ': 'Mizoram', 'NL': 'Nagaland', 'OD': 'Odisha', 'PB': 'Punjab',
+    'RJ': 'Rajasthan', 'SK': 'Sikkim', 'TN': 'Tamil Nadu',
+    'TS': 'Telangana', 'TR': 'Tripura', 'UP': 'Uttar Pradesh',
+    'UK': 'Uttarakhand', 'WB': 'West Bengal', 'DL': 'Delhi',
+    'J&K': 'Jammu & Kashmir', 'JK': 'Jammu & Kashmir',
+};
+
+// State PSC organization patterns — these are always State PSCs, never UPSC
+const _STATE_PSC_ORG_RE = /\b(?:APPSC|APSC|BPSC|CGPSC|DSSSB|GPSC|HPSC|HPPSC|JPSC|KPSC|MPPSC|MPSC|NPSC|OPSC|PPSC|RPSC|SPSC|TNPSC|TSPSC|TPSC|UPPSC|UKPSC|WBPSC|JKPSC)\b/i;
+const _STATE_PSC_ORG_LONG_RE = /\bstate\s+public\s+service|public\s+service\s+commission\b/i;
+const _STATE_CIVIL_SERVICES_RE = /\bstate\s+civil\s+services?\b|\bstate\s+services?\b/i;
+
+/**
+ * Infer state from job name. Returns canonical state name or null.
+ */
+function inferStateFromName(jobName, org) {
+    const combined = (jobName || '') + ' ' + (org || '');
+    for (const { name, re } of _STATE_NAME_PATTERNS) {
+        if (re.test(combined)) return name;
+    }
+    return null;
 }
 
 function withStatus(job, todayStr) {
@@ -54,20 +89,34 @@ function withStatus(job, todayStr) {
     if (job.states && job.states !== '[]') {
         try {
             parsedStates = JSON.parse(job.states);
-        } catch (_) {}
+        } catch (_) { }
     }
 
+    const name = (job.job_name || '').toLowerCase();
+    const org = (job.organization || '');
+
     // ── On-the-fly normalization so filters ALWAYS match canonical values ──
-    // This is the safety net: even if DB has 'Medical', 'Law', 'Entrance Exams',
-    // the API will always return the canonical category.
     let normalizedCategory = job.job_category;
     if (normalizedCategory) {
         const canonical = normalizeCategory(normalizedCategory);
         if (canonical) normalizedCategory = canonical;
+
+        // ── FIX: Reclassify UPSC-tagged state PSC exams ──
+        // State Civil Services exams (e.g. "Bihar State Civil Services 2026" by BPSC)
+        // were erroneously seeded as UPSC. Detect and fix them.
+        if (normalizedCategory === 'UPSC') {
+            const isStatePSCOrg = _STATE_PSC_ORG_RE.test(org) && !/\bUPSC\b|Union Public Service Commission/i.test(org);
+            const isStateCivilServices = _STATE_CIVIL_SERVICES_RE.test(name);
+            const hasStatePSCOrgLong = _STATE_PSC_ORG_LONG_RE.test(org) && !/\bUnion\b/i.test(org);
+
+            if (isStateCivilServices || (isStatePSCOrg && !name.startsWith('upsc ')) || hasStatePSCOrgLong) {
+                normalizedCategory = 'State PSCs';
+            }
+        }
+
         // Smart re-categorization based on job name for state exams
         // that were blanket-tagged as 'State Government' or 'State PSCs'
         if (normalizedCategory === 'State Government' || normalizedCategory === 'State PSCs') {
-            const name = (job.job_name || '').toLowerCase();
             if (/\bpsc\b|\bcivil services\b|\bstate services\b/.test(name)) {
                 normalizedCategory = 'State PSCs';
             } else if (/\bpolice\b|\bconstable\b|\bsub inspector\b|\b(?:si)\b|\bhead constable\b|\bjail\b|\bprison\b|\bfire\s*(?:service|man)\b|\btraffic police\b|\barmed police\b|\bcyber\s*(?:crime|police)\b|\bhome guard\b|\bexcise\b/.test(name)) {
@@ -99,41 +148,68 @@ function withStatus(job, todayStr) {
         if (canonical) normalizedState = canonical;
     }
 
+    // ── FIX: Infer correct state for state-specific jobs tagged "All India" ──
+    // Jobs like "Andhra Pradesh - Gram Panchayat Data Entry Operator 2026" with
+    // org "Andhra Pradesh State Government" should NOT be state: "All India".
+    if (normalizedState === 'All India') {
+        // Check if the org clearly names a state (e.g. "Andhra Pradesh State Government")
+        const inferredFromOrg = inferStateFromName('', org);
+        const inferredFromName = inferStateFromName(job.job_name, '');
+
+        // Only override if the job is clearly state-specific (org contains a state name
+        // AND it's a state government/PSC org, not a national org with a state chapter)
+        if (inferredFromOrg && /state government|psc|state\s/i.test(org)) {
+            normalizedState = inferredFromOrg;
+        } else if (inferredFromName && normalizedCategory === 'State PSCs') {
+            // State PSC exams always belong to a specific state
+            normalizedState = inferredFromName;
+        }
+    }
+
     // Normalize states array entries too
     const normalizedStatesArr = parsedStates.map(s => {
         const c = normalizeState(s);
         return c || s;
     });
 
-    return { 
-        ...job, 
+    return {
+        ...job,
         job_category: normalizedCategory || job.job_category,
         state: normalizedState || job.state,
         states: normalizedStatesArr,
-        form_status: computeFormStatus(job, todayStr), 
+        form_status: computeFormStatus(job, todayStr),
         allows_final_year_students: !!job.allows_final_year_students,
         is_verified: isVerified,
         last_updated: lastUpdated
     };
 }
 
-const qualificationOrder = { 'Class 10': 1, 'Class 12': 2, 'Graduation': 3, 'Post Graduation': 4, 'PhD': 5 };
+const qualificationOrder = {
+    '10th': 1,
+    'Class 10': 1,
+    '12th': 2,
+    'Class 12': 2,
+    'Diploma': 2.5,
+    'Graduation': 3,
+    'Post Graduation': 4,
+    'PhD': 5
+};
 
 function meetsQualification(user, job) {
     if (!user.qualification_type) return false;
     const userLevel = qualificationOrder[user.qualification_type] || 0;
     const jobLevel = qualificationOrder[job.qualification_required] || 0;
     if (userLevel === 0 || jobLevel === 0) return false;
-    
+
     if (user.qualification_status === 'Completed') {
         // Completed users are eligible for jobs at or below their qualification level
         return userLevel >= jobLevel;
     }
-    
+
     if (user.qualification_status === 'Pursuing') {
         // Pursuing users have COMPLETED the level below, so they match lower-level jobs
         if (userLevel > jobLevel) return true;
-        
+
         // For same-level jobs, only eligible if job allows final year AND user is in final year
         if (userLevel === jobLevel && job.allows_final_year_students) {
             const currentYearStr = getTodayIST().substring(0, 4);
@@ -155,10 +231,10 @@ function meetsStateCriteria(user, job) {
     if (job.state === 'All India') return true;
     const userState = (user.state || '').toLowerCase().trim();
     if (!userState) return true;
-    
+
     // Exact match on primary state
     if (job.state.toLowerCase().trim() === userState) return true;
-    
+
     // Check multi-state array for multi-state jobs
     if (job.states) {
         let statesArr = job.states;
@@ -166,13 +242,13 @@ function meetsStateCriteria(user, job) {
             try { statesArr = JSON.parse(statesArr); } catch (_) { statesArr = []; }
         }
         if (Array.isArray(statesArr) && statesArr.length > 0) {
-            return statesArr.some(s => 
+            return statesArr.some(s =>
                 (s || '').toLowerCase().trim() === userState ||
                 (s || '').toLowerCase().trim() === 'all india'
             );
         }
     }
-    
+
     return false;
 }
 
@@ -193,12 +269,12 @@ router.get('/categories', async (req, res) => {
         const cacheKey = 'categories_v2';
         const cached = getCachedResult(cacheKey, 300000);
         if (cached) return res.json(cached);
-        
+
         // Merge canonical list with any DB-specific categories
         const sb = getSupabase();
         const { data } = await sb.from('jobs').select('job_category').not('job_category', 'is', null).neq('job_category', '');
         const dbCats = (data || []).map(r => r.job_category).filter(Boolean);
-        
+
         // Start with canonical, add any DB categories not already present
         const merged = new Set(CANONICAL_CATEGORIES);
         for (const cat of dbCats) {
@@ -208,7 +284,7 @@ router.get('/categories', async (req, res) => {
         merged.delete('Others');
         merged.delete('Other');
         merged.delete('Misc');
-        
+
         const sorted = ['All', ...Array.from(merged).sort((a, b) => a.localeCompare(b))];
         setCachedResult(cacheKey, sorted);
         res.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
@@ -225,7 +301,7 @@ router.get('/states', async (req, res) => {
         const cacheKey = 'states_v2';
         const cached = getCachedResult(cacheKey, 300000);
         if (cached) return res.json(cached);
-        
+
         // Return canonical states — always complete, always correct
         const states = [...CANONICAL_STATES];
         setCachedResult(cacheKey, states);
@@ -254,12 +330,12 @@ router.get('/all-minimal', async (req, res) => {
 
         const db = getDb();
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, job_category, state, states, application_start_date, application_end_date, vacancies, official_application_link, last_verified_at, created_at';
-        
+
         // Sequential cursor pagination — guarantees every row appears exactly once.
         const limit = 1000;
         let offset = 0;
         const allRows = [];
-        
+
         // Fetch up to 20 pages (20,000 rows) — stops as soon as a page returns fewer than limit rows
         for (let page = 0; page < 20; page++) {
             const result = await db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${offset}`);
@@ -275,20 +351,20 @@ router.get('/all-minimal', async (req, res) => {
         for (const row of allRows) {
             if (row.id && !seen.has(row.id)) { seen.add(row.id); unique.push(row); }
         }
-        
+
         // Compute form_status natively
         const jobs = unique.map(j => withStatus(j, todayStr));
-        
+
         // Final Output Sorted strict alphabetically 
         jobs.sort((a, b) => a.job_name.localeCompare(b.job_name, undefined, { sensitivity: 'base' }));
-        
+
         // Cache for 5 minutes
         setCachedResult(cacheKey, jobs);
-        
+
         res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
         res.set('X-Cache', 'MISS');
         res.json({ jobs });
-    } catch(err) {
+    } catch (err) {
         console.error('Failed fetching all-minimal jobs:', err);
         res.status(500).json({ error: 'Server error', details: err.message });
     }
@@ -327,7 +403,7 @@ function buildFilters(req, statusParam) {
         whereClauses.push(`(state = $${index++} OR state = 'All India')`);
         args.push(state);
     }
-    
+
     if (category && category !== 'All') {
         whereClauses.push(`job_category = $${index++}`);
         args.push(category);
@@ -344,16 +420,16 @@ router.get('/', async (req, res) => {
         const sb = getSupabase();
         const { limit: limitParam, offset: offsetParam, status, state, category } = req.query;
         const todayStr = getTodayIST();
-        
+
         const limit = Math.min(parseInt(limitParam) || 100, 5000);
         const offset = parseInt(offsetParam) || 0;
-        
+
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link, last_verified_at, created_at';
-        
+
         // Build Supabase SDK query with filters
         const buildSbQuery = () => {
             let q = sb.from('jobs').select(selectFields);
-            
+
             // Status filter
             const today = getTodayIST();
             if (status === 'CLOSED') {
@@ -363,29 +439,29 @@ router.get('/', async (req, res) => {
             } else if (status === 'LIVE') {
                 q = q.lte('application_start_date', today).gte('application_end_date', today);
             }
-            
+
             // State filter: match exact state OR All India records
             if (state && state !== 'All India') {
                 q = q.or(`state.eq.${state},state.eq.All India`);
             }
-            
+
             // Category filter
             if (category && category !== 'All') {
                 q = q.eq('job_category', category);
             }
-            
+
             return q;
         };
-        
+
         // Get total count first (fast — head=true means no body returned)
         const { count: total, error: countErr } = await sb.from('jobs')
             .select('*', { count: 'exact', head: true });
         if (countErr) throw new Error(countErr.message);
-        
+
         // Fetch data using batch pagination if limit > 1000 (Supabase REST cap)
         const BATCH = 1000;
         const allRows = [];
-        
+
         if (limit <= BATCH) {
             const { data, error } = await buildSbQuery()
                 .order('application_end_date', { ascending: false })
@@ -408,9 +484,9 @@ router.get('/', async (req, res) => {
                 if (data.length < BATCH) break; // Last page
             }
         }
-        
+
         const jobs = allRows.map(job => withStatus(job, todayStr));
-        
+
         res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
         return res.json({
             jobs,
@@ -432,21 +508,21 @@ router.get('/eligible', auth, async (req, res) => {
         const todayStr = getTodayIST();
         const user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [req.user.id] })).rows[0] || req.user;
         if (!user) return res.status(404).json({ error: 'User not found' });
-        
+
         const hasCompleteProfile = !!(user.qualification_type && user.age && user.age > 0);
-        
+
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link, last_verified_at, created_at';
         const { whereStr, args } = buildFilters(req, null);
-        
+
         // Optimized database fetch
         const query = `SELECT ${selectFields} FROM jobs ${whereStr} ORDER BY application_end_date ASC LIMIT 500`;
         const allRows = (await db.execute({ sql: query, args })).rows || [];
-        
+
         const jobs = allRows.map(row => withStatus(row, todayStr));
-        
+
         let allEligible = [];
         let broadlyEligible = [];
-        
+
         for (const j of jobs) {
             if (hasCompleteProfile) {
                 if (meetsQualification(user, j) && meetsAge(user, j) && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j)) {
@@ -458,11 +534,11 @@ router.get('/eligible', auth, async (req, res) => {
                 broadlyEligible.push(j);
             }
         }
-        
+
         // If user has complete profile, return strict matches only (even if 0).
         // Fallback to broadly eligible ONLY for incomplete profiles.
         let finalResult = hasCompleteProfile ? allEligible : broadlyEligible.slice(0, 100);
-        
+
         // Debug logging for troubleshooting eligibility
         console.log('[Eligible Debug]', JSON.stringify({
             userId: user.id,
@@ -478,7 +554,7 @@ router.get('/eligible', auth, async (req, res) => {
             finalCount: finalResult.length,
             currentYear: getTodayIST().substring(0, 4),
         }));
-        
+
         res.set('Cache-Control', 'no-store, max-age=0');
         return res.json(finalResult);
     } catch (err) {
@@ -494,20 +570,20 @@ router.get('/partial', auth, async (req, res) => {
         const todayStr = getTodayIST();
         const user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [req.user.id] })).rows[0] || req.user;
         if (!user) return res.status(404).json({ error: 'User not found' });
-        
+
         const hasCompleteProfile = !!(user.qualification_type && user.age && user.age > 0);
-        
+
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link, last_verified_at, created_at';
         const { whereStr, args } = buildFilters(req, null);
-        
+
         const query = `SELECT ${selectFields} FROM jobs ${whereStr} ORDER BY application_start_date ASC LIMIT 500`;
         const allRows = (await db.execute({ sql: query, args })).rows || [];
-        
+
         const jobs = allRows.map(row => withStatus(row, todayStr));
-        
+
         let allPartial = [];
         let fallbackJobs = [];
-        
+
         for (const j of jobs) {
             if (hasCompleteProfile) {
                 // Partial means they meet qualification OR age, but NOT both.
@@ -519,10 +595,10 @@ router.get('/partial', auth, async (req, res) => {
                 fallbackJobs.push(j);
             }
         }
-        
+
         // Strict matches for complete profiles; fallback only for incomplete ones
         let finalResult = hasCompleteProfile ? allPartial : fallbackJobs.slice(0, 50);
-        
+
         res.set('Cache-Control', 'no-store, max-age=0');
         return res.json(finalResult);
     } catch (err) {
@@ -555,14 +631,14 @@ router.get('/live', async (req, res) => {
     try {
         const db = getDb();
         const todayStr = getTodayIST();
-        
+
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link, last_verified_at, created_at';
         const { whereStr, args } = buildFilters(req, 'LIVE');
-        
+
         const query = `SELECT ${selectFields} FROM jobs ${whereStr} ORDER BY application_end_date ASC LIMIT 500`;
         const result = await db.execute({ sql: query, args });
         const jobs = (result.rows || []).map(row => withStatus(row, todayStr));
-        
+
         res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
         return res.json(jobs);
     } catch (err) {
@@ -576,14 +652,14 @@ router.get('/upcoming', async (req, res) => {
     try {
         const db = getDb();
         const todayStr = getTodayIST();
-        
+
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, application_start_date, application_end_date, salary_min, salary_max, job_category, state, states, vacancies, official_application_link, last_verified_at, created_at';
         const { whereStr, args } = buildFilters(req, 'UPCOMING');
-        
+
         const query = `SELECT ${selectFields} FROM jobs ${whereStr} ORDER BY application_start_date ASC LIMIT 500`;
         const result = await db.execute({ sql: query, args });
         const jobs = (result.rows || []).map(row => withStatus(row, todayStr));
-        
+
         res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
         return res.json(jobs);
     } catch (err) {
@@ -629,18 +705,19 @@ router.post('/:id/like', auth, async (req, res) => {
         const sb = getSupabase();
         const jobId = req.params.id;
         const userId = req.user.id;
-        
+
         // Check job exists
         const { data: jobData } = await sb.from('jobs').select('id').eq('id', jobId).limit(1);
         if (!jobData || jobData.length === 0) return res.status(404).json({ error: 'Job not found' });
-        
-        // Upsert (insert, ignore if exists)
+
+        // Upsert into liked_jobs (separating Liking/Tracking from Applied)
+        const id = 'like_' + Math.random().toString(36).substring(2, 9);
         const { error } = await sb.from('liked_jobs')
-            .upsert({ id: generateId(), user_id: userId, job_id: jobId }, { onConflict: 'user_id,job_id', ignoreDuplicates: true });
+            .upsert({ id: id, user_id: userId, job_id: jobId }, { onConflict: 'user_id,job_id', ignoreDuplicates: true });
         if (error && error.code !== '23505') throw error;
         return res.json({ liked: true });
     } catch (err) {
-        console.error('Like error:', err.message);
+        console.error('Like error (mapped to Saved):', err.message);
         return res.status(500).json({ error: 'Server error' });
     }
 });
@@ -652,7 +729,7 @@ router.delete('/:id/like', auth, async (req, res) => {
         await sb.from('liked_jobs').delete().eq('user_id', req.user.id).eq('job_id', req.params.id);
         return res.json({ liked: false });
     } catch (err) {
-        console.error('Unlike error:', err.message);
+        console.error('Unlike error (mapped to Saved):', err.message);
         return res.status(500).json({ error: 'Server error' });
     }
 });
@@ -664,7 +741,7 @@ router.get('/:id/liked-status', auth, async (req, res) => {
         const { data } = await sb.from('liked_jobs').select('id').eq('user_id', req.user.id).eq('job_id', req.params.id).limit(1);
         return res.json({ liked: (data || []).length > 0 });
     } catch (err) {
-        console.error('Liked-status error:', err.message);
+        console.error('Liked-status error (mapped to Saved):', err.message);
         return res.json({ liked: false });
     }
 });

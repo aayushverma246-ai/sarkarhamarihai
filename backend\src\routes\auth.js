@@ -20,85 +20,164 @@ function signToken(user) {
 }
 
 function safeUser(user) {
+    if (!user) return null;
     const { password_hash, ...safe } = user;
     return safe;
 }
 
-// POST /api/auth/signup
-router.post('/signup', async (req, res) => {
+// ─────────────────────────────────────────────────────────────────────
+// POST /api/auth/profile-setup
+// Called after Supabase signup — creates user profile row in our DB.
+// The Supabase access token is sent as Bearer token for authentication.
+// ─────────────────────────────────────────────────────────────────────
+router.post('/profile-setup', auth, async (req, res) => {
     try {
+        const supabaseUserId = req.user.id;
+        const email = req.user.email;
+
         const {
-            email, password, full_name, age, category, state,
+            full_name, age, category, state,
             qualification_type, qualification_status,
             current_year, current_semester, expected_graduation_year
         } = req.body;
 
-        if (!email || !password) {
-            return res.status(400).json({ error: 'Email and password are required' });
+        if (!full_name) {
+            return res.status(400).json({ error: 'Full name is required' });
         }
 
         const db = getDb();
-        const existing = (await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [email] })).rows[0];
-        if (existing) {
-            return res.status(409).json({ error: 'User with this email already exists' });
+
+        // Check if user profile already exists
+        let user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [supabaseUserId] })).rows[0];
+
+        if (user) {
+            // Update existing profile
+            await db.execute({
+                sql: `UPDATE users SET
+                    full_name = ?, age = ?, category = ?, state = ?,
+                    qualification_type = ?, qualification_status = ?,
+                    current_year = ?, current_semester = ?, expected_graduation_year = ?,
+                    email = ?
+                  WHERE id = ?`,
+                args: [
+                    full_name || user.full_name,
+                    age !== undefined ? age : user.age,
+                    category || user.category,
+                    state || user.state,
+                    qualification_type || user.qualification_type,
+                    qualification_status || user.qualification_status,
+                    current_year !== undefined ? current_year : user.current_year,
+                    current_semester !== undefined ? current_semester : user.current_semester,
+                    expected_graduation_year !== undefined ? expected_graduation_year : user.expected_graduation_year,
+                    email || user.email,
+                    supabaseUserId
+                ]
+            });
+        } else {
+            // Also check by email (user might exist from old system)
+            user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] })).rows[0];
+
+            if (user) {
+                // Migrate: update their ID to Supabase ID
+                await db.execute({
+                    sql: `UPDATE users SET id = ?, full_name = ?, age = ?, category = ?, state = ?,
+                        qualification_type = ?, qualification_status = ?,
+                        current_year = ?, current_semester = ?, expected_graduation_year = ?
+                      WHERE email = ?`,
+                    args: [
+                        supabaseUserId,
+                        full_name || user.full_name,
+                        age !== undefined ? age : user.age,
+                        category || user.category,
+                        state || user.state,
+                        qualification_type || user.qualification_type,
+                        qualification_status || user.qualification_status,
+                        current_year !== undefined ? current_year : user.current_year,
+                        current_semester !== undefined ? current_semester : user.current_semester,
+                        expected_graduation_year !== undefined ? expected_graduation_year : user.expected_graduation_year,
+                        email
+                    ]
+                });
+            } else {
+                // Create new user profile
+                const password_hash = await bcrypt.hash(generateId() + generateId(), 10);
+                await db.execute({
+                    sql: `INSERT INTO users (id, email, password_hash, full_name, age, category, state,
+                        qualification_type, qualification_status, current_year, current_semester, expected_graduation_year)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    args: [
+                        supabaseUserId, email, password_hash,
+                        full_name || '', age || 0, category || '', state || '',
+                        qualification_type || '', qualification_status || '',
+                        current_year || 0, current_semester || 0, expected_graduation_year || 0
+                    ]
+                });
+            }
         }
 
-        const password_hash = await bcrypt.hash(password, 10);
-        const id = generateId();
+        const finalUser = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [supabaseUserId] })).rows[0]
+            || (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] })).rows[0];
 
-        await db.execute({
-            sql: `INSERT INTO users (id, email, password_hash, full_name, age, category, state,
-                qualification_type, qualification_status, current_year, current_semester, expected_graduation_year)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            args: [
-                id, email, password_hash,
-                full_name || '', age || 0, category || '', state || '',
-                qualification_type || '', qualification_status || '',
-                current_year || 0, current_semester || 0, expected_graduation_year || 0
-            ]
-        });
-
-        const user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [id] })).rows[0];
-        const token = signToken(user);
-        return res.status(201).json({ token, user: safeUser(user) });
+        return res.status(200).json({ user: safeUser(finalUser) });
     } catch (err) {
-        console.error('Signup error:', err);
-        return res.status(500).json({ error: 'Server error during signup', details: err.message, stack: err.stack });
+        console.error('Profile setup error:', err);
+        return res.status(500).json({ error: 'Server error during profile setup', details: err.message });
     }
 });
 
-// POST /api/auth/login
-router.post('/login', async (req, res) => {
+// ─────────────────────────────────────────────────────────────────────
+// POST /api/auth/ensure-profile
+// Lightweight endpoint called on login — ensures user has a DB row.
+// If user doesn't exist yet, creates a minimal profile.
+// ─────────────────────────────────────────────────────────────────────
+router.post('/ensure-profile', auth, async (req, res) => {
     try {
-        const { email, password } = req.body;
-        if (!email || !password) {
-            return res.status(400).json({ error: 'Email/ID and password are required' });
-        }
+        const supabaseUserId = req.user.id;
+        const email = req.user.email;
 
         const db = getDb();
-        const user = (await db.execute({
-            sql: 'SELECT * FROM users WHERE email = ? OR id = ?',
-            args: [email, email]
-        })).rows[0];
+
+        // Check by Supabase ID first
+        let user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [supabaseUserId] })).rows[0];
 
         if (!user) {
-            return res.status(401).json({ error: 'Invalid credentials' });
+            // Check by email (migration from old system)
+            user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] })).rows[0];
+
+            if (user) {
+                // Migrate: update their ID to Supabase user ID
+                await db.execute({
+                    sql: 'UPDATE users SET id = ? WHERE email = ?',
+                    args: [supabaseUserId, email]
+                });
+                user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [supabaseUserId] })).rows[0];
+            } else {
+                // Create minimal profile
+                const password_hash = await bcrypt.hash(generateId() + generateId(), 10);
+                await db.execute({
+                    sql: `INSERT INTO users (id, email, password_hash, full_name, age, category, state,
+                        qualification_type, qualification_status, current_year, current_semester, expected_graduation_year)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    args: [
+                        supabaseUserId, email || '', password_hash,
+                        '', 0, 'General', 'All India',
+                        'Graduation', 'Completed', 0, 0, 0
+                    ]
+                });
+                user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [supabaseUserId] })).rows[0];
+            }
         }
 
-        const valid = await bcrypt.compare(password, user.password_hash);
-        if (!valid) {
-            return res.status(401).json({ error: 'Invalid email or password' });
-        }
-
-        const token = signToken(user);
-        return res.json({ token, user: safeUser(user) });
+        return res.json({ user: safeUser(user) });
     } catch (err) {
-        console.error('Login error:', err);
-        return res.status(500).json({ error: 'Server error during login' });
+        console.error('Ensure profile error:', err);
+        return res.status(500).json({ error: 'Server error ensuring profile' });
     }
 });
 
-// POST /api/auth/guest
+// ─────────────────────────────────────────────────────────────────────
+// POST /api/auth/guest — Guest login (kept as-is)
+// ─────────────────────────────────────────────────────────────────────
 router.post('/guest', async (req, res) => {
     try {
         const guestEmail = 'guest@sarkar.app';
@@ -137,72 +216,30 @@ router.post('/guest', async (req, res) => {
     }
 });
 
-// POST /api/auth/google
-router.post('/google', async (req, res) => {
+// ─────────────────────────────────────────────────────────────────────
+// GET /api/auth/me — Get current user profile
+// ─────────────────────────────────────────────────────────────────────
+router.get('/me', auth, async (req, res) => {
     try {
-        const { token: supabaseToken } = req.body;
-        if (!supabaseToken) return res.status(400).json({ error: 'Missing token' });
-
-        const { getSupabase } = require('../db');
-        // Supabase REST endpoint to verify token
-        const sbUrl = process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co';
-        const sbKey = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMzQ4MjcsImV4cCI6MjA5MDcxMDgyN30.oFgPUbJkxavLy18g4ZFCNhLOHZZyQN_lIA_KBgce7k8';
-        
-        const response = await fetch(`${sbUrl}/auth/v1/user`, {
-            headers: {
-                'Authorization': `Bearer ${supabaseToken}`,
-                'apikey': sbKey
-            }
-        });
-        const data = await response.json();
-        if (!response.ok) {
-            console.error('Supabase Auth error:', data);
-            return res.status(401).json({ error: 'Invalid Google token' });
-        }
-
-        const authUser = data;
-        const email = authUser.email;
-        const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || 'Google User';
-
-        if (!email) return res.status(400).json({ error: 'No email found in Google profile' });
-
         const db = getDb();
-        let user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] })).rows[0];
-
-        if (!user) {
-            const id = authUser.id || generateId();
-            // Assign a random unguessable password
-            const password_hash = await bcrypt.hash(generateId() + generateId(), 10);
-            await db.execute({
-                sql: `INSERT INTO users (id, email, password_hash, full_name, age, category, state,
-                    qualification_type, qualification_status, current_year, current_semester, expected_graduation_year)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                args: [
-                    id, email, password_hash,
-                    fullName, 18, 'General', 'All India',
-                    'Class 12', 'Completed', 0, 0, 0
-                ]
-            });
-            user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] })).rows[0];
+        // Try by ID first, then by email
+        let user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [req.user.id] })).rows[0];
+        
+        if (!user && req.user.email) {
+            user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [req.user.email] })).rows[0];
         }
 
-        const token = signToken(user);
-        return res.json({ token, user: safeUser(user) });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        return res.json(safeUser(user));
     } catch (err) {
-        console.error('Google login error:', err);
-        return res.status(500).json({ error: 'Server error during Google authentication' });
+        console.error('Get me error:', err);
+        return res.status(500).json({ error: 'Server error fetching user profile' });
     }
 });
 
-// GET /api/auth/me
-router.get('/me', auth, async (req, res) => {
-    const db = getDb();
-    const user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [req.user.id] })).rows[0] || req.user;
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    return res.json(safeUser(user));
-});
-
-// PUT /api/auth/me
+// ─────────────────────────────────────────────────────────────────────
+// PUT /api/auth/me — Update current user profile
+// ─────────────────────────────────────────────────────────────────────
 router.put('/me', auth, async (req, res) => {
     try {
         const {

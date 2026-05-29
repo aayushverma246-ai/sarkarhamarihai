@@ -31,17 +31,23 @@ function computeFormStatus(job) {
 // POST /api/ai/recommendations
 router.post('/recommendations', auth, async (req, res) => {
   try {
-    const { appliedExams = [], page = 1, search = '', category = '' } = req.body;
+    const { appliedExams = [], page = 1, search = '', category = '', state = '' } = req.body;
     const userId = req.user.id;
     const sb = getSb();
 
-    // Get source exam IDs from applied + liked
+    // Get source exam IDs from applied + liked (which are unified)
     let sourceIds = (appliedExams || []).map(e => e.id).filter(Boolean);
 
-    // Also fetch liked jobs as source
+    // Fetch applied jobs as source from applied_jobs table
+    const { data: appliedRows } = await sb.from('applied_jobs')
+      .select('job_id').eq('user_id', userId);
+    if (appliedRows) sourceIds.push(...appliedRows.map(r => r.job_id));
+
+    // Fetch liked jobs as source from liked_jobs table
     const { data: likedRows } = await sb.from('liked_jobs')
       .select('job_id').eq('user_id', userId);
     if (likedRows) sourceIds.push(...likedRows.map(r => r.job_id));
+
     sourceIds = [...new Set(sourceIds)];
 
     // FALLBACK: If no source exams, return popular LIVE exams
@@ -69,7 +75,7 @@ router.post('/recommendations', auth, async (req, res) => {
     }
 
     // Use Gemini recommendation engine
-    const result = await getRecommendations(sourceIds, userId, { page, search, category });
+    const result = await getRecommendations(sourceIds, userId, { page, search, category, state });
     return res.json(result);
   } catch (err) {
     console.error('[AI Route] Error:', err.message);

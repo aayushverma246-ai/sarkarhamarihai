@@ -1,4 +1,4 @@
-const { getDb } = require('./db');
+const { getDb, getSupabase } = require('./db');
 const crypto = require('crypto');
 
 const jobs = [];
@@ -528,11 +528,11 @@ STATES.forEach(({ c, n }, i) => {
   const [s11, e11] = tl(i + 11);
   J(`${n} NHM CHO Staff Nurse 2026`, `National Health Mission ${n}`, 'Graduation', false, 21, 40, s11, e11, 25000, 75000, 'Healthcare', url, '', '', SP_HEALTH, '', '', n);
   const [s12, e12] = tl(i + 12);
-  J(`${n} Electricity Board JE 2026`, `${n} Electricity Board`, 'Graduation', true, 18, 32, s12, e12, 35400, 112400, 'Engineering', url, '', '', SP_RAILWAY, '', '', n);
+  J(`${n} Electricity Board JE 2026`, `${n} Electricity Board`, 'Graduation', true, 18, 32, s12, e12, 35400, 112400, 'Engineering', url, '', '', SP_CENTRAL, '', '', n);
 
   // Additional variety to ensure 1500+ jobs
   const [s13, e13] = tl(i + 13);
-  J(`${n} State Transport Driver/Conductor 2026`, `${n} State Road Transport`, 'Class 10', false, 18, 38, s13, e13, 18000, 50000, 'State Government', url, '', '', SP_RAILWAY, '', '', n);
+  J(`${n} State Transport Driver/Conductor 2026`, `${n} State Road Transport`, 'Class 10', false, 18, 38, s13, e13, 18000, 50000, 'State Government', url, '', '', SP_PSU_SKILL, '', '', n);
   const [s14, e14] = tl(i + 14);
   J(`${n} Civil Judge Junior Division 2026`, `${n} High Court`, 'Graduation', true, 21, 35, s14, e14, 56100, 177500, 'Judiciary', url, '', '', SP_JUDICIARY, '', '', n);
   const [s15, e15] = tl(i + 15);
@@ -548,7 +548,7 @@ STATES.forEach(({ c, n }, i) => {
   const [s20, e20] = tl(i + 20);
   J(`${n} Rural Development Officer VDO 2026`, `${n} Panchayati Raj Dept`, 'Graduation', false, 18, 40, s20, e20, 25500, 81100, 'State Government', url, '', '', SP_SSC_OTHER, '', '', n);
   const [s21, e21] = tl(i + 21);
-  J(`${n} PWD Junior Engineer AE/JE 2026`, `${n} Public Works Dept`, 'Graduation', true, 21, 32, s21, e21, 44900, 142400, 'Engineering', url, '', '', SP_RAILWAY, '', '', n);
+  J(`${n} PWD Junior Engineer AE/JE 2026`, `${n} Public Works Dept`, 'Graduation', true, 21, 32, s21, e21, 44900, 142400, 'Engineering', url, '', '', SP_CENTRAL, '', '', n);
   const [s22, e22] = tl(i + 22);
   J(`${n} Accounts Clerk 2026`, `${n} Finance Department`, 'Graduation', false, 18, 30, s22, e22, 19900, 63200, 'State Government', url, '', '', SP_BANK_CLERK, '', '', n);
   const [s23, e23] = tl(i + 23);
@@ -582,7 +582,7 @@ const telecom = [
   ['BEL Trainee Engineer via GATE 2026', 'Bharat Electronics Limited', 'Graduation', 21, 28, 40000, 120000, 'Telecom', 'https://bel-india.in'],
   ['TRAI Junior Research Officer 2026', 'Telecom Regulatory Authority', 'Post Graduation', 21, 30, 47600, 151100, 'Telecom', 'https://trai.gov.in'],
 ];
-telecom.forEach(([n, org, q, mn, mx, s1, s2, c, l], i) => { const [s, e] = tl(i * 3 + 5); J(n, org, q, true, mn, mx, s, e, s1, s2, c, l, '', '', SP_RAILWAY); });
+telecom.forEach(([n, org, q, mn, mx, s1, s2, c, l], i) => { const [s, e] = tl(i * 3 + 5); J(n, org, q, true, mn, mx, s, e, s1, s2, c, l, '', '', SP_PSU); });
 
 // ── SHIPPING & PORTS (12) ──────────────────────────────────────────────
 const shipping = [
@@ -599,7 +599,7 @@ const shipping = [
   ['GRSE Apprentice Fitter Welder 2026', 'Garden Reach Shipbuilders', 'Class 10', 15, 22, 8000, 14000, 'Shipping', 'https://grse.in'],
   ['HSL Apprentice 2026', 'Hindustan Shipyard Ltd', 'Class 10', 15, 22, 8000, 14000, 'Shipping', 'https://hsl.nic.in'],
 ];
-shipping.forEach(([n, org, q, mn, mx, s1, s2, c, l], i) => { const [s, e] = tl(i * 2 + 4); J(n, org, q, false, mn, mx, s, e, s1, s2, c, l, '', '', SP_RAILWAY); });
+shipping.forEach(([n, org, q, mn, mx, s1, s2, c, l], i) => { const [s, e] = tl(i * 2 + 4); J(n, org, q, false, mn, mx, s, e, s1, s2, c, l, '', '', n.includes('Apprentice') || n.includes('Workman') ? SP_PSU_SKILL : SP_PSU); });
 
 // ── COOPERATIVE SECTOR (10) ────────────────────────────────────────────
 const cooperative = [
@@ -731,7 +731,7 @@ STATES.forEach(({ c, n }, i) => {
   let baseIdx = 30 + (i * 3); // Dynamic timeline offset
 
   // Municipalities / City Administration
-  let [s, e] = tl(baseIdx++); J(`${n} Municipal Corporation Junior Engineer 2026`, `${n} Municipalities`, 'Graduation', true, 18, 35, s, e, 35400, 112400, 'Engineering', url, '', '', SP_RAILWAY);
+  let [s, e] = tl(baseIdx++); J(`${n} Municipal Corporation Junior Engineer 2026`, `${n} Municipalities`, 'Graduation', true, 18, 35, s, e, 35400, 112400, 'Engineering', url, '', '', SP_CENTRAL);
   [s, e] = tl(baseIdx++); J(`${n} Municipal Clerk / Tax Inspector 2026`, `${n} Municipalities`, 'Graduation', false, 18, 35, s, e, 25500, 81100, 'State Government', url, '', '', SP_SSC_OTHER);
   [s, e] = tl(baseIdx++); J(`${n} Municipal Sanitary Inspector 2026`, `${n} Municipalities`, 'Class 12', false, 18, 35, s, e, 21700, 69100, 'State Government', url, '', '', SP_SSC_OTHER);
 
@@ -745,7 +745,7 @@ STATES.forEach(({ c, n }, i) => {
   [s, e] = tl(baseIdx++); J(`${n} State Electricity Board Assistant Engineer AE 2026`, `${n} Electricity Dept`, 'Graduation', true, 21, 35, s, e, 56100, 177500, 'PSU', url, '', '', SP_PSU);
   [s, e] = tl(baseIdx++); J(`${n} Roadways Transport Driver 2026`, `${n} State Road Transport`, 'Class 10', false, 18, 40, s, e, 18000, 56900, 'State Government', url, '', '', SP_SSC_OTHER);
   [s, e] = tl(baseIdx++); J(`${n} Roadways Transport Conductor 2026`, `${n} State Road Transport`, 'Class 10', false, 18, 40, s, e, 18000, 56900, 'State Government', url, '', '', SP_SSC_OTHER);
-  [s, e] = tl(baseIdx++); J(`${n} Water Board Junior Engineer 2026`, `${n} Water Supply Dept`, 'Graduation', true, 18, 35, s, e, 35400, 112400, 'Engineering', url, '', '', SP_RAILWAY);
+  [s, e] = tl(baseIdx++); J(`${n} Water Board Junior Engineer 2026`, `${n} Water Supply Dept`, 'Graduation', true, 18, 35, s, e, 35400, 112400, 'Engineering', url, '', '', SP_CENTRAL);
   [s, e] = tl(baseIdx++); J(`${n} Water Board Meter Reader / Clerk 2026`, `${n} Water Supply Dept`, 'Class 12', false, 18, 35, s, e, 19900, 63200, 'State Government', url, '', '', SP_SSC_OTHER);
 
   // Women, Child Development & Healthcare
@@ -761,7 +761,7 @@ STATES.forEach(({ c, n }, i) => {
   [s, e] = tl(baseIdx++); J(`${n} Civil Supplies / Food Inspector 2026`, `${n} Food Dept`, 'Graduation', false, 21, 35, s, e, 35400, 112400, 'State Government', url, '', '', SP_SSC_OTHER);
   [s, e] = tl(baseIdx++); J(`${n} Legal Metrology Inspector 2026`, `${n} Dept of Weights & Measures`, 'Graduation', false, 21, 35, s, e, 35400, 112400, 'State Government', url, '', '', SP_SSC_OTHER);
   [s, e] = tl(baseIdx++); J(`${n} Pollution Control Board Scientist B 2026`, `${n} State Pollution Control Board`, 'Post Graduation', false, 21, 35, s, e, 56100, 177500, 'Forest & Environment', url, '', '', SP_RESEARCH);
-  [s, e] = tl(baseIdx++); J(`${n} Transport Dept RTO / Motor Vehicle Inspector 2026`, `${n} Transport Dept`, 'Graduation', true, 21, 35, s, e, 35400, 112400, 'State Government', url, '', '', SP_RAILWAY);
+  [s, e] = tl(baseIdx++); J(`${n} Transport Dept RTO / Motor Vehicle Inspector 2026`, `${n} Transport Dept`, 'Graduation', true, 21, 35, s, e, 35400, 112400, 'State Government', url, '', '', SP_CENTRAL);
 
   // Lower Administration & Judicial
   [s, e] = tl(baseIdx++); J(`${n} District Collectorate LDC / Stenographer 2026`, `${n} Revenue Dept`, 'Class 12', false, 18, 35, s, e, 19900, 63200, 'State Government', url, '', '', SP_SSC_OTHER);
@@ -1025,7 +1025,7 @@ namedPSCs.forEach(({ n, org }, i) => {
   J(`${n} Police Constable 2026`, `${n} Police Recruitment Board`, 'Class 12', false, 18, 25, s, e, 21700, 69100, 'Police', `https://police.${n.toLowerCase().replace(/\s/g, '')}.gov.in`, '', '', SP_PARA, '', '', n);
   J(`${n} Police Sub-Inspector (SI) 2026`, `${n} Police Recruitment Board`, 'Graduation', true, 21, 28, s, e, 35400, 112400, 'Police', `https://police.${n.toLowerCase().replace(/\s/g, '')}.gov.in`, '', '', SP_POLICE, '', '', n);
   J(`${n} Teacher Eligibility Test (${n.substring(0, 2).toUpperCase()}TET) 2026`, `${n} Education Board`, 'Graduation', true, 18, 40, s, e, 35400, 112400, 'Teaching', `https://schooleducation.${n.toLowerCase().replace(/\s/g, '')}.gov.in`, '', '', SP_TEACHING_CTET, '', '', n);
-  J(`${n} State Electricity Board JE/AE 2026`, `${n} Electricity Board`, 'Graduation', true, 21, 35, s, e, 44900, 142400, 'Engineering', `https://energy.${n.toLowerCase().replace(/\s/g, '')}.gov.in`, '', '', SP_RAILWAY, '', '', n);
+  J(`${n} State Electricity Board JE/AE 2026`, `${n} Electricity Board`, 'Graduation', true, 21, 35, s, e, 44900, 142400, 'Engineering', `https://energy.${n.toLowerCase().replace(/\s/g, '')}.gov.in`, '', '', SP_CENTRAL, '', '', n);
 });
 
 // Missing Central & Apex Bodies
@@ -1062,72 +1062,123 @@ async function seedDatabase() {
     return;
   }
 
-  // FORCE PURGE for v18 to standardize categories and fix data
-  if (currentVersion < 18) {
-    console.log(`  Seed version ${currentVersion} → ${SEED_VERSION}. PURGING data to standardize categories...`);
-    // STRICT: ONLY delete jobs, NEVER delete users or applied data
-    // Removed DELETE query to avoid Supabase REST API issues
-  } else {
-    console.log(`  Seed version ${currentVersion} → ${SEED_VERSION}. Upserting jobs...`);
+  console.log(`  Seed version ${currentVersion} → ${SEED_VERSION}. Upserting jobs in bulk...`);
+
+  // DEDUPLICATE JOBS BY ID BEFORE SEEDING
+  const uniqueJobsMap = new Map();
+  for (const job of jobs) {
+    uniqueJobsMap.set(job.id, job);
   }
+  const uniqueJobsList = Array.from(uniqueJobsMap.values());
+  console.log(`  Deduplicated: ${jobs.length} jobs reduced to ${uniqueJobsList.length} unique jobs...`);
+  console.log(`  Seeding ${uniqueJobsList.length} unique jobs in bulk...`);
 
-  console.log(`  Seeding ${jobs.length} jobs...`);
+  // Direct Supabase Client Bulk Upsert
+  const sb = getSupabase();
+  if (sb) {
+    console.log('  Using high-speed Supabase client bulk upsert...');
+    // We can upsert them in batches of 1000 for perfect PostgREST compatibility
+    const BATCH_SIZE = 1000;
+    for (let i = 0; i < uniqueJobsList.length; i += BATCH_SIZE) {
+      const chunk = uniqueJobsList.slice(i, i + BATCH_SIZE).map(j => ({
+        id: j.id,
+        job_name: j.job_name,
+        organization: j.organization,
+        qualification_required: j.qualification_required,
+        allows_final_year_students: j.allows_final_year_students,
+        minimum_age: j.minimum_age,
+        maximum_age: j.maximum_age,
+        application_start_date: j.application_start_date,
+        application_end_date: j.application_end_date,
+        salary_min: j.salary_min,
+        salary_max: j.salary_max,
+        job_category: j.job_category,
+        official_application_link: j.official_application_link,
+        official_notification_link: j.official_notification_link,
+        official_website_link: j.official_website_link,
+        syllabus: j.syllabus || '',
+        selection_process: j.selection_process || '',
+        exam_name_hi: j.exam_name_hi || '',
+        exam_name_ta: j.exam_name_ta || '',
+        exam_name_bn: j.exam_name_bn || '',
+        state: j.state || 'All India',
+        states: j.states || []
+      }));
 
-  const INSERT = `INSERT OR REPLACE INTO jobs (
-    id, job_name, organization, qualification_required, allows_final_year_students,
-    minimum_age, maximum_age, application_start_date, application_end_date,
-    salary_min, salary_max, job_category,
-    official_application_link, official_notification_link, official_website_link,
-    syllabus, selection_process, exam_name_hi, exam_name_ta, exam_name_bn, state, states
-  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          const { error } = await sb.from('jobs').upsert(chunk, { onConflict: 'id' });
+          if (error) throw error;
+          console.log(`  Progress: ${Math.min(i + BATCH_SIZE, uniqueJobsList.length)}/${uniqueJobsList.length} jobs bulk seeded...`);
+          break;
+        } catch (err) {
+          retries--;
+          console.error(`  Bulk batch ${i}-${i + BATCH_SIZE} failed (retries left: ${retries}):`, err.message);
+          if (retries === 0) throw err;
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+    }
+  } else {
+    // Fallback if supabase client is not accessible
+    console.log('  Supabase client not initialized, falling back to slow db.execute batching...');
+    const INSERT = `INSERT OR REPLACE INTO jobs (
+      id, job_name, organization, qualification_required, allows_final_year_students,
+      minimum_age, maximum_age, application_start_date, application_end_date,
+      salary_min, salary_max, job_category,
+      official_application_link, official_notification_link, official_website_link,
+      syllabus, selection_process, exam_name_hi, exam_name_ta, exam_name_bn, state, states
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
-  const stmts = jobs.map(j => ({
-    sql: INSERT,
-    args: [
-      j.id, j.job_name, j.organization, j.qualification_required,
-      j.allows_final_year_students, j.minimum_age, j.maximum_age,
-      j.application_start_date, j.application_end_date,
-      j.salary_min, j.salary_max, j.job_category,
-      j.official_application_link,
-      j.official_notification_link,
-      j.official_website_link,
-      j.syllabus || '',
-      j.selection_process || '',
-      j.exam_name_hi || '',
-      j.exam_name_ta || '',
-      j.exam_name_bn || '',
-      j.state || 'All India',
-      JSON.stringify(j.states || [])
-    ]
-  }));
+    const stmts = uniqueJobsList.map(j => ({
+      sql: INSERT,
+      args: [
+        j.id, j.job_name, j.organization, j.qualification_required,
+        j.allows_final_year_students, j.minimum_age, j.maximum_age,
+        j.application_start_date, j.application_end_date,
+        j.salary_min, j.salary_max, j.job_category,
+        j.official_application_link,
+        j.official_notification_link,
+        j.official_website_link,
+        j.syllabus || '',
+        j.selection_process || '',
+        j.exam_name_hi || '',
+        j.exam_name_ta || '',
+        j.exam_name_bn || '',
+        j.state || 'All India',
+        JSON.stringify(j.states || [])
+      ]
+    }));
 
-  // batch in groups of 200 for reliable HTTP transport (avoid timeouts)
-  const BATCH = 200;
-  for (let i = 0; i < stmts.length; i += BATCH) {
-    const batch = stmts.slice(i, i + BATCH);
-    let retries = 3;
-    while (retries > 0) {
-      try {
-        await db.batch(batch, 'write');
-        if (i % 2000 === 0) console.log(`  Progress: ${i + batch.length}/${stmts.length} jobs seeded...`);
-        break;
-      } catch (err) {
-        retries--;
-        if (retries > 0) {
-          console.log(`  Batch ${i}-${i + BATCH} retry (${3 - retries}/3): ${err.message}`);
-          await new Promise(r => setTimeout(r, 2000)); // Wait 2s before retry
-        } else {
-          console.error(`  Batch ${i}-${i + BATCH} FAILED after 3 retries:`, err.message);
+    const BATCH = 200;
+    for (let i = 0; i < stmts.length; i += BATCH) {
+      const batch = stmts.slice(i, i + BATCH);
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          await db.batch(batch, 'write');
+          if (i % 2000 === 0) console.log(`  Progress: ${i + batch.length}/${stmts.length} jobs seeded...`);
+          break;
+        } catch (err) {
+          retries--;
+          if (retries > 0) {
+            console.log(`  Batch ${i}-${i + BATCH} retry (${3 - retries}/3): ${err.message}`);
+            await new Promise(r => setTimeout(r, 2000));
+          } else {
+            console.error(`  Batch ${i}-${i + BATCH} FAILED after 3 retries:`, err.message);
+          }
         }
       }
     }
   }
-  console.log(`✓ Seeded ${jobs.length} jobs successfully!`);
 
   // Save seed version so we don't reseed on every cold start
   try {
     await db.execute({ sql: "INSERT OR REPLACE INTO seed_meta (key, value) VALUES ('seed_version', ?)", args: [String(SEED_VERSION)] });
   } catch (_) { }
+
+  console.log(`✓ Seeded ${jobs.length} jobs successfully in bulk!`);
 }
 
 // ── CHUNKED SEED (for Vercel 60s timeout) ──────────────────────────────────

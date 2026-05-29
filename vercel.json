@@ -4,8 +4,7 @@
         "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEzNDgyNywiZXhwIjoyMDkwNzEwODI3fQ.wbX4lhJKE8OtzIl2RJamsFA71DRwo-B7QCL4UzAsr9A",
         "JWT_SECRET": "sarkarhamarhai_super_secret_jwt_key_2024_prod",
         "CRON_SECRET": "sarkar_cron_key_v1",
-        "GEMINI_API_KEY_NEW": "AIzaSyCv-2zrwS458yQehOt0FH3sQpq1t_gak_w",
-        "NVIDIA_API_KEY": "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",
+        "GEMINI_API_KEY_NEW": "AQ.Ab8RN6LYEzKBnmxzkLnhrVzArhoTYQpUblMPnEjIrc8fXAq6aQ",
         "VITE_API_URL": "/api"
     },
     "headers": [
@@ -102,7 +101,7 @@
     ],
     "functions": {
         "api/index.js": {
-            "includeFiles": "{backend/src/**,server.js,supabase/**,.env,backend/.env}",
+            "includeFiles": "{backend/src/**,server.js,supabase/**,.env,backend/.env,scripts/**}",
             "maxDuration": 90
         },
         "api/cron/hourly-update.js": {

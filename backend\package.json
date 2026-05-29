@@ -7,11 +7,10 @@
     "scripts": {
         "start": "node src/index.js",
         "dev": "nodemon src/index.js",
-        "seed": "node src/seed.js"
+        "seed": "node src/seed-run.js"
     },
     "dependencies": {
         "@google/generative-ai": "^0.24.1",
-        "@libsql/client": "^0.14.0",
         "axios": "^1.14.0",
         "bcryptjs": "^3.0.3",
         "cors": "^2.8.5",
