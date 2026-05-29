@@ -129,6 +129,7 @@ router.post('/profile-setup', auth, async (req, res) => {
 // POST /api/auth/ensure-profile
 // Lightweight endpoint called on login — ensures user has a DB row.
 // If user doesn't exist yet, creates a minimal profile.
+// When migrating old users, updates their ID across ALL related tables.
 // ─────────────────────────────────────────────────────────────────────
 router.post('/ensure-profile', auth, async (req, res) => {
     try {
@@ -154,16 +155,53 @@ router.post('/ensure-profile', auth, async (req, res) => {
         }
 
         if (user) {
-            // Migrate: update their ID to Supabase user ID
+            const oldId = user.id;
+
+            // Migrate user ID across ALL related tables
             try {
-                await db.execute({
-                    sql: 'UPDATE users SET id = ? WHERE email = ?',
-                    args: [supabaseUserId, email]
-                });
+                // Update main users table
+                await db.execute({ sql: 'UPDATE users SET id = ? WHERE email = ?', args: [supabaseUserId, email] });
+
+                // Update all related Turso tables that reference user_id
+                const relatedTables = [
+                    { table: 'notifications', col: 'user_id' },
+                    { table: 'roadmaps', col: 'user_id' },
+                    { table: 'tracker_plans', col: 'user_id' },
+                    { table: 'tracker_user_stats', col: 'user_id' },
+                    { table: 'tracker_user_targets', col: 'user_id' },
+                ];
+                for (const { table, col } of relatedTables) {
+                    try {
+                        await db.execute({ sql: `UPDATE ${table} SET ${col} = ? WHERE ${col} = ?`, args: [supabaseUserId, oldId] });
+                    } catch (_) { /* table might not exist yet */ }
+                }
+
+                // Update Supabase tables (liked_jobs, user_applications, reminders)
+                const sbUrl = process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co';
+                const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+                if (sbKey) {
+                    const supabaseTables = ['liked_jobs', 'user_applications', 'reminders'];
+                    for (const tbl of supabaseTables) {
+                        try {
+                            await fetch(`${sbUrl}/rest/v1/${tbl}?user_id=eq.${encodeURIComponent(oldId)}`, {
+                                method: 'PATCH',
+                                headers: {
+                                    'Authorization': `Bearer ${sbKey}`,
+                                    'apikey': sbKey,
+                                    'Content-Type': 'application/json',
+                                    'Prefer': 'return=minimal',
+                                },
+                                body: JSON.stringify({ user_id: supabaseUserId }),
+                            });
+                        } catch (_) { /* non-critical */ }
+                    }
+                }
+
+                console.log(`Migrated user ${oldId} → ${supabaseUserId} (${email})`);
             } catch (migErr) {
-                // ID conflict — user might already exist with this ID, just fetch
-                console.warn('ID migration conflict, fetching existing:', migErr.message);
+                console.warn('ID migration error:', migErr.message);
             }
+
             user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ? OR email = ?', args: [supabaseUserId, email] })).rows[0];
         } else {
             // Create minimal profile — use Google metadata if available
@@ -182,7 +220,7 @@ router.post('/ensure-profile', auth, async (req, res) => {
                     ]
                 });
             } catch (insErr) {
-                console.warn('Insert conflict, trying to fetch existing:', insErr.message);
+                console.warn('Insert conflict:', insErr.message);
             }
             user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ? OR email = ?', args: [supabaseUserId, email] })).rows[0];
         }
@@ -195,6 +233,81 @@ router.post('/ensure-profile', auth, async (req, res) => {
     } catch (err) {
         console.error('Ensure profile error:', err);
         return res.status(500).json({ error: 'Server error ensuring profile', details: err.message });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// POST /api/auth/legacy-login
+// Migrates old email/password users to Supabase Auth.
+// Verifies bcrypt password from our DB, then creates the user in Supabase Auth.
+// ─────────────────────────────────────────────────────────────────────
+router.post('/legacy-login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
+
+        const db = getDb();
+
+        // Find user in our DB
+        const user = (await db.execute({ sql: 'SELECT * FROM users WHERE email = ?', args: [email] })).rows[0];
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        // Verify bcrypt password
+        const valid = await bcrypt.compare(password, user.password_hash);
+        if (!valid) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        // Create user in Supabase Auth via admin API
+        const sbUrl = process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co';
+        const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+        if (!sbKey) {
+            return res.status(500).json({ error: 'Server misconfigured: missing service role key' });
+        }
+
+        // Try to create user in Supabase Auth (skip if already exists)
+        try {
+            const createRes = await fetch(`${sbUrl}/auth/v1/admin/users`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${sbKey}`,
+                    'apikey': sbKey,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    email: email,
+                    password: password,
+                    email_confirm: true, // Auto-confirm
+                    user_metadata: {
+                        full_name: user.full_name || '',
+                    },
+                }),
+            });
+
+            if (!createRes.ok) {
+                const errData = await createRes.json().catch(() => ({}));
+                // 422 = user already exists, which is fine
+                if (createRes.status !== 422 && !errData.msg?.includes('already been registered')) {
+                    console.warn('Supabase admin create user warning:', errData);
+                }
+            }
+        } catch (createErr) {
+            console.warn('Supabase admin create user error:', createErr.message);
+        }
+
+        return res.json({
+            success: true,
+            message: 'Account migrated to Supabase Auth. Please sign in again.',
+            user: safeUser(user),
+        });
+    } catch (err) {
+        console.error('Legacy login error:', err);
+        return res.status(500).json({ error: 'Server error during legacy login', details: err.message });
     }
 });
 

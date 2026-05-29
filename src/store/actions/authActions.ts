@@ -7,14 +7,43 @@ import { supabase } from '../../utils/supabase';
 export const loginAction = (email: string, password: string) => async (dispatch: any) => {
     dispatch({ type: types.AUTH_START });
     try {
-        // Authenticate with Supabase
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        // Try Supabase auth first
+        let { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-        if (error) {
+        // If Supabase doesn't know this user, try legacy login (bcrypt migration)
+        if (error && (error.message.includes('Invalid login credentials') || error.message.includes('Email not confirmed'))) {
+            try {
+                const legacyRes = await fetch(
+                    ((import.meta as any).env.VITE_API_URL || 'http://localhost:3001/api') + '/auth/legacy-login',
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password }),
+                    }
+                );
+                const legacyData = await legacyRes.json();
+
+                if (legacyRes.ok && legacyData.success) {
+                    // User migrated to Supabase Auth — now sign in via Supabase
+                    const retry = await supabase.auth.signInWithPassword({ email, password });
+                    if (retry.error) {
+                        throw new Error(retry.error.message);
+                    }
+                    data = retry.data;
+                    error = null;
+                } else if (legacyRes.status === 401) {
+                    throw new Error('Invalid email or password');
+                } else {
+                    throw new Error(legacyData.error || 'Login failed');
+                }
+            } catch (legacyErr: any) {
+                throw new Error(legacyErr.message || 'Invalid email or password');
+            }
+        } else if (error) {
             throw new Error(error.message);
         }
 
-        if (!data.session || !data.user) {
+        if (!data?.session || !data?.user) {
             throw new Error('Login failed. Please try again.');
         }
 
