@@ -19,9 +19,24 @@ export default function AuthCallbackPage() {
                 if (sessionError) throw sessionError;
                 if (!session) throw new Error('No session found. Please try logging in again.');
 
-                // Ensure the user has a profile in our database
-                // The Supabase access token is used as the Bearer token automatically by api.ts
-                const { user } = await api.ensureProfile();
+                // Check if there's pending profile data from signup
+                let pendingProfile = null;
+                try {
+                    const raw = localStorage.getItem('sarkar_pending_profile');
+                    if (raw) pendingProfile = JSON.parse(raw);
+                } catch { /* ignore */ }
+
+                let user;
+                if (pendingProfile && pendingProfile.full_name) {
+                    // Use the saved profile data from signup form
+                    const result = await api.setupProfile(pendingProfile);
+                    user = result.user;
+                    localStorage.removeItem('sarkar_pending_profile');
+                } else {
+                    // No pending profile — just ensure a profile row exists
+                    const result = await api.ensureProfile();
+                    user = result.user;
+                }
                 
                 if (mounted) {
                     setCachedUser(user);

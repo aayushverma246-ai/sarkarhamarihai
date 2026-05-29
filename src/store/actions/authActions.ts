@@ -18,8 +18,24 @@ export const loginAction = (email: string, password: string) => async (dispatch:
             throw new Error('Login failed. Please try again.');
         }
 
-        // Ensure user has a profile in our database
-        const { user: profile } = await api.ensureProfile();
+        // Check if there's pending profile data from signup (saved before email confirmation)
+        let pendingProfile = null;
+        try {
+            const raw = localStorage.getItem('sarkar_pending_profile');
+            if (raw) pendingProfile = JSON.parse(raw);
+        } catch { /* ignore */ }
+
+        let profile;
+        if (pendingProfile && pendingProfile.full_name) {
+            // Use saved profile data from signup form
+            const result = await api.setupProfile(pendingProfile);
+            profile = result.user;
+            localStorage.removeItem('sarkar_pending_profile');
+        } else {
+            // Ensure user has a profile in our database
+            const result = await api.ensureProfile();
+            profile = result.user;
+        }
 
         if (profile) {
             setCachedUser(profile);

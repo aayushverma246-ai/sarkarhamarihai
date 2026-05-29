@@ -1,6 +1,7 @@
-import React, { Suspense } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import React, { Suspense, useEffect } from 'react';
+import { Navigate, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
 import { getCachedUser } from './api';
+import { supabase } from './utils/supabase';
 import GovLoader from './components/GovLoader';
 import { LanguageProvider } from './i18n/LanguageContext';
 
@@ -48,9 +49,40 @@ function RootRedirect() {
   return <LandingPage />;
 }
 
+// ── Global auth listener: detects email confirmation redirects ──
+// When Supabase email confirmation link redirects here with tokens in
+// the URL hash, this listener picks up the SIGNED_IN event and
+// navigates to /auth/callback to complete profile setup.
+function AuthListener() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Only handle auth events on non-callback pages
+      // (AuthCallbackPage handles its own flow)
+      if (location.pathname === '/auth/callback') return;
+
+      if (event === 'SIGNED_IN' && session) {
+        // Check if this is from an email confirmation (URL has auth tokens)
+        const hash = window.location.hash;
+        if (hash && (hash.includes('access_token') || hash.includes('type=signup') || hash.includes('type=recovery'))) {
+          // Email confirmation redirect — navigate to callback to complete setup
+          navigate('/auth/callback', { replace: true });
+        }
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate, location.pathname]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <LanguageProvider>
+      <AuthListener />
       <Suspense fallback={<SuspenseFallback />}>
         <Routes>
           {/* "/" → login (mobile app) or dashboard (if logged in) — no landing page */}

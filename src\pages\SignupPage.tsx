@@ -51,6 +51,21 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
+      // Save profile data to localStorage BEFORE signUp
+      // This ensures data survives the email confirmation flow
+      const profileData = {
+        full_name: form.full_name,
+        age: ageNum,
+        category: form.category,
+        state: form.state,
+        qualification_type: form.qualification_type,
+        qualification_status: form.qualification_status,
+        current_year: parseInt(form.current_year) || 0,
+        current_semester: parseInt(form.current_semester) || 0,
+        expected_graduation_year: parseInt(form.expected_graduation_year) || 0,
+      };
+      localStorage.setItem('sarkar_pending_profile', JSON.stringify(profileData));
+
       // Step 1: Create user in Supabase Auth
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: form.email,
@@ -58,7 +73,8 @@ export default function SignupPage() {
         options: {
           data: {
             full_name: form.full_name,
-          }
+          },
+          emailRedirectTo: window.location.origin + '/auth/callback',
         }
       });
 
@@ -79,7 +95,7 @@ export default function SignupPage() {
         });
 
         if (signInError) {
-          // Email confirmation might be required
+          // Email confirmation is required
           setError('Account created! Please check your email to confirm, then log in.');
           setLoading(false);
           return;
@@ -93,19 +109,8 @@ export default function SignupPage() {
       }
 
       // Step 2: Create profile in our database
-      const profileData = {
-        full_name: form.full_name,
-        age: ageNum,
-        category: form.category,
-        state: form.state,
-        qualification_type: form.qualification_type,
-        qualification_status: form.qualification_status,
-        current_year: parseInt(form.current_year) || 0,
-        current_semester: parseInt(form.current_semester) || 0,
-        expected_graduation_year: parseInt(form.expected_graduation_year) || 0,
-      };
-
       const { user } = await api.setupProfile(profileData);
+      localStorage.removeItem('sarkar_pending_profile');
       setCachedUser(user);
       navigate('/dashboard');
     } catch (err) {
