@@ -106,20 +106,30 @@ const sendNotifications = async (db) => {
     let count = 0;
     const inserts = [];
 
-    // Fetch jobs that are active (LIVE) or recently closed
-    const { data: activeJobs } = await sb.from('jobs')
-        .select('id, job_name, organization, form_status, application_end_date, application_start_date')
-        .in('form_status', ['LIVE', 'RECENTLY_CLOSED', 'CLOSED']);
-
-    if (!activeJobs || activeJobs.length === 0) return 0;
-    const jobIds = activeJobs.map(j => j.id);
-
-    // Fetch interested users
+    // Fetch interested users first
     const { data: likedRows } = await sb.from('liked_jobs').select('user_id, job_id');
     const { data: reminderRows } = await sb.from('job_reminders').select('user_id, job_id');
     const { data: appliedRows } = await sb.from('applied_jobs').select('user_id, job_id');
 
     const appliedSet = new Set((appliedRows || []).map(r => `${r.user_id}::${r.job_id}`));
+
+    // Gather unique job_ids users are interested in to bypass Supabase 1000 row limits
+    const interestedJobIds = Array.from(new Set([
+        ...(likedRows || []).map(r => r.job_id),
+        ...(reminderRows || []).map(r => r.job_id)
+    ])).filter(Boolean);
+
+    let activeJobs = [];
+    if (interestedJobIds.length > 0) {
+        const { data, error } = await sb.from('jobs')
+            .select('id, job_name, organization, form_status, application_end_date, application_start_date')
+            .in('id', interestedJobIds)
+            .in('form_status', ['LIVE', 'RECENTLY_CLOSED', 'CLOSED']);
+        if (error) throw new Error(error.message);
+        activeJobs = data || [];
+    }
+
+    if (activeJobs.length === 0) return 0;
 
     // Group by source to differentiate logic
     const likedToUsers = {};

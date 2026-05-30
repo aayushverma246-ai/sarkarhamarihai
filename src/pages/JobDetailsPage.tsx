@@ -65,6 +65,13 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 
 // ─── Selection process maps ──────────────────────────────────────────────────
 
+function cleanStepText(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/^(?:Stage\s*\d+|Final Stage|\d+)\s*[:.-]?\s*/i, '')
+    .trim();
+}
+
 function getSelectionSteps(selectionProcess: string): string[] | null {
   if (!selectionProcess || !selectionProcess.trim()) return null;
   const raw = selectionProcess.trim();
@@ -97,13 +104,20 @@ function getSelectionSteps(selectionProcess: string): string[] | null {
     if (parts.length > 1) return parts;
   }
 
-  // 4. Numbered list: "1. ... 2. ... 3. ..."
-  if (/^\d+\./.test(raw)) {
-    const parts = raw.split(/(?=\d+\.)/).map(s => s.trim()).filter(Boolean);
+  // 4. Numbered or Stage-based list anywhere: "1. ... 2. ... 3. ..."
+  const listRegex = /(?=\b(?:Stage\s*\d+|Final Stage|\d+)\s*[:.-]\s+)/i;
+  if (listRegex.test(raw)) {
+    const parts = raw.split(listRegex).map(s => s.trim()).filter(Boolean);
     if (parts.length > 1) return parts;
   }
 
-  // 5. Comma separated lists (if reasonably short and has multiple commas)
+  // 5. Newline separated list
+  if (raw.includes('\n')) {
+    const parts = raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    if (parts.length > 1) return parts;
+  }
+
+  // 6. Comma separated lists (if reasonably short and has multiple commas)
   if (raw.split(',').length >= 3 && raw.length < 150) {
     return raw.split(',').map(s => s.trim()).filter(Boolean);
   }
@@ -889,7 +903,7 @@ export default function JobDetailsPage() {
           </div>
 
           {/* ── ACTION STRIP ────────────────────────────────────────── */}
-          <div className="bg-[#111] px-5 sm:px-8 py-6 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 border-t border-[#1a1a1a]">
+          <div className="bg-[#111] px-5 sm:px-8 py-6 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 sm:gap-4 border-t border-[#1a1a1a]">
 
             <div className="flex gap-3 items-center">
               {/* Save button */}
@@ -1062,14 +1076,37 @@ export default function JobDetailsPage() {
         <Section title={t('job.selectionProcess')} icon="🎯">
           {selectionSteps && selectionSteps.length > 0 ? (
             <div className="space-y-3 pb-5">
-              {selectionSteps.map((step, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full bg-[#141414] border border-[#252525] text-gray-500 text-xs flex items-center justify-center flex-shrink-0 mt-0.5 font-medium">
-                    {i + 1}
-                  </div>
-                  <p className="text-sm text-gray-300 pt-0.5">{step}</p>
-                </div>
-              ))}
+              {(() => {
+                // Smartly check if the first element is introductory text
+                const firstRaw = selectionSteps[0];
+                const hasStepPattern = /^(?:Stage\s*\d+|Final Stage|\d+)\s*[:.-]/i.test(firstRaw);
+                const firstIsIntro = !hasStepPattern && selectionSteps.length > 1;
+
+                const displaySteps = firstIsIntro ? selectionSteps.slice(1) : selectionSteps;
+
+                return (
+                  <>
+                    {firstIsIntro && (
+                      <p className="text-sm text-gray-400 mb-4 italic leading-relaxed bg-[#141414]/30 border border-[#252525]/10 px-4 py-3 rounded-xl">
+                        {firstRaw}
+                      </p>
+                    )}
+                    <div className="space-y-3">
+                      {displaySteps.map((step, i) => {
+                        const cleanStep = cleanStepText(step);
+                        return (
+                          <div key={i} className="flex items-start gap-3">
+                            <div className="w-6 h-6 rounded-full bg-[#141414] border border-[#252525] text-gray-500 text-xs flex items-center justify-center flex-shrink-0 mt-0.5 font-medium">
+                              {i + 1}
+                            </div>
+                            <p className="text-sm text-gray-300 pt-0.5 leading-relaxed">{cleanStep}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           ) : (
             <div className="pb-5 pt-2 text-sm text-gray-500 italic">Data unavailable</div>
