@@ -25,7 +25,8 @@ module.exports = async (req, res) => {
   }
 
   const startTime = Date.now();
-  const MAX_MS = 85000; // 85s hard limit (Vercel 90s max)
+  const maxMsQuery = req.query?.maxDuration ? parseInt(req.query.maxDuration) : 8000; // default 8s for safety on Vercel Hobby tier
+  const MAX_MS = Math.min(maxMsQuery, 85000);
 
   // Supabase client
   const { createClient } = require('@supabase/supabase-js');

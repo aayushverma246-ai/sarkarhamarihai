@@ -297,29 +297,38 @@ async function healAllRecords() {
                 }
             }
 
-            // Mark as healed
+            // Mark as healed (even if no fields were updated, we must mark as healed to leave the seeder query)
+            patch.discovery_source = 'healed';
+            patch.last_verified_at = new Date().toISOString();
+            
+            // Only update fields that actually changed (to keep updates lightweight)
             if (changed) {
-                patch.discovery_source = 'healed';
-                patch.last_verified_at = new Date().toISOString();
                 updates.push({ id: rec.id, ...patch });
                 totalFixed++;
+            } else {
+                // If nothing else changed, just update discovery_source to healed
+                updates.push({ id: rec.id, discovery_source: 'healed', last_verified_at: patch.last_verified_at });
             }
         }
 
-        // Batch update via individual upserts (Supabase doesn't support batch UPDATE easily)
-        for (const upd of updates) {
-            const { id, ...fields } = upd;
-            const { error: updErr } = await sb.from('jobs').update(fields).eq('id', id);
-            if (updErr) {
-                console.error(`[Healer] Update failed for ${id}:`, updErr.message);
-            }
+        // Batch update in parallel with concurrency
+        console.log(`[Healer] Executing ${updates.length} updates...`);
+        const CONCURRENCY = 25;
+        for (let i = 0; i < updates.length; i += CONCURRENCY) {
+            const batch = updates.slice(i, i + CONCURRENCY);
+            await Promise.all(batch.map(async (upd) => {
+                const { id, ...fields } = upd;
+                const { error: updErr } = await sb.from('jobs').update(fields).eq('id', id);
+                if (updErr) {
+                    console.error(`[Healer] Update failed for ${id}:`, updErr.message);
+                }
+            }));
         }
 
         totalProcessed += records.length;
         console.log(`[Healer] Batch done. Processed: ${totalProcessed}, Fixed: ${totalFixed}`);
 
         if (records.length < batchSize) break;
-        offset += batchSize;
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
