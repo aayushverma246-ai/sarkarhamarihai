@@ -12,11 +12,31 @@ function generateId() {
 router.get('/targets', auth, async (req, res) => {
     try {
         const db = getDb();
-        const targets = await db.execute({
+        const targetsQuery = await db.execute({
             sql: 'SELECT * FROM tracker_user_targets WHERE user_id = ? ORDER BY created_at ASC',
             args: [req.user.id]
         });
-        return res.json(targets.rows || []);
+        
+        const targets = targetsQuery.rows || [];
+        const now = new Date();
+        
+        // Dynamically fix any expired/past target dates to ensure 0 placeholder/stale target date display!
+        for (const t of targets) {
+            if (t.exam_date) {
+                const dateObj = new Date(t.exam_date);
+                if (dateObj < now) {
+                    const adjusted = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000);
+                    t.exam_date = adjusted.toISOString().split('T')[0];
+                    
+                    await db.execute({
+                        sql: "UPDATE tracker_user_targets SET exam_date = ? WHERE id = ?",
+                        args: [t.exam_date, t.id]
+                    });
+                }
+            }
+        }
+        
+        return res.json(targets);
     } catch (err) {
         console.error(err);
         return res.status(500).json({ error: 'Server error retrieving targets' });
@@ -419,6 +439,45 @@ router.get('/stats', auth, async (req, res) => {
             stats = statsQuery.rows[0];
         }
 
+        // --- DYNAMIC STREAK EXPIRATION LOGIC ---
+        // If a user has a current streak > 0 but has NOT completed a daily plan in the last 36 hours (yesterday & today),
+        // we must logically break the streak and set it to 0 to prevent stale/fake statistics!
+        const lastPlanQuery = await db.execute({
+            sql: "SELECT date FROM tracker_plans WHERE user_id = ? AND status = 'completed' ORDER BY date DESC LIMIT 1",
+            args: [userId]
+        });
+
+        let activeStreak = stats.current_streak || 0;
+        if (lastPlanQuery.rows && lastPlanQuery.rows.length > 0) {
+            const lastDateStr = lastPlanQuery.rows[0].date;
+            const lastDate = new Date(lastDateStr);
+            const today = new Date();
+            lastDate.setHours(0, 0, 0, 0);
+            today.setHours(0, 0, 0, 0);
+            
+            const diffTime = Math.abs(today.getTime() - lastDate.getTime());
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays > 1) {
+                activeStreak = 0;
+                await db.execute({
+                    sql: "UPDATE tracker_user_stats SET current_streak = 0 WHERE user_id = ?",
+                    args: [userId]
+                });
+                stats.current_streak = 0;
+            }
+        } else {
+            // No completed plans at all -> streak must be 0
+            if (activeStreak > 0) {
+                activeStreak = 0;
+                await db.execute({
+                    sql: "UPDATE tracker_user_stats SET current_streak = 0 WHERE user_id = ?",
+                    args: [userId]
+                });
+                stats.current_streak = 0;
+            }
+        }
+
         // Study consistency: days studied in last 7 days
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const consistencyQuery = await db.execute({
@@ -427,20 +486,35 @@ router.get('/stats', auth, async (req, res) => {
         });
         const daysStudiedThisWeek = consistencyQuery.rows[0]?.days_studied || 0;
 
-        // Exam countdowns
+        // Exam countdowns with DYNAMIC EXPIRED DATE FIX
         const targetsQuery = await db.execute({ sql: 'SELECT exam_name, exam_date, syllabus_completed_pct FROM tracker_user_targets WHERE user_id = ?', args: [userId] });
         const examCountdowns = [];
         const weakSubjects = [];
         if (targetsQuery.rows) {
-            targetsQuery.rows.forEach(t => {
-                if (t.exam_date) {
-                    const daysLeft = Math.max(0, Math.ceil((new Date(t.exam_date) - new Date()) / (1000 * 60 * 60 * 24)));
+            for (const t of targetsQuery.rows) {
+                let finalDate = t.exam_date;
+                if (finalDate) {
+                    const dateObj = new Date(finalDate);
+                    const now = new Date();
+                    
+                    // If the target date has already passed, dynamically shift it to 180 days in the future
+                    if (dateObj < now) {
+                        const adjusted = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000);
+                        finalDate = adjusted.toISOString().split('T')[0];
+                        
+                        await db.execute({
+                            sql: "UPDATE tracker_user_targets SET exam_date = ? WHERE user_id = ? AND exam_name = ?",
+                            args: [finalDate, userId, t.exam_name]
+                        });
+                    }
+                    
+                    const daysLeft = Math.max(0, Math.ceil((new Date(finalDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)));
                     examCountdowns.push({ exam_name: t.exam_name, days_left: daysLeft, syllabus_pct: t.syllabus_completed_pct || 0 });
                 }
                 if ((t.syllabus_completed_pct || 0) < 40) {
                     weakSubjects.push({ exam_name: t.exam_name, syllabus_pct: t.syllabus_completed_pct || 0 });
                 }
-            });
+            }
         }
 
         // Readiness explanation
@@ -448,6 +522,7 @@ router.get('/stats', auth, async (req, res) => {
 
         return res.json({
             ...stats,
+            current_streak: stats.current_streak, // Send updated streak
             days_studied_this_week: daysStudiedThisWeek,
             exam_countdowns: examCountdowns,
             weak_subjects: weakSubjects,

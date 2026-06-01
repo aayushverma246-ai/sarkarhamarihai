@@ -10,6 +10,10 @@ const { seedDatabase } = require('./backend/src/seed');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Enable gzip compression for all static assets and API JSON responses for peak speed
+const compression = require('compression');
+app.use(compression());
+
 // CORS Configuration
 app.use(cors({ origin: '*' }));
 app.use(express.json());
@@ -186,8 +190,19 @@ app.use('/api/health', require('./backend/src/routes/health')); // Robust DB mon
 app.use('/api/audit', require('./backend/src/routes/audit')); // Data audit system
 app.use('/api/verifier', require('./backend/src/routes/verifier')); // Dynamic Data Verifier System
 
-// Serve static frontend (from dist/ array)
-app.use(express.static(path.join(__dirname, 'dist')));
+// Serve static frontend (from dist/ array) with high-performance production cache-control
+app.use(express.static(path.join(__dirname, 'dist'), {
+    maxAge: '30d',
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+            // HTML files must always revalidate with the server to prevent version sync lag
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        } else {
+            // Hash-compiled assets (CSS, JS, media files) can be heavily cached safely
+            res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+        }
+    }
+}));
 
 // Fallback for React Router (SPA)
 app.get('*', (req, res) => {

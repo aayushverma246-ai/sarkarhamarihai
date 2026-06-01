@@ -219,11 +219,11 @@ async function healAllRecords() {
 
     while (true) {
         batchNum++;
-        // Always fetch from offset 0 — healed records leave the 'seeder' filter
-        console.log(`[Healer] Fetching batch #${batchNum} (always offset 0, remaining seeder rows)...`);
+        console.log(`[Healer] Fetching batch #${batchNum} (querying records with 15000-80000 placeholder)...`);
         const { data: records, error } = await sb.from('jobs')
             .select('id, job_name, organization, job_category, application_start_date, application_end_date, salary_min, salary_max, selection_process, official_application_link, official_notification_link, official_website_link, discovery_source, state')
-            .eq('discovery_source', 'seeder')
+            .eq('salary_min', 15000)
+            .eq('salary_max', 80000)
             .range(0, batchSize - 1);
 
         if (error) {
@@ -283,18 +283,12 @@ async function healAllRecords() {
                 }
             }
 
-            // 5. Fix salary ranges for generic placeholders
-            if (cat && CATEGORY_SALARY[cat]) {
-                const expected = CATEGORY_SALARY[cat];
-                // Only fix if current values look like the generic 15000-80000 placeholder
-                if (rec.salary_min === 15000 && rec.salary_max === 80000) {
-                    if (expected.min !== 15000 || expected.max !== 80000) {
-                        patch.salary_min = expected.min;
-                        patch.salary_max = expected.max;
-                        changed = true;
-                        totalSalaryFixes++;
-                    }
-                }
+            // 5. If salary range has the generic 15000-80000 placeholder, nullify it (set to 0) to feed only original ranges
+            if (rec.salary_min === 15000 && rec.salary_max === 80000) {
+                patch.salary_min = 0;
+                patch.salary_max = 0;
+                changed = true;
+                totalSalaryFixes++;
             }
 
             // Mark as healed (even if no fields were updated, we must mark as healed to leave the seeder query)
@@ -346,7 +340,11 @@ async function healAllRecords() {
     console.log(JSON.stringify(report, null, 2));
     console.log('==========================================\n');
 
-    require('fs').writeFileSync('tmp/healing_report.json', JSON.stringify(report, null, 2), 'utf8');
+    const fs = require('fs');
+    if (!fs.existsSync('tmp')) {
+        fs.mkdirSync('tmp', { recursive: true });
+    }
+    fs.writeFileSync('tmp/healing_report.json', JSON.stringify(report, null, 2), 'utf8');
     return report;
 }
 

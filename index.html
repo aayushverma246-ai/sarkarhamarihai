@@ -17,12 +17,18 @@
 <body>
     <div id="root">
         <style>
-            html, body { background-color: #080808; margin: 0; padding: 0; height: 100%; width: 100%; }
-            #root:empty { display: flex; align-items: center; justify-content: center; height: 100vh; }
-            .ssr-loader { width: 48px; border-radius: 50%; height: 48px; border: 4px solid #1a1a1a; border-top-color: #ef4444; animation: spin 1s linear infinite; }
+            html, body { background-color: #050505; margin: 0; padding: 0; height: 100%; width: 100%; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; }
+            #root { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; width: 100vw; }
+            .ssr-loader-container { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+            .ssr-loader { width: 56px; height: 56px; border-radius: 50%; border: 3px solid rgba(220, 38, 38, 0.08); border-top-color: #dc2626; border-right-color: #ef4444; animation: spin 1s cubic-bezier(0.55, 0.055, 0.675, 0.19) infinite; filter: drop-shadow(0 0 12px rgba(220, 38, 38, 0.4)); }
+            .ssr-loader-text { margin-top: 24px; color: #888888; font-size: 14px; font-weight: 500; letter-spacing: 0.05em; animation: pulse 2s ease-in-out infinite; }
             @keyframes spin { 100% { transform: rotate(360deg); } }
+            @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
         </style>
-        <div class="ssr-loader"></div>
+        <div class="ssr-loader-container">
+            <div class="ssr-loader"></div>
+            <div class="ssr-loader-text">Loading SarkarHamariHai...</div>
+        </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
 </body>

@@ -1,32 +1,107 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import Logo from '../assets/logo';
+import { Spotlight } from '../components/ui/spotlight';
+import { SpotlightHover } from '../components/ui/spotlight-hover';
+import { SplineScene } from '../components/ui/splite';
+
+const stableParticles = [
+    { x: 260, y: 310, targetY: 90,  targetX: 200, scale: 1.1, duration: 1.4, delay: 0.0 },
+    { x: 310, y: 290, targetY: 110, targetX: 280, scale: 0.9, duration: 1.6, delay: 0.15 },
+    { x: 280, y: 330, targetY: 80,  targetX: 150, scale: 1.15, duration: 1.2, delay: 0.3 },
+    { x: 330, y: 300, targetY: 130, targetX: 310, scale: 0.8, duration: 1.8, delay: 0.45 },
+    { x: 250, y: 320, targetY: 100, targetX: 180, scale: 1.0, duration: 1.5, delay: 0.6 },
+    { x: 300, y: 280, targetY: 120, targetX: 240, scale: 1.2, duration: 1.3, delay: 0.75 },
+    { x: 290, y: 340, targetY: 95,  targetX: 220, scale: 0.75, duration: 1.5, delay: 0.9 },
+    { x: 320, y: 315, targetY: 85,  targetX: 260, scale: 1.1, duration: 1.7, delay: 1.05 }
+];
 
 export default function LandingPage() {
     const navigate = useNavigate();
     const { scrollYProgress } = useScroll();
     
+    // Active robot emotion ('neutral' | 'happy' | 'wow')
+    const [robotEmotion, setRobotEmotion] = useState<'neutral' | 'happy' | 'wow'>('neutral');
+
+    // FAQ state variable
+    const [faqOpen, setFaqOpen] = useState<number | null>(null);
+
     // Parallax background effects
     const yBg = useTransform(scrollYProgress, [0, 1], ['0%', '30%']);
     const opacityBg = useTransform(scrollYProgress, [0, 0.5], [1, 0.2]);
 
     const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+    const [isMobile, setIsMobile] = useState(false);
 
     useEffect(() => {
+        const checkMobile = () => {
+            setIsMobile(window.innerWidth < 1024);
+        };
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
+    useEffect(() => {
+        // Bypass cursor tracking mouse listener on mobile
+        if (isMobile) return;
+
+        let rafId: number;
+        let lastEvent: MouseEvent | null = null;
+
         const handleMouseMove = (e: MouseEvent) => {
             setMousePosition({
                 x: e.clientX,
                 y: e.clientY,
             });
+
+            if (!e.isTrusted) return; // Prevent infinite event loops from synthetic events
+            lastEvent = e;
+
+            // Throttle synthetic event dispatches using requestAnimationFrame to ensure jitter-free cursor tracking aligned with monitor refresh rates
+            if (!rafId) {
+                rafId = requestAnimationFrame(() => {
+                    const canvas = document.querySelector('canvas');
+                    if (canvas && lastEvent) {
+                        // Dispatch mousemove
+                        canvas.dispatchEvent(new MouseEvent('mousemove', {
+                            clientX: lastEvent.clientX,
+                            clientY: lastEvent.clientY,
+                            screenX: lastEvent.screenX,
+                            screenY: lastEvent.screenY,
+                            bubbles: false,
+                            cancelable: true,
+                        }));
+
+                        // Dispatch pointermove
+                        if (window.PointerEvent) {
+                            canvas.dispatchEvent(new PointerEvent('pointermove', {
+                                clientX: lastEvent.clientX,
+                                clientY: lastEvent.clientY,
+                                screenX: lastEvent.screenX,
+                                screenY: lastEvent.screenY,
+                                bubbles: false,
+                                cancelable: true,
+                                pointerType: 'mouse',
+                                isPrimary: true
+                            }));
+                        }
+                    }
+                    rafId = 0;
+                });
+            }
         };
         window.addEventListener('mousemove', handleMouseMove);
-        return () => window.removeEventListener('mousemove', handleMouseMove);
-    }, []);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            if (rafId) cancelAnimationFrame(rafId);
+        };
+    }, [isMobile]);
 
     const fadeInUp = {
         hidden: { opacity: 0, y: 30 },
-        visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] } }
+        visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] } }
     };
 
     const staggerContainer = {
@@ -37,18 +112,51 @@ export default function LandingPage() {
         }
     };
 
+    // Highly damped, premium spring transitions with ZERO wobble/overshoot
+    const robotMotionVariants = {
+        neutral: {
+            scale: 1,
+            x: 0,
+            y: 0,
+            rotateY: 0,
+            rotateX: 0,
+            rotateZ: 0,
+            transition: { type: "spring" as const, stiffness: 150, damping: 35 }
+        },
+        happy: {
+            scale: 1.15,
+            x: 0,
+            y: -10,
+            rotateY: 0,
+            rotateX: 0,
+            rotateZ: 0,
+            transition: { type: "spring" as const, stiffness: 150, damping: 35 }
+        },
+        wow: {
+            scale: 1.25,
+            x: 0,
+            y: -12,
+            rotateY: 0,
+            rotateX: -10, // Leans forward in surprise/wow
+            rotateZ: 4,   // Cute slight head tilt
+            transition: { type: "spring" as const, stiffness: 150, damping: 30 }
+        }
+    };
+
     return (
         <div className="min-h-screen bg-black text-white font-sans overflow-hidden selection:bg-red-600/30 selection:text-white">
             
-            {/* Dynamic Cursor Glow */}
-            <motion.div 
-                className="fixed top-0 left-0 w-[400px] h-[400px] bg-red-600/10 rounded-full blur-[100px] pointer-events-none z-0"
-                animate={{
-                    x: mousePosition.x - 200,
-                    y: mousePosition.y - 200,
-                }}
-                transition={{ type: "spring", damping: 40, stiffness: 150, mass: 0.5 }}
-            />
+            {/* Dynamic Cursor Glow (Desktop Only) */}
+            {!isMobile && (
+                <motion.div 
+                    className="fixed top-0 left-0 w-[400px] h-[400px] bg-red-600/10 rounded-full blur-[100px] pointer-events-none z-0"
+                    animate={{
+                        x: mousePosition.x - 200,
+                        y: mousePosition.y - 200,
+                    }}
+                    transition={{ type: "spring", damping: 40, stiffness: 150, mass: 0.5 }}
+                />
+            )}
 
             {/* Subtle Dot Grid Background */}
             <div className="fixed inset-0 z-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#555 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
@@ -68,12 +176,16 @@ export default function LandingPage() {
                     <div className="flex items-center gap-6">
                         <button
                             onClick={() => navigate('/login')}
+                            onMouseEnter={() => setRobotEmotion('wow')}
+                            onMouseLeave={() => setRobotEmotion('neutral')}
                             className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 hover:text-white px-6 py-2.5 text-[13px] font-semibold uppercase tracking-wide transition-all rounded-full backdrop-blur-md"
                         >
                             LOG IN
                         </button>
                         <button
                             onClick={() => navigate('/signup')}
+                            onMouseEnter={() => setRobotEmotion('happy')}
+                            onMouseLeave={() => setRobotEmotion('neutral')}
                             className="bg-red-600 hover:bg-red-500 text-white px-7 py-2.5 text-[15px] font-semibold transition-all rounded-full shadow-lg hover:shadow-red-500/20"
                         >
                             Sign Up
@@ -81,65 +193,157 @@ export default function LandingPage() {
                     </div>
                 </div>
             </header>
-
             <main className="relative z-10">
                 {/* ── HERO SECTION ── */}
-                <section className="relative min-h-screen flex flex-col items-center justify-center text-center px-4 pt-20">
-                    <motion.div style={{ y: yBg, opacity: opacityBg }} className="absolute inset-0 z-0 flex items-center justify-center">
+                <section className="relative min-h-screen flex items-center justify-center bg-black overflow-hidden pt-20">
+                    {/* Spotlight Backdrop Glow */}
+                    <Spotlight className="-top-40 left-0 md:left-60 md:-top-20" fill="red" />
+
+                    {/* Red mesh blur glow in background */}
+                    <motion.div style={{ y: yBg, opacity: opacityBg }} className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
                         <div className="w-[800px] h-[800px] bg-gradient-to-b from-red-900/10 to-transparent rounded-full blur-[100px] absolute top-1/4" />
                     </motion.div>
 
-                    <motion.div 
-                        className="relative z-10 max-w-5xl mx-auto space-y-8 mt-10"
-                        initial="hidden" animate="visible" variants={staggerContainer}
-                    >
-                        <motion.div variants={fadeInUp} className="inline-flex items-center gap-3 px-4 py-1.5 rounded-full border border-red-500/20 bg-red-500/5 text-red-400 text-[10px] font-medium tracking-wide uppercase mb-4 backdrop-blur-sm">
-                            <span className="relative flex h-1.5 w-1.5">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
-                            </span>
-                            Intelligent Exam Discovery
+                    {/* 12-Column Responsive Layout Grid */}
+                    <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-12 gap-12 items-center relative z-10 w-full pt-10">
+                        {/* Left Column: Bold text, description, CTAs (given higher z-index so buttons remain clickable) */}
+                        <motion.div 
+                            className="lg:col-span-7 text-left space-y-6 relative z-20"
+                            initial="hidden" animate="visible" variants={staggerContainer}
+                        >
+                            <motion.h1 
+                                variants={fadeInUp}
+                                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white leading-[1.1]"
+                            >
+                                Stop Searching. <br />
+                                <span className="font-semibold text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-red-600">Start Preparing.</span>
+                            </motion.h1>
+
+                            <motion.p 
+                                variants={fadeInUp}
+                                className="text-base sm:text-lg text-gray-400 max-w-xl leading-relaxed font-normal"
+                            >
+                                An AI tracker that maps your profile to thousands of government jobs, manages your deadlines, and recommends exams with overlapping syllabi.
+                            </motion.p>
+
+                            <motion.div variants={fadeInUp} className="flex flex-col sm:flex-row items-center justify-start gap-4 pt-6">
+                                <button
+                                    onClick={() => navigate('/signup')}
+                                    onMouseEnter={() => setRobotEmotion('happy')}
+                                    onMouseLeave={() => setRobotEmotion('neutral')}
+                                    className="w-full sm:w-auto px-10 py-4 bg-red-600 hover:bg-red-500 text-white font-semibold text-[15px] transition-all flex items-center justify-center gap-3 rounded-full shadow-lg hover:shadow-red-500/20 active:scale-[0.98]"
+                                >
+                                    Get Started Free
+                                    <motion.span animate={{ x: [0, 5, 0] }} transition={{ repeat: Infinity, duration: 1.5 }}>→</motion.span>
+                                </button>
+                                <button
+                                    onClick={() => navigate('/login')}
+                                    onMouseEnter={() => setRobotEmotion('wow')}
+                                    onMouseLeave={() => setRobotEmotion('neutral')}
+                                    className="w-full sm:w-auto px-10 py-4 bg-white/5 border border-white/10 hover:border-white/20 text-gray-300 hover:text-white font-semibold text-[13px] uppercase tracking-wide transition-all flex items-center justify-center gap-2 rounded-full backdrop-blur-md active:scale-[0.98]"
+                                >
+                                    EXISTING USER
+                                </button>
+                            </motion.div>
                         </motion.div>
 
-                        <motion.h1 
-                            variants={fadeInUp}
-                            className="text-5xl sm:text-7xl lg:text-[5.5rem] font-normal tracking-tight text-white leading-[1.1]"
-                        >
-                            Stop Searching. <br />
-                            <span className="font-medium text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-red-700">Start Preparing.</span>
-                        </motion.h1>
+                        {/* Spacer column to preserve spacing in the grid */}
+                        <div className="lg:col-span-5 hidden lg:block pointer-events-none" />
+                    </div>
 
-                        <motion.p 
-                            variants={fadeInUp}
-                            className="text-lg sm:text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed font-normal tracking-wide"
-                        >
-                            An AI tracker that maps your profile to thousands of government jobs, manages your deadlines, and recommends exams with overlapping syllabi.
-                        </motion.p>
+                    {/* Absolute 3D Robot Container. On desktop it occupies 55% width and tracks cursor. On mobile/tablet, it is placed as an ambient background layer with touch pass-through so touch-scrolling remains buttery smooth and fast */}
+                    <div className="absolute right-0 bottom-0 w-full lg:w-[55%] h-[40vh] lg:h-full select-none z-10 opacity-25 lg:opacity-100 pointer-events-none lg:pointer-events-auto pt-10 lg:pt-20">
+                        {/* Excitement sparkles/particles (floating hearts) shown during happy state */}
+                        {robotEmotion === 'happy' && (
+                            <div className="absolute inset-0 z-20 pointer-events-none">
+                                {stableParticles.map((p, i) => (
+                                    <motion.div 
+                                        key={i}
+                                        className="absolute text-red-500/80 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)] select-none pointer-events-none font-sans text-xl"
+                                        initial={{ 
+                                            x: p.x, 
+                                            y: p.y, 
+                                            opacity: 0,
+                                            scale: 0.5 
+                                        }}
+                                        animate={{ 
+                                            y: [p.y, p.y - 120],
+                                            x: [p.x, p.x + (p.targetX - 250)],
+                                            opacity: [0, 1, 0],
+                                            scale: [0.5, p.scale, 0.5]
+                                        }}
+                                        transition={{ 
+                                            duration: p.duration, 
+                                            repeat: Infinity,
+                                            delay: p.delay,
+                                            ease: "easeOut"
+                                        }}
+                                    >
+                                        ❤️
+                                    </motion.div>
+                                ))}
+                            </div>
+                        )}
 
-                        <motion.div variants={fadeInUp} className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-12">
-                            <button
-                                onClick={() => navigate('/signup')}
-                                className="w-full sm:w-auto px-10 py-4 bg-red-600 hover:bg-red-500 text-white font-semibold text-[15px] transition-all flex items-center justify-center gap-3 rounded-full shadow-lg hover:shadow-red-500/20"
-                            >
-                                Get Started Free
-                                <motion.span animate={{ x: [0, 5, 0] }} transition={{ repeat: Infinity, duration: 1.5 }}>→</motion.span>
-                            </button>
-                            <button
-                                onClick={() => navigate('/login')}
-                                className="w-full sm:w-auto px-10 py-4 bg-white/5 border border-white/10 hover:border-white/20 text-gray-300 hover:text-white font-semibold text-[13px] uppercase tracking-wide transition-all flex items-center justify-center gap-2 rounded-full backdrop-blur-md"
-                            >
-                                EXISTING USER
-                            </button>
+                        {/* Golden stars sparked during wow state */}
+                        {robotEmotion === 'wow' && (
+                            <div className="absolute inset-0 z-20 pointer-events-none">
+                                {stableParticles.map((p, i) => (
+                                    <motion.div 
+                                        key={i}
+                                        className="absolute text-yellow-400/90 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)] select-none pointer-events-none font-sans text-xl"
+                                        initial={{ 
+                                            x: p.x, 
+                                            y: p.y, 
+                                            opacity: 0,
+                                            scale: 0.5 
+                                        }}
+                                        animate={{ 
+                                            y: [p.y, p.y - 120],
+                                            x: [p.x, p.x + (p.targetX - 250)],
+                                            opacity: [0, 1, 0],
+                                            scale: [0.5, p.scale, 0.5]
+                                        }}
+                                        transition={{ 
+                                            duration: p.duration, 
+                                            repeat: Infinity,
+                                            delay: p.delay,
+                                            ease: "easeOut"
+                                        }}
+                                    >
+                                        ✨
+                                    </motion.div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Wow background shadow overlay */}
+                        <motion.div 
+                            className="absolute inset-0 z-10 pointer-events-none rounded-full bg-red-900/10 blur-3xl transition-opacity duration-300"
+                            animate={{ opacity: robotEmotion === 'wow' ? 0.5 : 0 }}
+                        />
+
+                        <motion.div 
+                            className="absolute inset-0 w-full h-full flex items-center justify-center"
+                            animate={robotEmotion}
+                            variants={robotMotionVariants}
+                            style={{ transformStyle: "preserve-3d", perspective: 1000 }}
+                        >
+                            <SplineScene 
+                                scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
+                                className="w-full h-full"
+                                emotion={robotEmotion}
+                            />
                         </motion.div>
-                    </motion.div>
+                    </div>
 
                     {/* Scroll Indicator */}
                     <motion.div 
                         initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.5, duration: 1 }}
-                        className="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3"
+                        className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-20 pointer-events-none"
                     >
                         <span className="text-[9px] font-medium uppercase tracking-[0.3em] text-gray-600">Scroll</span>
-                        <div className="w-[1px] h-12 bg-gradient-to-b from-red-500/50 to-transparent" />
+                        <div className="w-[1px] h-10 bg-gradient-to-b from-red-500/50 to-transparent" />
                     </motion.div>
                 </section>
 
@@ -166,9 +370,10 @@ export default function LandingPage() {
                                         { title: 'Missed Deadlines', desc: 'Finding out about an exam the day after applications close.' },
                                         { title: 'Wasted Potential', desc: 'Preparing for one exam, completely unaware of 5 others with the exact same syllabus.' },
                                     ].map((item, i) => (
-                                        <motion.div key={i} variants={fadeInUp} className="flex items-start gap-5 p-6 bg-white/[0.02] rounded-3xl hover:border-red-500/20 transition-colors backdrop-blur-md">
-                                            <div className="text-red-500/50 font-mono text-sm tracking-wide mt-1">0{i+1}</div>
-                                            <div>
+                                        <motion.div key={i} variants={fadeInUp} className="flex items-start gap-5 p-6 bg-white/[0.02] rounded-3xl hover:border-red-500/20 transition-colors backdrop-blur-md relative overflow-hidden group">
+                                            <SpotlightHover size={200} className="from-red-500/10 via-red-500/5 to-transparent" />
+                                            <div className="text-red-500/50 font-mono text-sm tracking-wide mt-1 relative z-10">0{i+1}</div>
+                                            <div className="relative z-10">
                                                 <h3 className="text-sm font-medium text-white mb-2 uppercase tracking-wide">{item.title}</h3>
                                                 <p className="text-gray-500 text-sm leading-relaxed font-normal">{item.desc}</p>
                                             </div>
@@ -249,17 +454,22 @@ export default function LandingPage() {
                                 <motion.div 
                                     key={i}
                                     initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeInUp}
-                                    className="group relative rounded-3xl bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-500 p-10 backdrop-blur-sm"
+                                    className="group relative rounded-3xl bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-500 p-10 backdrop-blur-sm overflow-hidden"
                                 >
-                                    <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-red-500/0 group-hover:via-red-500/50 to-transparent transition-all duration-700" />
-                                    <svg className="w-8 h-8 text-red-500/80 mb-8 stroke-[1]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d={item.icon} /></svg>
-                                    <h3 className="text-sm font-medium text-white mb-4 uppercase tracking-wider">{item.title}</h3>
-                                    <p className="text-gray-500 leading-relaxed font-normal text-sm">{item.desc}</p>
+                                    <SpotlightHover size={250} className="from-red-500/10 via-red-500/5 to-transparent" />
+                                    <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-red-500/0 group-hover:via-red-500/50 to-transparent transition-all duration-700 z-10" />
+                                    <svg className="w-8 h-8 text-red-500/80 mb-8 stroke-[1] relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d={item.icon} /></svg>
+                                    <div className="relative z-10">
+                                        <h3 className="text-sm font-medium text-white mb-4 uppercase tracking-wider">{item.title}</h3>
+                                        <p className="text-gray-500 leading-relaxed font-normal text-sm">{item.desc}</p>
+                                    </div>
                                 </motion.div>
                             ))}
                         </div>
                     </div>
                 </section>
+
+
 
                 {/* ── APP PREVIEW SECTION ── */}
                 <section className="py-32 relative border-t border-white/[0.03] bg-[#030303] overflow-hidden">
@@ -310,6 +520,60 @@ export default function LandingPage() {
                                 </div>
                             </div>
                         </motion.div>
+                    </div>
+                </section>
+
+                {/* ── FAQ SECTION ── */}
+                <section className="py-32 relative border-t border-white/[0.03] bg-black">
+                    <div className="max-w-4xl mx-auto px-6">
+                        <div className="text-center mb-16">
+                            <h2 className="text-3xl sm:text-4xl font-normal tracking-wide mb-4 text-white">Frequently Asked Questions</h2>
+                            <p className="text-base text-gray-400 font-normal">Answers to everything you need to know about the SarkarHamariHai AI ecosystem.</p>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            {[
+                                {
+                                    q: "How does the Syllabus Synergy calculator work?",
+                                    a: "Our AI scans the official syllabus PDFs of central and state level exams using vector embeddings. It correlates topics, weights, and scoring distributions to calculate a synergy percentage, showing you exactly which additional exams require zero extra study."
+                                },
+                                {
+                                    q: "What types of government exams are tracked?",
+                                    a: "We track 5,000+ public sector vacancies yearly including Central (SSC, UPSC, Railways, IBPS, Defence, LIC) and State Civil Services, police recruitments, and teachers eligibility tests across all major states."
+                                },
+                                {
+                                    q: "How does the SMS & live alerts service function?",
+                                    a: "Once you lock in your profile qualifications, our background crawler checks for state-level portal modifications. If a notification is released that matches your profile, you receive a direct SMS and dashboard alert 14 days before applications close."
+                                },
+                                {
+                                    q: "Is my personal qualification and age data secure?",
+                                    a: "Yes. All data is securely stored inside Supabase under industry-grade Row-Level Security (RLS) policies. We do not sell or distribute candidate data to third-party institutions."
+                                }
+                            ].map((item, index) => {
+                                const isOpen = faqOpen === index;
+                                return (
+                                    <div key={index} className="border border-white/[0.05] bg-white/[0.01] rounded-3xl overflow-hidden backdrop-blur-sm transition-all duration-300">
+                                        <button 
+                                            onClick={() => setFaqOpen(isOpen ? null : index)}
+                                            className="w-full px-8 py-6 text-left flex justify-between items-center gap-4 text-white hover:bg-white/[0.02] transition-colors"
+                                        >
+                                            <span className="text-sm font-medium tracking-wide uppercase text-left">{item.q}</span>
+                                            <span className="text-red-500 font-light text-2xl transition-transform duration-300" style={{ transform: isOpen ? 'rotate(45deg)' : 'rotate(0deg)' }}>+</span>
+                                        </button>
+                                        <motion.div 
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: isOpen ? 'auto' : 0, opacity: isOpen ? 1 : 0 }}
+                                            transition={{ duration: 0.3, ease: "easeInOut" }}
+                                            className="overflow-hidden"
+                                        >
+                                            <div className="px-8 pb-6 text-sm text-gray-500 leading-relaxed font-normal text-left">
+                                                {item.a}
+                                            </div>
+                                        </motion.div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
                 </section>
 

@@ -4,6 +4,8 @@ import { getCachedUser } from './api';
 import { supabase } from './utils/supabase';
 import GovLoader from './components/GovLoader';
 import { LanguageProvider } from './i18n/LanguageContext';
+import OfflineBanner from './components/OfflineBanner';
+import RealtimeNotificationBanner from './components/RealtimeNotificationBanner';import { Capacitor } from '@capacitor/core';
 
 // ── Code-split all pages (each becomes its own JS chunk) ──
 const LoginPage = React.lazy(() => import('./pages/LoginPage'));
@@ -46,6 +48,9 @@ function RootRedirect() {
   if (user) {
     return <Navigate to="/dashboard" replace />;
   }
+  if (Capacitor.isNativePlatform()) {
+    return <Navigate to="/login" replace />;
+  }
   return <LandingPage />;
 }
 
@@ -80,8 +85,19 @@ function AuthListener() {
 }
 
 export default function App() {
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('sarkar_theme') || 'dark';
+    if (savedTheme === 'light') {
+      document.documentElement.classList.add('light-mode');
+    } else {
+      document.documentElement.classList.remove('light-mode');
+    }
+  }, []);
+
   return (
     <LanguageProvider>
+      <OfflineBanner />
+      <RealtimeNotificationBanner />
       <AuthListener />
       <Suspense fallback={<SuspenseFallback />}>
         <Routes>

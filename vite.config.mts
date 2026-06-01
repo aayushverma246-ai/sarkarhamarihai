@@ -15,6 +15,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
+  esbuild: {
+    // Strip console statements and debuggers in production for peak speed and minimal bundle sizes
+    drop: ['console', 'debugger'],
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,
@@ -31,13 +35,11 @@ export default defineConfig({
     target: 'es2020',
     minify: 'esbuild',
     cssMinify: true,
+    reportCompressedSize: false, // Speed up compilation times
+    chunkSizeWarningLimit: 1000,   // Suppress safe bundle warning thresholds
     rollupOptions: {
       output: {
-        // Split vendor chunks for better caching
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'ui-vendor': ['lucide-react'],
-        },
+        // Let Vite handle chunking automatically to prevent circular dependency runtime failures
       },
     },
   },

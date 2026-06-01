@@ -69,7 +69,6 @@ export default function DashboardPage() {
   // Progressive rendering state
   const INITIAL_BATCH = 30;
   const [visibleCount, setVisibleCount] = useState(INITIAL_BATCH);
-  const [tabIsAnimating, setTabIsAnimating] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const prevTabRef = useRef<TabKey>(getInitialTab());
 
@@ -80,8 +79,6 @@ export default function DashboardPage() {
     if (tab === prevTabRef.current) return;
 
     // 1. IMMEDIATELY update the visual UI and hide old content.
-    // This is mathematically the minimal amount of work React can do,
-    // ensuring the tab underline moves and the screen clears instantly.
     setVisualTab(tab);
     // Keep current height during transition to prevent layout jump
     const currentHeight = document.querySelector('.tab-panel')?.clientHeight;
@@ -89,10 +86,8 @@ export default function DashboardPage() {
     setIsSwitching(true);
 
     // 2. Yield the main thread to the browser so it can physically paint the instant UI change.
-    // setTimeout(..., 10) ensures the browser has time to rasterize and draw the frame.
     setTimeout(() => {
-      setVisibleCount(6);
-      setTabIsAnimating(true);
+      setVisibleCount(INITIAL_BATCH);
       setActiveTabState(tab);
       prevTabRef.current = tab;
       setIsSwitching(false);
@@ -114,29 +109,6 @@ export default function DashboardPage() {
     }, 15);
 
   }, [setSearchParams]);
-
-  // 3. Incrementally render the rest of the batch using rAF so the main thread never blocks
-  useEffect(() => {
-    if (!tabIsAnimating) return;
-
-    let frameId: number;
-    const renderMore = () => {
-      setVisibleCount(prev => {
-        if (prev >= INITIAL_BATCH) {
-          setTabIsAnimating(false);
-          return prev;
-        }
-        // Add 8 more cards per frame until we hit the batch size
-        return Math.min(prev + 8, INITIAL_BATCH);
-      });
-      if (visibleCount < INITIAL_BATCH) {
-        frameId = requestAnimationFrame(renderMore);
-      }
-    };
-
-    frameId = requestAnimationFrame(renderMore);
-    return () => cancelAnimationFrame(frameId);
-  }, [tabIsAnimating, visibleCount]);
 
   // Sync state with URL changes (e.g., browser Back/Forward)
   useEffect(() => {
@@ -501,7 +473,7 @@ export default function DashboardPage() {
   // IntersectionObserver to load more cards on scroll
   useEffect(() => {
     const el = sentinelRef.current;
-    if (!el || !hasMore || tabIsAnimating) return;
+    if (!el || !hasMore) return;
     const io = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
         setVisibleCount(prev => Math.min(prev + INITIAL_BATCH, filtered.length));
@@ -509,7 +481,7 @@ export default function DashboardPage() {
     }, { rootMargin: '400px' });
     io.observe(el);
     return () => io.disconnect();
-  }, [hasMore, filtered.length, tabIsAnimating]);
+  }, [hasMore, filtered.length]);
 
   const likedSet = useMemo(() => new Set(likedJobs.map(j => j.id)), [likedJobs]);
   const appliedSet = useMemo(() => new Set(appliedJobs.map(j => j.id)), [appliedJobs]);
@@ -673,7 +645,7 @@ export default function DashboardPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={t('dashboard.searchPlaceholder')}
-                  className="block w-full pl-10 pr-4 py-2.5 bg-[#0e0e0e]/40 backdrop-blur-xl border border-[#1a1a1a] rounded-xl text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-red-900/40 focus:border-red-900/40 transition-all font-medium placeholder:font-normal"
+                  className="block w-full pl-10 pr-4 py-2.5 bg-[#0e0e0e]/95 border border-[#1a1a1a] rounded-xl text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-red-900/40 focus:border-red-900/40 transition-all font-medium placeholder:font-normal"
                 />
                 {search && (
                   <button
@@ -688,7 +660,7 @@ export default function DashboardPage() {
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-[#0e0e0e]/40 backdrop-blur-xl border border-[#1a1a1a] rounded-xl pl-4 pr-10 py-2.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-red-900/40 focus:border-red-900/40 transition-all appearance-none cursor-pointer font-medium"
+                  className="w-full bg-[#0e0e0e]/95 border border-[#1a1a1a] rounded-xl pl-4 pr-10 py-2.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-red-900/40 focus:border-red-900/40 transition-all appearance-none cursor-pointer font-medium"
                 >
                   <option value="All" className="bg-[#0e0e0e] text-gray-300">All Categories</option>
                   {categories.filter(cat => cat !== 'All').map(cat => (
@@ -705,7 +677,7 @@ export default function DashboardPage() {
                 <select
                   value={selectedState}
                   onChange={(e) => setSelectedState(e.target.value)}
-                  className="w-full bg-[#0e0e0e]/40 backdrop-blur-xl border border-[#1a1a1a] rounded-xl pl-4 pr-10 py-2.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-red-900/40 focus:border-red-900/40 transition-all appearance-none cursor-pointer font-medium"
+                  className="w-full bg-[#0e0e0e]/95 border border-[#1a1a1a] rounded-xl pl-4 pr-10 py-2.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-red-900/40 focus:border-red-900/40 transition-all appearance-none cursor-pointer font-medium"
                 >
                   <option value="All India" className="bg-[#0e0e0e] text-gray-300">All India</option>
                   {statesDropdown.filter(s => s !== 'All India').map(s => (

@@ -279,7 +279,7 @@ export default function SignupPage() {
               setLoading(true);
               const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
               const redirectUrl = isNative
-                ? 'https://sarkarhamaraihai.vercel.app/auth/callback'
+                ? 'https://sarkarhamarihai.vercel.app/auth/callback?platform=mobile'
                 : window.location.origin + '/auth/callback';
               await supabase.auth.signInWithOAuth({
                 provider: 'google',

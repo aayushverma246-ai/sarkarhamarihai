@@ -14,7 +14,7 @@ function getApiBase(): string {
     if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform()) {
         // Prefer env var if it's already absolute, otherwise use production
         if (envUrl && envUrl.startsWith('http')) return envUrl;
-        return 'https://sarkarhamaraihai.vercel.app/api';
+        return 'https://sarkarhamarihai.vercel.app/api';
     }
 
     return envUrl || 'http://localhost:3001/api';
@@ -122,8 +122,10 @@ async function request<T>(
     const legacyToken = getToken();
     const token = supabaseToken || legacyToken;
 
-    if (requiresAuth || token) {
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+    // CRITICAL CDN OPTIMIZATION: Only send the Authorization header on authenticated routes
+    // to allow public endpoints like /all-minimal to be fully cached by Vercel CDN.
+    if (requiresAuth && token) {
+        headers['Authorization'] = `Bearer ${token}`;
     }
 
     // Add timeout to prevent infinite loading
@@ -231,6 +233,8 @@ export const api = {
         invalidateCache('/jobs/partial');
         return request<any>('PUT', '/auth/me', data, true);
     },
+    registerDeviceToken: (data: { token: string; deviceType: string }) =>
+        request<{ success: boolean }>('POST', '/auth/register-device', data, true),
 
     // Jobs (cached — these are the heaviest endpoints)
     // Efficient dashboard aggregation — optimized minimal payload
@@ -242,7 +246,28 @@ export const api = {
             const cached = getCached<any>(cacheKey, FIVE_MIN);
             if (cached) return cached;
             const result = await request<any>('GET', '/jobs/all-minimal', undefined, false, 1, 90000);
-            const jobs = Array.isArray(result) ? result : (result?.jobs || []);
+            
+            // Decodes the compressed columns + array of arrays format to standard objects
+            let jobs: any[] = [];
+            if (result) {
+                if (Array.isArray(result)) {
+                    jobs = result;
+                } else if (Array.isArray(result.jobs)) {
+                    if (Array.isArray(result.columns)) {
+                        const cols = result.columns;
+                        jobs = result.jobs.map((row: any[]) => {
+                            const obj: any = {};
+                            cols.forEach((col: string, i: number) => {
+                                obj[col] = row[i];
+                            });
+                            return obj;
+                        });
+                    } else {
+                        jobs = result.jobs;
+                    }
+                }
+            }
+
             if (jobs.length > 0) setCache(cacheKey, jobs);
             return jobs;
         }
@@ -275,7 +300,29 @@ export const api = {
         const path = queryStr ? `/jobs?${queryStr}` : '/jobs';
         return request<{ jobs: any[]; total: number; limit: number; offset: number; hasMore: boolean }>('GET', path, undefined, false);
     },
-    getJobsAllMinimal: () => request<{ jobs: any[] }>('GET', '/jobs/all-minimal', undefined, false),
+    getJobsAllMinimal: async () => {
+        const result = await request<any>('GET', '/jobs/all-minimal', undefined, false);
+        let jobs: any[] = [];
+        if (result) {
+            if (Array.isArray(result)) {
+                jobs = result;
+            } else if (Array.isArray(result.jobs)) {
+                if (Array.isArray(result.columns)) {
+                    const cols = result.columns;
+                    jobs = result.jobs.map((row: any[]) => {
+                        const obj: any = {};
+                        cols.forEach((col: string, i: number) => {
+                            obj[col] = row[i];
+                        });
+                        return obj;
+                    });
+                } else {
+                    jobs = result.jobs;
+                }
+            }
+        }
+        return { jobs };
+    },
     getJobById: (id: string) => cachedGet<any>(`/jobs/${id}`, TWO_MIN),
     getCategories: () => cachedGet<string[]>('/jobs/categories', 300_000),
     getStates: () => cachedGet<string[]>('/jobs/states', 300_000),

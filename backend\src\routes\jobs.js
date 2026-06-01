@@ -74,9 +74,12 @@ const _STATE_CIVIL_SERVICES_RE = /\bstate\s+civil\s+services?\b|\bstate\s+servic
  * Infer state from job name. Returns canonical state name or null.
  */
 function inferStateFromName(jobName, org) {
-    const combined = (jobName || '') + ' ' + (org || '');
+    const combined = ((jobName || '') + ' ' + (org || '')).toLowerCase();
     for (const { name, re } of _STATE_NAME_PATTERNS) {
-        if (re.test(combined)) return name;
+        const lowerName = name.toLowerCase();
+        if (combined.includes(lowerName)) {
+            if (re.test(combined)) return name;
+        }
     }
     return null;
 }
@@ -325,24 +328,45 @@ router.get('/all-minimal', async (req, res) => {
         if (cachedJobs) {
             res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
             res.set('X-Cache', 'HIT');
-            return res.json({ jobs: cachedJobs });
+            return res.json(cachedJobs);
         }
 
         const db = getDb();
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, job_category, state, states, application_start_date, application_end_date, vacancies, official_application_link, last_verified_at, created_at';
 
-        // Sequential cursor pagination — guarantees every row appears exactly once.
-        const limit = 1000;
-        let offset = 0;
         const allRows = [];
+        const { getPool } = require('../db');
+        const pool = getPool();
+        const isRest = !pool;
 
-        // Fetch up to 20 pages (20,000 rows) — stops as soon as a page returns fewer than limit rows
-        for (let page = 0; page < 20; page++) {
-            const result = await db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${offset}`);
-            const rows = result.rows || [];
-            allRows.push(...rows);
-            if (rows.length < limit) break; // last page
-            offset += limit;
+        if (isRest) {
+            // Sequential cursor pagination — guarantees every page is fetched reliably without triggering rate limits
+            const limit = 1000;
+            let offset = 0;
+            while (true) {
+                try {
+                    const result = await db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${offset}`);
+                    const rows = result.rows || [];
+                    if (rows.length === 0) break;
+                    allRows.push(...rows);
+                    if (rows.length < limit) break; // last page detected
+                    offset += limit;
+                } catch (err) {
+                    console.warn(`[all-minimal sequential page fail at offset ${offset}]:`, err.message);
+                    break; // stop on error to avoid infinite loop
+                }
+            }
+        } else {
+            // Direct PG connection — can fetch in larger batches
+            const limit = 5000;
+            let offset = 0;
+            for (let page = 0; page < 5; page++) {
+                const result = await db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${offset}`);
+                const rows = result.rows || [];
+                allRows.push(...rows);
+                if (rows.length < limit) break; // last page
+                offset += limit;
+            }
         }
 
         // Remove duplicate IDs (safety net)
@@ -352,18 +376,29 @@ router.get('/all-minimal', async (req, res) => {
             if (row.id && !seen.has(row.id)) { seen.add(row.id); unique.push(row); }
         }
 
-        // Compute form_status natively
-        const jobs = unique.map(j => withStatus(j, todayStr));
+        // Columns definition to compress JSON payload (drops from 11.3MB to ~2.5MB)
+        const columns = ['id', 'job_name', 'organization', 'qualification_required', 'allows_final_year_students', 'minimum_age', 'maximum_age', 'job_category', 'state', 'states', 'application_start_date', 'application_end_date', 'vacancies', 'official_application_link', 'last_verified_at', 'created_at', 'form_status', 'is_verified', 'last_updated'];
 
-        // Final Output Sorted strict alphabetically 
-        jobs.sort((a, b) => a.job_name.localeCompare(b.job_name, undefined, { sensitivity: 'base' }));
+        const rows = unique.map(j => {
+            const statusJob = withStatus(j, todayStr);
+            return columns.map(col => statusJob[col] ?? null);
+        });
+
+        // Final Output Sorted strict alphabetically by job_name (index 1)
+        rows.sort((a, b) => {
+            const nameA = a[1] || '';
+            const nameB = b[1] || '';
+            return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+        });
+
+        const responsePayload = { columns, jobs: rows };
 
         // Cache for 5 minutes
-        setCachedResult(cacheKey, jobs);
+        setCachedResult(cacheKey, responsePayload);
 
         res.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
         res.set('X-Cache', 'MISS');
-        res.json({ jobs });
+        res.json(responsePayload);
     } catch (err) {
         console.error('Failed fetching all-minimal jobs:', err);
         res.status(500).json({ error: 'Server error', details: err.message });

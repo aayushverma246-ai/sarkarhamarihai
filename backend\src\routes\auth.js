@@ -357,4 +357,57 @@ router.put('/me', auth, async (req, res) => {
     }
 });
 
+// ─────────────────────────────────────────────────────────────────────
+// POST /api/auth/register-device
+// Saves or updates a device's push notification FCM/APNs token for a user.
+// ─────────────────────────────────────────────────────────────────────
+router.post('/register-device', auth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { token, deviceType } = req.body;
+
+        if (!token) {
+            return res.status(400).json({ error: 'Device token is required' });
+        }
+
+        const db = getDb();
+
+        try {
+            // Check if token already registered
+            const existing = (await db.execute({
+                sql: 'SELECT id FROM user_devices WHERE device_token = ?',
+                args: [token]
+            })).rows[0];
+
+            if (existing) {
+                // Update user link if it changed
+                await db.execute({
+                    sql: 'UPDATE user_devices SET user_id = ?, device_type = ?, created_at = NOW() WHERE device_token = ?',
+                    args: [userId, deviceType || 'android', token]
+                });
+            } else {
+                // Insert new device token record
+                const id = 'dev_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
+                await db.execute({
+                    sql: 'INSERT INTO user_devices (id, user_id, device_token, device_type) VALUES (?, ?, ?, ?)',
+                    args: [id, userId, token, deviceType || 'android']
+                });
+            }
+        } catch (dbErr) {
+            // Suppress table missing errors gracefully so the app does not break, advising SQL migrations
+            if (dbErr.message?.includes('does not exist') || dbErr.message?.includes('no such table')) {
+                console.warn('[Push] user_devices table missing. Please run the SQL migration in Supabase SQL Editor:');
+                console.warn('CREATE TABLE user_devices (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, device_token TEXT UNIQUE, device_type TEXT, created_at TIMESTAMPTZ DEFAULT NOW());');
+                return res.status(200).json({ success: false, warning: 'Migration required: user_devices table missing' });
+            }
+            throw dbErr;
+        }
+
+        return res.json({ success: true });
+    } catch (err) {
+        console.error('Register device token error:', err);
+        return res.status(500).json({ error: 'Server error registering device token', details: err.message });
+    }
+});
+
 module.exports = router;

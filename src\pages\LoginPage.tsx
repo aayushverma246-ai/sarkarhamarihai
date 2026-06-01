@@ -5,6 +5,7 @@ import { selectAuth } from '../store/selectors';
 import { loginAction, guestLoginAction } from '../store/actions/authActions';
 import Logo from '../assets/logo';
 import GovLoader from '../components/GovLoader';
+import { Capacitor } from '@capacitor/core';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -117,15 +118,42 @@ export default function LoginPage() {
           <button
             onClick={async () => {
               dispatch({ type: 'AUTH_START' });
-              const { supabase } = await import('../utils/supabase');
-              const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
-              const redirectUrl = isNative
-                ? 'https://sarkarhamaraihai.vercel.app/auth/callback'
-                : window.location.origin + '/auth/callback';
-              await supabase.auth.signInWithOAuth({
-                provider: 'google',
-                options: { redirectTo: redirectUrl }
-              });
+              try {
+                const { supabase } = await import('../utils/supabase');
+                const isNative = Capacitor.isNativePlatform();
+                const redirectUrl = isNative
+                  ? 'https://sarkarhamarihai.vercel.app/auth/callback?platform=mobile'
+                  : window.location.origin + '/auth/callback';
+                
+                if (isNative) {
+                  // On native mobile, skip WebView navigation and request OAuth URL to launch external browser
+                  const { data, error } = await supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: {
+                      redirectTo: redirectUrl,
+                      skipBrowserRedirect: true
+                    }
+                  });
+                  
+                  if (error) throw error;
+                  
+                  if (data?.url) {
+                    // Open in the system's secure browser
+                    window.open(data.url, '_system');
+                  } else {
+                    throw new Error('Could not retrieve Google OAuth login URL.');
+                  }
+                } else {
+                  // On standard web browser
+                  const { error } = await supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: { redirectTo: redirectUrl }
+                  });
+                  if (error) throw error;
+                }
+              } catch (err: any) {
+                dispatch({ type: 'AUTH_FAIL', payload: err.message || 'Google authentication failed' });
+              }
             }}
             disabled={loading}
             className="w-full py-3.5 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-gray-200 font-medium text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-3 mb-3 active:scale-[0.98] rounded-xl shadow-sm"

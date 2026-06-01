@@ -10,12 +10,12 @@ const { createClient: createLibsqlClient } = require('@libsql/client');
 require('dotenv').config();
 
 // Turso config
-const tursoUrl = process.env.TURSO_DATABASE_URL || 'libsql://sarkar-new-aayush-verma-19.aws-ap-south-1.turso.io';
-const tursoToken = process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzE3MDcyNjAsImlkIjoiM2FjMWU2YjMtYWEyNy00MDY3LWE0MzEtOTg5YmEzMWMwOWExIiwicmlkIjoiOGE5YzIzN2ItOTNjYy00MDg0LWJjZjEtMmI4MWUxNzhhMzViIn0.zmaDuYEhY6p4UCucqnw24RmC6g6KbPBTD5zOvIsYTtLsziBTQRzbiidB4P_WnDpb4kWQKotYp2Ig6x_L04wHAA';
+const tursoUrl = process.env.TURSO_DATABASE_URL || '';
+const tursoToken = process.env.TURSO_AUTH_TOKEN || '';
 
 // Supabase config
 const supabaseUrl = process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEzNDgyNywiZXhwIjoyMDkwNzEwODI3fQ.wbX4lhJKE8OtzIl2RJamsFA71DRwo-B7QCL4UzAsr9A';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 const turso = createLibsqlClient({ url: tursoUrl, authToken: tursoToken });
 const sb = createSupabaseClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });

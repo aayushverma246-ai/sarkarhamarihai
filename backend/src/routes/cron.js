@@ -88,7 +88,7 @@ const sendNotifications = async (db) => {
     const todayStr = getTodayStr();
     const sb = require('@supabase/supabase-js').createClient(
         process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co',
-        process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEzNDgyNywiZXhwIjoyMDkwNzEwODI3fQ.wbX4lhJKE8OtzIl2RJamsFA71DRwo-B7QCL4UzAsr9A',
+        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
         { auth: { persistSession: false, autoRefreshToken: false } }
     );
 
@@ -239,6 +239,19 @@ const sendNotifications = async (db) => {
         await sb.from('notifications').insert(batch);
     }
 
+    // Trigger Native Push Notifications for users on mobile devices
+    try {
+        const { sendPushNotification } = require('../services/pushService');
+        for (const item of inserts) {
+            // Do not block the main cron thread; dispatch pushes asynchronously
+            sendPushNotification(item.user_id, 'Sarkar Alert', item.message, { jobId: item.job_id }).catch(e => {
+                console.error(`[Cron Push] Error sending push to user ${item.user_id}:`, e.message);
+            });
+        }
+    } catch (pushErr) {
+        console.error('[Cron Push] Failed to trigger push service:', pushErr.message);
+    }
+
     return count;
 };
 
@@ -354,6 +367,18 @@ const statusChangeNotify = async (req, res) => {
             await sb.from('notifications').insert(inserts.slice(i, i + 50));
         }
 
+        // Trigger Native Push Notifications for users on mobile devices
+        try {
+            const { sendPushNotification } = require('../services/pushService');
+            for (const item of inserts) {
+                sendPushNotification(item.user_id, 'Exam Status Update 🚀', item.message, { jobId: item.job_id }).catch(e => {
+                    console.error(`[Cron Push] Error sending status change push to user ${item.user_id}:`, e.message);
+                });
+            }
+        } catch (pushErr) {
+            console.error('[Cron Push] Failed to trigger push service:', pushErr.message);
+        }
+
         console.log(`[Cron ${getISTTimestamp()}] Status-change notifications sent: ${count}`);
         res.json({ success: true, type: 'status-change-notify', sent: count, jobsGoingLive: freshlyLiveJobs.length, timestamp: getISTTimestamp() });
     } catch (err) {
@@ -430,6 +455,18 @@ const finalCloseNotify = async (req, res) => {
         // Bulk insert in batches of 50
         for (let i = 0; i < inserts.length; i += 50) {
             await sb.from('notifications').insert(inserts.slice(i, i + 50));
+        }
+
+        // Trigger Native Push Notifications for users on mobile devices
+        try {
+            const { sendPushNotification } = require('../services/pushService');
+            for (const item of inserts) {
+                sendPushNotification(item.user_id, 'Deadline Warning ⏰', item.message, { jobId: item.job_id }).catch(e => {
+                    console.error(`[Cron Push] Error sending deadline close push to user ${item.user_id}:`, e.message);
+                });
+            }
+        } catch (pushErr) {
+            console.error('[Cron Push] Failed to trigger push service:', pushErr.message);
         }
 
         console.log(`[Cron ${getISTTimestamp()}] Final-close notifications sent: ${count}`);

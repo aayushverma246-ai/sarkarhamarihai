@@ -93,7 +93,7 @@ export const guestLoginAction = () => async (dispatch: any) => {
     try {
         const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
         const baseUrl = isNative
-            ? 'https://sarkarhamaraihai.vercel.app/api'
+            ? 'https://sarkarhamarihai.vercel.app/api'
             : ((import.meta as any).env.VITE_API_URL || 'http://localhost:3001/api');
 
         const res = await fetch(`${baseUrl}/auth/guest`, {

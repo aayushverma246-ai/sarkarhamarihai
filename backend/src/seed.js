@@ -85,9 +85,30 @@ function normalizeCategory(cat) {
   return 'Central Government';
 }
 
+const getTodayStr = () => {
+  const n = new Date();
+  const ist = new Date(n.getTime() + 5.5 * 60 * 60 * 1000);
+  return ist.toISOString().slice(0, 10);
+};
+
+function computeFormStatus(startDate, endDate) {
+  if (!startDate || !endDate) return 'CLOSED';
+  const today = getTodayStr();
+  if (today < startDate) return 'UPCOMING';
+  if (today >= startDate && today <= endDate) return 'LIVE';
+  
+  const endMs = new Date(endDate).getTime();
+  const todayMs = new Date(today).getTime();
+  const daysSinceClosed = (todayMs - endMs) / (1000 * 60 * 60 * 24);
+  if (daysSinceClosed <= 30) return 'RECENTLY_CLOSED';
+  if (daysSinceClosed > 90) return 'ARCHIVED';
+  return 'CLOSED';
+}
+
 function J(name, org, qual, fy, minA, maxA, s, e, sMin, sMax, cat, link, hi = '', syl = '', sel = '', ta = '', bn = '', state = 'All India', states = []) {
   const hash = crypto.createHash('sha256').update(`${name}-${org}`).digest('hex').slice(0, 16);
   const normalizedCat = normalizeCategory(cat);
+  const status = computeFormStatus(s, e);
 
   jobs.push({
     id: hash,
@@ -107,7 +128,8 @@ function J(name, org, qual, fy, minA, maxA, s, e, sMin, sMax, cat, link, hi = ''
     syllabus: syl,
     selection_process: sel || '',
     state: state,
-    states: states
+    states: states,
+    form_status: status
   });
 }
 
@@ -1102,7 +1124,8 @@ async function seedDatabase() {
         exam_name_ta: j.exam_name_ta || '',
         exam_name_bn: j.exam_name_bn || '',
         state: j.state || 'All India',
-        states: j.states || []
+        states: j.states || [],
+        form_status: j.form_status
       }));
 
       let retries = 3;
@@ -1128,8 +1151,8 @@ async function seedDatabase() {
       minimum_age, maximum_age, application_start_date, application_end_date,
       salary_min, salary_max, job_category,
       official_application_link, official_notification_link, official_website_link,
-      syllabus, selection_process, exam_name_hi, exam_name_ta, exam_name_bn, state, states
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+      syllabus, selection_process, exam_name_hi, exam_name_ta, exam_name_bn, state, states, form_status
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
     const stmts = uniqueJobsList.map(j => ({
       sql: INSERT,
@@ -1147,7 +1170,8 @@ async function seedDatabase() {
         j.exam_name_ta || '',
         j.exam_name_bn || '',
         j.state || 'All India',
-        JSON.stringify(j.states || [])
+        JSON.stringify(j.states || []),
+        j.form_status
       ]
     }));
 
@@ -1187,8 +1211,8 @@ const INSERT_SQL = `INSERT OR REPLACE INTO jobs (
   minimum_age, maximum_age, application_start_date, application_end_date,
   salary_min, salary_max, job_category,
   official_application_link, official_notification_link, official_website_link,
-  syllabus, selection_process, exam_name_hi, exam_name_ta, exam_name_bn, state, states
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+  syllabus, selection_process, exam_name_hi, exam_name_ta, exam_name_bn, state, states, form_status
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
 function mapJobToArgs(j) {
   return [
@@ -1199,7 +1223,8 @@ function mapJobToArgs(j) {
     j.official_application_link, j.official_notification_link, j.official_website_link,
     j.syllabus || '', j.selection_process || '',
     j.exam_name_hi || '', j.exam_name_ta || '', j.exam_name_bn || '',
-    j.state || 'All India', JSON.stringify(j.states || [])
+    j.state || 'All India', JSON.stringify(j.states || []),
+    j.form_status
   ];
 }
 

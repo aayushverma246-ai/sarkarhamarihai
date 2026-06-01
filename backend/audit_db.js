@@ -1,10 +1,25 @@
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const { getDb } = require('./src/db');
 
 (async () => {
     try {
         const db = getDb();
-        console.log('Fetching all jobs for deep audit...');
-        const { rows } = await db.execute('SELECT * FROM jobs');
+        console.log('Fetching all jobs for deep audit in paginated batches...');
+        const rows = [];
+        let offset = 0;
+        const batchSize = 1000;
+        let hasMore = true;
+        while (hasMore) {
+            const res = await db.execute(`SELECT * FROM jobs ORDER BY id LIMIT ${batchSize} OFFSET ${offset}`);
+            const batchRows = res.rows || [];
+            rows.push(...batchRows);
+            console.log(`  Fetched batch of ${batchRows.length} jobs (Total so far: ${rows.length})...`);
+            if (batchRows.length < batchSize) {
+                hasMore = false;
+            } else {
+                offset += batchSize;
+            }
+        }
         
         let totalChecked = rows.length;
         let totalCorrected = 0;

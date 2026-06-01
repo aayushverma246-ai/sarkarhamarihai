@@ -1,0 +1,71 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main # Triggers deployment automatically whenever you push code to main branch
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}         # Your GCP Project ID (stored in GitHub Secrets)
+  GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}             # Your GCP Service Account JSON Key (stored in GitHub Secrets)
+  RUN_SERVICE: sarkar-backend-api                   # The name of your Cloud Run service
+  REGION: us-central1                               # GCP Region
+  REPOSITORY: sarkar-app                            # Artifact Registry repository name
+
+jobs:
+  deploy:
+    name: Build and Deploy to GCP Cloud Run
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Step 1: Checkout your source code ──
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # ── Step 2: Authenticate with Google Cloud ──
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # ── Step 3: Configure Docker credentials for GCP Artifact Registry ──
+      - name: Set up Cloud SDK & Docker
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Authorize Docker
+        run: |
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      # ── Step 4: Build and Tag the Docker Container ──
+      - name: Build and Push Docker Container
+        run: |
+          cd backend
+          docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.RUN_SERVICE }}:${{ github.sha }} -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.RUN_SERVICE }}:latest .
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.RUN_SERVICE }}:${{ github.sha }}
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.RUN_SERVICE }}:latest
+
+      # ── Step 5: Deploy keyless to Google Cloud Run ──
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.RUN_SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.RUN_SERVICE }}:${{ github.sha }}
+          # Expose to public internet
+          flags: --allow-unauthenticated
+          # Dynamically map production credentials keylessly from GCP Secret Manager
+          secrets: |
+            DATABASE_URL=sarkar-database-url:latest
+            JWT_SECRET=sarkar-jwt-secret:latest
+            GEMINI_API_KEY_NEW=sarkar-gemini-key:latest
+          # Inject project variables keylessly
+          env_vars: |
+            USE_VERTEX_AI=true
+            GCP_PROJECT=${{ env.PROJECT_ID }}
+            GCP_LOCATION=${{ env.REGION }}
+
+      # ── Step 6: Log the deployed Cloud Run endpoint URL ──
+      - name: Show Output
+        run: echo "🎉 API Backend deployed successfully! Service URL is ${{ steps.deploy.outputs.url }}"

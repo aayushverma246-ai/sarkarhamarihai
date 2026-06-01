@@ -105,7 +105,7 @@ export default function ProfilePage() {
   return (
     <div className="min-h-screen bg-[#080808]">
       <Navbar user={user} />
-      <div className="page-enter max-w-2xl mx-auto px-4 sm:px-6 py-6">
+      <div className="page-enter max-w-2xl mx-auto px-4 sm:px-6 py-6 pb-32">
         <div className="mb-6">
           <h1 className="text-xl font-bold text-gray-200">Profile</h1>
           <p className="text-gray-600 text-sm mt-0.5">Your eligibility is computed from these details</p>

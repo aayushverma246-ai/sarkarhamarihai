@@ -176,6 +176,15 @@ CREATE TABLE IF NOT EXISTS ai_recommendations (
   UNIQUE(user_id, source_job_id, target_job_id)
 );
 
+-- ─── AI RECOMMENDATION CACHE ──────────────────────────────────
+CREATE TABLE IF NOT EXISTS ai_recommendation_cache (
+  key TEXT PRIMARY KEY,
+  data JSONB NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
 -- ─── SEED META ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS seed_meta (
   key TEXT PRIMARY KEY,

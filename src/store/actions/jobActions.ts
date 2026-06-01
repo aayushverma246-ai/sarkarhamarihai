@@ -3,76 +3,140 @@ import { api, getCachedUser } from '../../api';
 import { Job } from '../../types';
 import { meetsQualification, meetsAge, meetsTechnicalCriteria } from '../../utils';
 
-// Async job loading (Phase 1 & Phase 2 combined)
+// Helper to compute eligibility purely from localized user and minimal jobs list
+const computeEligibility = (validJobs: Job[], resolvedUser: any) => {
+    const hasCompleteProfile = !!(resolvedUser?.qualification_type && resolvedUser?.age && resolvedUser.age > 0);
+    let strictlyEligible: Job[] = [];
+    let broadlyEligible: Job[] = [];
+    let strictPartial: Job[] = [];
+    let broadlyUpcoming: Job[] = [];
+
+    for (const j of validJobs) {
+        if (hasCompleteProfile) {
+            const isEligible = meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j) && meetsTechnicalCriteria(j);
+            if (isEligible) strictlyEligible.push(j);
+        }
+        if ((j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(j)) {
+            broadlyEligible.push(j);
+        }
+        if (hasCompleteProfile) {
+            const isPartial = (meetsQualification(resolvedUser, j) || meetsAge(resolvedUser, j)) && !(meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j)) && meetsTechnicalCriteria(j);
+            if (isPartial) strictPartial.push(j);
+        }
+        if (j.form_status === 'UPCOMING' && meetsTechnicalCriteria(j)) {
+            broadlyUpcoming.push(j);
+        }
+    }
+
+    const finalEligible = strictlyEligible.length > 0 ? strictlyEligible : broadlyEligible.slice(0, 100);
+    const finalPartial = strictPartial.length > 0 ? strictPartial : broadlyUpcoming.slice(0, 50);
+
+    return { eligible: finalEligible, partial: finalPartial };
+};
+
+// Async job loading (Phase 1 & Phase 2 combined with Stale-While-Revalidate caching)
 export const fetchAllJobsAction = () => async (dispatch: any) => {
     dispatch({ type: types.FETCH_JOBS_START });
+
+    const cachedUser = getCachedUser();
+    let cachedJobs: Job[] = [];
     try {
-        const cachedUser = getCachedUser();
-        const [me, jobsResponse] = await Promise.all([
-            api.getMe().catch(() => cachedUser || { full_name: 'Guest', age: 0 }),
-            api.getJobsAllMinimal().catch(err => {
-                console.error('[Redux getJobsAllMinimal failed]', err);
-                return { jobs: [] };
-            }),
-        ]);
+        const cachedRaw = localStorage.getItem('sarkar_jobs_minimal');
+        if (cachedRaw) {
+            cachedJobs = JSON.parse(cachedRaw);
+        }
+    } catch (e) {
+        console.error('Failed to parse cached jobs:', e);
+    }
 
-        const resolvedUser = (me && me.full_name) ? me : (cachedUser || { full_name: 'Guest', age: 0 });
-        const validJobs = Array.isArray(jobsResponse?.jobs) ? jobsResponse.jobs : [];
+    const hasCache = Array.isArray(cachedJobs) && cachedJobs.length > 0;
 
-        // Compute eligible/partial purely from the localized DB payload
-        const hasCompleteProfile = !!(resolvedUser?.qualification_type && resolvedUser?.age && resolvedUser.age > 0);
-        let strictlyEligible: Job[] = [];
-        let broadlyEligible: Job[] = [];
-        let strictPartial: Job[] = [];
-        let broadlyUpcoming: Job[] = [];
+    // Define background network fetch function
+    const performFetch = async () => {
+        try {
+            const [me, jobsResponse] = await Promise.all([
+                api.getMe().catch(() => cachedUser || { full_name: 'Guest', age: 0 }),
+                api.getJobsAllMinimal().catch(err => {
+                    console.error('[Redux getJobsAllMinimal failed]', err);
+                    return { jobs: [] };
+                }),
+            ]);
 
-        for (const j of validJobs) {
-            if (hasCompleteProfile) {
-                const isEligible = meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j) && meetsTechnicalCriteria(j);
-                if (isEligible) strictlyEligible.push(j);
+            const resolvedUser = (me && me.full_name) ? me : (cachedUser || { full_name: 'Guest', age: 0 });
+            const validJobs = Array.isArray(jobsResponse?.jobs) ? jobsResponse.jobs : [];
+
+            // Save to localStorage cache for future instant loads
+            if (validJobs.length > 0) {
+                try {
+                    localStorage.setItem('sarkar_jobs_minimal', JSON.stringify(validJobs));
+                } catch (e) {
+                    console.error('Failed to write jobs cache:', e);
+                }
             }
-            if ((j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(j)) {
-                broadlyEligible.push(j);
+
+            const { eligible, partial } = computeEligibility(validJobs, resolvedUser);
+
+            dispatch({
+                type: types.FETCH_JOBS_SUCCESS,
+                payload: {
+                    allJobs: validJobs,
+                    rawEligibleJobs: eligible,
+                    rawPartialJobs: partial,
+                    likedJobs: [], // will stream in Phase 2
+                    appliedJobs: [],
+                    remindedJobs: [],
+                }
+            });
+
+            // Dispatch AUTH_SUCCESS secretly if getting user session succeeds
+            if (me && me.full_name) {
+                dispatch({ type: types.AUTH_SUCCESS, payload: me });
             }
-            if (hasCompleteProfile) {
-                const isPartial = (meetsQualification(resolvedUser, j) || meetsAge(resolvedUser, j)) && !(meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j)) && meetsTechnicalCriteria(j);
-                if (isPartial) strictPartial.push(j);
-            }
-            if (j.form_status === 'UPCOMING' && meetsTechnicalCriteria(j)) {
-                broadlyUpcoming.push(j);
+
+            // Stream in liked/applied/reminded non-blocking
+            Promise.all([
+                api.getLikedJobs().then(liked => {
+                    dispatch({ type: types.SET_LIKED_JOBS, payload: Array.isArray(liked) ? liked : [] });
+                }).catch(() => {}),
+                api.getAppliedJobs().then(applied => {
+                    dispatch({ type: types.SET_APPLIED_JOBS, payload: Array.isArray(applied) ? applied : [] });
+                }).catch(() => {}),
+                api.getRemindedJobs().then(reminded => {
+                    dispatch({ type: types.SET_REMINDED_JOBS, payload: Array.isArray(reminded) ? reminded : [] });
+                }).catch(() => {}),
+            ]);
+        } catch (err: any) {
+            console.error('Background jobs refresh failed:', err);
+            if (!hasCache) {
+                const errMsg = err.message || 'Failed to load dashboards data';
+                dispatch({ type: types.FETCH_JOBS_FAIL, payload: errMsg });
+                throw err;
             }
         }
+    };
 
-        const finalEligible = strictlyEligible.length > 0 ? strictlyEligible : broadlyEligible.slice(0, 100);
-        const finalPartial = strictPartial.length > 0 ? strictPartial : broadlyUpcoming.slice(0, 50);
-
-        // Silent load liked / applied / reminded jobs
-        const [liked, applied, reminded] = await Promise.all([
-            api.getLikedJobs().catch(() => []),
-            api.getAppliedJobs().catch(() => []),
-            api.getRemindedJobs().catch(() => []),
-        ]);
-
+    if (hasCache) {
+        // 1. Optimistically dispatch cache immediately for 0ms loading feedback
+        const resolvedUser = cachedUser || { full_name: 'Guest', age: 0 };
+        const { eligible, partial } = computeEligibility(cachedJobs, resolvedUser);
         dispatch({
             type: types.FETCH_JOBS_SUCCESS,
             payload: {
-                allJobs: validJobs,
-                rawEligibleJobs: finalEligible,
-                rawPartialJobs: finalPartial,
-                likedJobs: Array.isArray(liked) ? liked : [],
-                appliedJobs: Array.isArray(applied) ? applied : [],
-                remindedJobs: Array.isArray(reminded) ? reminded : [],
+                allJobs: cachedJobs,
+                rawEligibleJobs: eligible,
+                rawPartialJobs: partial,
+                likedJobs: [],
+                appliedJobs: [],
+                remindedJobs: [],
             }
         });
 
-        // Dispatch AUTH_SUCCESS secretly if getting user session succeeds
-        if (me && me.full_name) {
-            dispatch({ type: types.AUTH_SUCCESS, payload: me });
-        }
-    } catch (err: any) {
-        const errMsg = err.message || 'Failed to load dashboards data';
-        dispatch({ type: types.FETCH_JOBS_FAIL, payload: errMsg });
-        throw err;
+        // 2. Perform network request asynchronously in background
+        performFetch();
+        return; // Resolve action immediately so dashboard loader hides instantly
+    } else {
+        // No cache: perform fetch synchronously (wait for it to finish)
+        await performFetch();
     }
 };
 

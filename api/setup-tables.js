@@ -7,7 +7,7 @@ module.exports = async (req, res) => {
   }
 
   const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co';
-  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEzNDgyNywiZXhwIjoyMDkwNzEwODI3fQ.wbX4lhJKE8OtzIl2RJamsFA71DRwo-B7QCL4UzAsr9A';
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
   const sql = `
     CREATE TABLE IF NOT EXISTS applied_jobs (
@@ -50,11 +50,18 @@ module.exports = async (req, res) => {
       error TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS ai_recommendation_cache (
+      key TEXT PRIMARY KEY,
+      data JSONB NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
     CREATE INDEX IF NOT EXISTS idx_applied_user ON applied_jobs(user_id);
     CREATE INDEX IF NOT EXISTS idx_liked_user ON liked_jobs(user_id);
     CREATE INDEX IF NOT EXISTS idx_reminders_user ON job_reminders(user_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(user_id, read);
+    CREATE INDEX IF NOT EXISTS idx_recommendation_cache_updated ON ai_recommendation_cache(updated_at DESC);
   `;
 
   try {
@@ -111,7 +118,7 @@ module.exports = async (req, res) => {
     const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
     // Check which tables exist
-    const tables = ['applied_jobs', 'liked_jobs', 'job_reminders', 'notifications', 'scraper_logs'];
+    const tables = ['applied_jobs', 'liked_jobs', 'job_reminders', 'notifications', 'scraper_logs', 'ai_recommendation_cache'];
     const checks = [];
     for (const t of tables) {
       const { error } = await sb.from(t).select('*').limit(0);

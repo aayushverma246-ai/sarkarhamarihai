@@ -115,8 +115,8 @@ TARGET STRUCTURE (STRICT JSON ONLY):
 {
   "application_start_date": "YYYY-MM-DD (or null if not found)",
   "application_end_date": "YYYY-MM-DD (or null if not found)",
-  "salary_min": number (monthly salary, or null),
-  "salary_max": number (monthly salary, or null),
+  "salary_min": number (monthly salary, or null if not explicitly found),
+  "salary_max": number (monthly salary, or null if not explicitly found),
   "selection_process": "Clear bullet points explaining recruitment stages (e.g. Stage 1 -> Prelims, Stage 2 -> Mains, Stage 3 -> Interview)",
   "official_application_link": "Direct registration URL (or fall back to the landing page if not found)"
 }
@@ -124,7 +124,8 @@ TARGET STRUCTURE (STRICT JSON ONLY):
 RULES:
 - Be 100% accurate based ONLY on the provided text.
 - If dates are not in YYYY-MM-DD, convert them to standard ISO format (e.g. 15 June 2026 -> 2026-06-15).
-- For payscales, if only standard scales are provided (e.g. ₹56,100 to ₹1,77,500), extract minimum monthly basic pay as salary_min and maximum as salary_max.
+- For payscales, ONLY extract monthly salary if explicitly mentioned in the text (e.g. ₹56,100 to ₹1,77,500). Extract minimum monthly basic pay as salary_min and maximum as salary_max. 
+- If no payscale/salary range is explicitly defined in the text, extract null or 0 for salary_min and salary_max. Never estimate, guess, or use fallback values.
 - Return strictly raw JSON. NO formatting tags or characters outside the JSON.`;
     } else {
         // AI augmented fallback matching prompt
@@ -135,8 +136,8 @@ TARGET STRUCTURE (STRICT JSON ONLY):
 {
   "application_start_date": "YYYY-MM-DD",
   "application_end_date": "YYYY-MM-DD",
-  "salary_min": number (typical monthly basic pay, e.g. 56100),
-  "salary_max": number (maximum monthly payscale, e.g. 177500),
+  "salary_min": number (original monthly basic pay if officially known, or null),
+  "salary_max": number (original maximum monthly payscale if officially known, or null),
   "selection_process": "Clear multi-stage breakdown of exams/interviews for this specific post",
   "official_application_link": "Standard official portal URL for this organization (e.g. upsc.gov.in or similar)"
 }
@@ -144,6 +145,7 @@ TARGET STRUCTURE (STRICT JSON ONLY):
 RULES:
 - Provide high-fidelity dates matching the active recruitment cycles for this exam post in 2026.
 - If the exact 2026 dates are unknown, estimate highly logical dates based on the traditional month of occurrence.
+- For payscales, ONLY extract if the official basic pay range is known for this specific post. If the payscale is not officially defined or not known, set salary_min and salary_max to null or 0. Never guess, assume, or provide mock placeholders.
 - Keep selection process highly granular specific to this type of organization.
 - Return strictly raw JSON.`;
     }

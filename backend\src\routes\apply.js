@@ -6,7 +6,7 @@ const router = express.Router();
 function getSb() {
   return createClient(
     process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co',
-    process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEzNDgyNywiZXhwIjoyMDkwNzEwODI3fQ.wbX4lhJKE8OtzIl2RJamsFA71DRwo-B7QCL4UzAsr9A',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || '',
     { auth: { persistSession: false, autoRefreshToken: false } }
   );
 }

@@ -1,0 +1,8 @@
+1. Total exams checked: 17541
+2. Total posts checked: 17541
+3. Total missing entries added: 0
+4. Total entries corrected: 687
+5. Total links fixed: 1292
+6. Total eligibility corrections: 0
+7. Total salary corrections: 686
+8. Total duplicates removed: 17

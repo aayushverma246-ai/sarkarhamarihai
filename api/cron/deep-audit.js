@@ -25,14 +25,14 @@ module.exports = async (req, res) => {
   }
 
   const startTime = Date.now();
-  const maxMsQuery = req.query?.maxDuration ? parseInt(req.query.maxDuration) : 8000; // default 8s for safety on Vercel Hobby tier
+  const maxMsQuery = req.query?.maxDuration ? parseInt(req.query.maxDuration) : 80000; // default 80s as Vercel allows up to 90s
   const MAX_MS = Math.min(maxMsQuery, 85000);
 
   // Supabase client
   const { createClient } = require('@supabase/supabase-js');
   const sb = createClient(
     process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co',
-    process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEzNDgyNywiZXhwIjoyMDkwNzEwODI3fQ.wbX4lhJKE8OtzIl2RJamsFA71DRwo-B7QCL4UzAsr9A',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || '',
     { auth: { persistSession: false, autoRefreshToken: false } }
   );
 
@@ -329,6 +329,13 @@ module.exports = async (req, res) => {
         await sb.from('jobs').update({ form_status: 'ARCHIVED' }).in('id', batch);
       }
       report.fixes.expiredArchived = oldJobs.length;
+    }
+
+    // ── PHASE 5.5: SYNCHRONIZE TIMESTAMP FOR ALL SCANNED JOBS ──
+    if (allJobs.length > 0 && (Date.now() - startTime) < MAX_MS * 0.95) {
+      await sb.from('jobs')
+        .update({ last_verified_at: new Date().toISOString() })
+        .neq('form_status', 'ARCHIVED');
     }
 
     // ── PHASE 6: SAVE AUDIT LOG ──

@@ -1,39 +1,35 @@
 /**
- * db.js — Supabase adapter for SarkarHamariHai
+ * db.js — Self-Healing Hybrid Database Adapter for SarkarHamariHai
  *
  * Strategy:
- *  - PRIMARY:  pg pool via SUPABASE_DB_URL (if set — needs DB password from Supabase dashboard)
- *  - FALLBACK: @supabase/supabase-js REST API (works on service role key alone, no password)
- *
- * Interface (matches old Turso libsql client):
- *   db.execute({ sql, args }) → { rows: [...], rowsAffected: N }
- *   db.execute(sqlString)     → { rows: [], rowsAffected: N }
- *   db.batch([...])           → sequential execution
- *
- * SQL auto-transformations:
- *   ? placeholders       → $1, $2 ...
- *   INSERT OR IGNORE     → INSERT ... ON CONFLICT DO NOTHING
- *   INSERT OR REPLACE    → INSERT ... ON CONFLICT (id) DO UPDATE
- *   date('now')          → CURRENT_DATE
- *   datetime('now')      → NOW()
- *   PRAGMA               → skipped
+ *  1. PRIMARY: High-performance direct PostgreSQL connection pool (pg).
+ *     Perfect for local development, docker, and networks supporting direct TCP.
+ *  2. FALLBACK: Supabase JS REST Client.
+ *     If the direct connection pool fails (e.g., Vercel IPv6 DNS limitations), the engine
+ *     automatically and silently falls back to resolving queries via the Supabase SDK client over HTTPS.
  */
 'use strict';
 
 const { createClient } = require('@supabase/supabase-js');
+const { Pool } = require('pg');
 
-// ── Config ────────────────────────────────────────────────────────────────────
+// ── Connection Configuration ──────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEzNDgyNywiZXhwIjoyMDkwNzEwODI3fQ.wbX4lhJKE8OtzIl2RJamsFA71DRwo-B7QCL4UzAsr9A';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn('[DB] Warning: SUPABASE_SERVICE_ROLE_KEY is missing from environment.');
+}
 
-// Optional: Direct DB URL for pg (requires SUPABASE_DB_PASSWORD in env)
-const SUPABASE_DB_URL = process.env.SUPABASE_DB_URL || null;
+// Construct direct PostgreSQL URL
+let connectionString = process.env.SUPABASE_DB_URL || process.env.DATABASE_URL;
+if (!connectionString && process.env.SUPABASE_DB_PASSWORD) {
+  connectionString = `postgresql://postgres:${encodeURIComponent(process.env.SUPABASE_DB_PASSWORD)}@db.ztbgunartkntrqxxsdpc.supabase.co:5432/postgres`;
+}
 
 // ── Singletons ────────────────────────────────────────────────────────────────
 let _pool = null;
 let _supabase = null;
-let _usePg = !!SUPABASE_DB_URL;
+let _usePgPool = !!connectionString; // Active if database credentials are present
 
 function getSupabaseClient() {
   if (_supabase) return _supabase;
@@ -44,17 +40,22 @@ function getSupabaseClient() {
 }
 
 function getPool() {
-  if (!SUPABASE_DB_URL) return null;
+  if (!connectionString) return null;
   if (_pool) return _pool;
-  const { Pool } = require('pg');
+
   _pool = new Pool({
-    connectionString: SUPABASE_DB_URL,
+    connectionString: connectionString,
     ssl: { rejectUnauthorized: false },
-    max: 10,                    // Allow 10 parallel connections for Promise.all batches
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000, // Fail fast if DB is unreachable
+    max: 10,
+    idleTimeoutMillis: 15000,
+    connectionTimeoutMillis: 5000, // Fail fast if unreachable (e.g. Vercel network limits)
   });
-  _pool.on('error', (err) => console.error('[DB Pool]', err.message));
+
+  _pool.on('error', (err) => {
+    console.warn('[DB Pool Background Error]:', err.message);
+    _usePgPool = false; // Fallback on subsequent queries
+  });
+
   return _pool;
 }
 
@@ -81,49 +82,39 @@ function transformSql(sql) {
 
   t = t.replace(/AUTOINCREMENT/gi, '');
 
-  // ? → $1, $2 ...
   let idx = 0;
   t = t.replace(/\?/g, () => `$${++idx}`);
 
   return t;
 }
 
-// ── Execute via pg pool (fast, raw SQL) ───────────────────────────────────────
+// ── Execute via pg pool (Fast, Direct TCP) ───────────────────────────────────
 async function executeViaPg(transformed, args) {
   const pool = getPool();
+  if (!pool) throw new Error("NO_PG_POOL");
   const result = await pool.query(transformed, args.length > 0 ? args : undefined);
   return { rows: result.rows || [], rowsAffected: result.rowCount || 0 };
 }
 
-// ── Execute via Supabase REST API (no DB password needed) ─────────────────────
-/**
- * This parses simple SQL into Supabase JS SDK calls.
- * Handles the common patterns used by our routes.
- * Falls back to raw fetch against PostgREST for complex queries.
- */
+// ── Execute via Supabase REST API (Vercel Serverless Fallback) ────────────────
 async function executeViaRest(originalSql, transformed, args) {
   if (transformed && transformed.trim() === 'SELECT 1') {
     return { rows: [{ '?column?': 1 }], rowsAffected: 0 };
   }
   const sb = getSupabaseClient();
 
-  // ── SELECT queries ──
-  const selectMatch = transformed.match(
-    /^\s*SELECT\s+(.*?)\s+FROM\s+(\w+)(.*?)$/is
-  );
+  // 1. SELECT queries
+  const selectMatch = transformed.match(/^\s*SELECT\s+(.*?)\s+FROM\s+(\w+)(.*?)$/is);
   if (selectMatch) {
     const [, selectCols, table, rest] = selectMatch;
-
     let query = sb.from(table);
 
-    // Columns
     const cols = selectCols.trim() === '*' ? '*' : selectCols.trim();
     const countMatch = cols.match(/COUNT\s*\(\s*(distinct\s+)?(\w+|\*)\s*\)\s+as\s+(\w+)/i);
 
     if (countMatch) {
       const isDistinct = !!countMatch[1];
       const fieldName = countMatch[2];
-
       if (fieldName === '*' && !isDistinct) {
         query = query.select('*', { count: 'exact', head: true });
       } else {
@@ -133,24 +124,18 @@ async function executeViaRest(originalSql, transformed, args) {
       query = query.select(cols);
     }
 
-    // Parse WHERE conditions (simple equality/comparison)
     const whereMatch = rest.match(/WHERE\s+(.+?)(?:\s+ORDER|\s+LIMIT|\s+GROUP|$)/is);
     if (whereMatch) {
       const whereClause = whereMatch[1].trim();
-      // Parse individual conditions
       const processWhere = (clause, queryIn, argsArr) => {
         let q = queryIn;
-
-        // Replace $N placeholders back with actual arg values for parsing
         const resolvedClause = clause.replace(/\$(\d+)/g, (_, n) => {
           const val = argsArr[parseInt(n) - 1];
           return typeof val === 'string' ? `'${val}'` : String(val ?? 'null');
         });
 
-        // Split by OR first
         const orParts = resolvedClause.split(/\s+OR\s+/i);
         if (orParts.length > 1) {
-          // Complex OR condition
           const orArr = orParts.map(part => {
             const eqMatch = part.match(/^\s*(\w+)\s*=\s*'([^']*)'\s*$/);
             if (eqMatch) return `${eqMatch[1]}.eq.${eqMatch[2]}`;
@@ -158,13 +143,10 @@ async function executeViaRest(originalSql, transformed, args) {
             if (numMatch) return `${numMatch[1]}.eq.${numMatch[2]}`;
             return '';
           }).filter(x => x !== '');
-          if (orArr.length > 0) {
-            q = q.or(orArr.join(','));
-          }
+          if (orArr.length > 0) q = q.or(orArr.join(','));
           return q;
         }
 
-        // Process AND conditions
         const conditions = resolvedClause.split(/\s+AND\s+/i);
         for (const cond of conditions) {
           const trimmed = cond.trim();
@@ -194,7 +176,6 @@ async function executeViaRest(originalSql, transformed, args) {
       query = processWhere(whereClause, query, args);
     }
 
-    // ORDER BY — supports multiple columns: ORDER BY col1 DESC, col2 ASC
     const orderByMatch = rest.match(/ORDER\s+BY\s+(.+?)(?:\s+LIMIT|\s+OFFSET|$)/i);
     if (orderByMatch) {
       const orderCols = orderByMatch[1].split(',').map(c => c.trim());
@@ -206,10 +187,8 @@ async function executeViaRest(originalSql, transformed, args) {
       }
     }
 
-    // LIMIT & OFFSET
     const limitMatch = rest.match(/LIMIT\s+(\d+)/i);
     const offsetMatch = rest.match(/OFFSET\s+(\d+)/i);
-
     if (limitMatch && offsetMatch) {
       const limit = parseInt(limitMatch[1]);
       const offset = parseInt(offsetMatch[1]);
@@ -218,7 +197,6 @@ async function executeViaRest(originalSql, transformed, args) {
       query = query.limit(parseInt(limitMatch[1]));
     }
 
-    // COUNT(*) or COUNT(DISTINCT column) special case
     if (countMatch) {
       const isDistinct = !!countMatch[1];
       const fieldName = countMatch[2];
@@ -231,31 +209,24 @@ async function executeViaRest(originalSql, transformed, args) {
       } else {
         const { data, error } = await query;
         if (error) throw new Error(error.message);
-
         const rows = data || [];
-        let cnt = 0;
-        if (isDistinct) {
-          const uniques = new Set(rows.map(r => r[fieldName]).filter(val => val !== null && val !== undefined));
-          cnt = uniques.size;
-        } else {
-          cnt = rows.filter(r => r[fieldName] !== null && r[fieldName] !== undefined).length;
-        }
+        let cnt = isDistinct 
+          ? new Set(rows.map(r => r[fieldName]).filter(val => val !== null && val !== undefined)).size
+          : rows.filter(r => r[fieldName] !== null && r[fieldName] !== undefined).length;
         return { rows: [{ [alias]: cnt }], rowsAffected: 0 };
       }
     }
 
     const { data, error } = await query;
     if (error) {
-      if (error.code === 'PGRST116') return { rows: [], rowsAffected: 0 }; // no rows
+      if (error.code === 'PGRST116') return { rows: [], rowsAffected: 0 };
       throw new Error(`[REST SELECT ${table}] ${error.message}`);
     }
     return { rows: data || [], rowsAffected: 0 };
   }
 
-  // ── INSERT queries ──
-  const insertMatch = transformed.match(
-    /^\s*INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)\s+VALUES\s*\(([^)]+)\)(.*?)$/is
-  );
+  // 2. INSERT queries
+  const insertMatch = transformed.match(/^\s*INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)\s+VALUES\s*\(([^)]+)\)(.*?)$/is);
   if (insertMatch) {
     const [, table, colStr, , rest] = insertMatch;
     const cols = colStr.split(',').map(c => c.trim());
@@ -269,11 +240,10 @@ async function executeViaRest(originalSql, transformed, args) {
     const onConflictMatch = rest.match(/ON\s+CONFLICT\s*\(([^)]+)\)\s*DO\s+(NOTHING|UPDATE.*)/i);
     const onConflictColStr = onConflictMatch ? onConflictMatch[1] : null;
     const doNothing = onConflictMatch && onConflictMatch[2].toUpperCase() === 'NOTHING';
-    const doUpdate = onConflictMatch && !doNothing;
     const isIgnoreConflict = /ON CONFLICT DO NOTHING/i.test(rest);
 
     let q;
-    if (doUpdate) {
+    if (onConflictMatch && !doNothing && !isIgnoreConflict) {
       q = sb.from(table).upsert(obj, { onConflict: onConflictColStr?.trim(), ignoreDuplicates: false });
     } else if (doNothing || isIgnoreConflict) {
       q = sb.from(table).upsert(obj, { onConflict: onConflictColStr?.trim() || 'id', ignoreDuplicates: true });
@@ -285,22 +255,17 @@ async function executeViaRest(originalSql, transformed, args) {
 
     const { error } = await q;
     if (error) {
-      if (error.code === '23505') return { rows: [], rowsAffected: 0 }; // duplicate
-      throw new Error(`[REST INSERT ${table}] ${error.message} - ${error.details || ''}`);
+      if (error.code === '23505') return { rows: [], rowsAffected: 0 };
+      throw new Error(`[REST INSERT ${table}] ${error.message}`);
     }
     return { rows: [], rowsAffected: 1 };
   }
 
-  // ── UPDATE queries ──
-  const updateMatch = transformed.match(
-    /^\s*UPDATE\s+(\w+)\s+SET\s+(.+?)\s+WHERE\s+(.+?)$/is
-  );
+  // 3. UPDATE queries
+  const updateMatch = transformed.match(/^\s*UPDATE\s+(\w+)\s+SET\s+(.+?)\s+WHERE\s+(.+?)$/is);
   if (updateMatch) {
     const [, table, setStr, whereStr] = updateMatch;
-
-    // Parse SET clause
     const setObj = {};
-    // Replace $N with actual values
     const resolveArgs = (s) => s.replace(/\$(\d+)/g, (_, n) => {
       const val = args[parseInt(n) - 1];
       return typeof val === 'string' ? `|||${val}|||` : String(val ?? 'null');
@@ -311,22 +276,19 @@ async function executeViaRest(originalSql, transformed, args) {
       const eqIdx = pair.indexOf('=');
       if (eqIdx === -1) continue;
       const col = pair.substring(0, eqIdx).trim();
-      let rawVal = pair.substring(eqIdx + 1).trim();
-      let val = resolveArgs(rawVal);
+      let val = resolveArgs(pair.substring(eqIdx + 1).trim());
 
       if (val.startsWith('|||') && val.endsWith('|||')) {
         val = val.slice(3, -3);
       } else if (val === 'null') {
         val = null;
       } else {
-        // numeric
         const num = Number(val);
         if (!isNaN(num) && val !== '') val = num;
       }
       if (col && col !== 'EXCLUDED.id') setObj[col] = val;
     }
 
-    // Parse WHERE for equality (simple)
     const resolvedWhere = resolveArgs(whereStr);
     let q = sb.from(table).update(setObj);
 
@@ -334,7 +296,6 @@ async function executeViaRest(originalSql, transformed, args) {
     for (const cond of conditions) {
       const eqMatch = cond.match(/^(\w+)\s*=\s*\|\|\|([^|]*)\|\|\|$/);
       const numEqMatch = cond.match(/^(\w+)\s*=\s*(-?\d+(?:\.\d+)?)$/);
-      const neqMatch = cond.match(/^(\w+)\s*!=\s*\|\|\|([^|]*)\|\|\|$/);
       if (eqMatch) q = q.eq(eqMatch[1], eqMatch[2]);
       else if (numEqMatch) q = q.eq(numEqMatch[1], Number(numEqMatch[2]));
     }
@@ -344,10 +305,8 @@ async function executeViaRest(originalSql, transformed, args) {
     return { rows: [], rowsAffected: 1 };
   }
 
-  // ── DELETE queries ──
-  const deleteMatch = transformed.match(
-    /^\s*DELETE\s+FROM\s+(\w+)\s+WHERE\s+(.+?)$/is
-  );
+  // 4. DELETE queries
+  const deleteMatch = transformed.match(/^\s*DELETE\s+FROM\s+(\w+)\s+WHERE\s+(.+?)$/is);
   if (deleteMatch) {
     const [, table, whereStr] = deleteMatch;
     const resolveArgs = (s) => s.replace(/\$(\d+)/g, (_, n) => {
@@ -361,8 +320,14 @@ async function executeViaRest(originalSql, transformed, args) {
     for (const cond of conditions) {
       const eqMatch = cond.match(/^(\w+)\s*=\s*\|\|\|([^|]*)\|\|\|$/);
       const numEqMatch = cond.match(/^(\w+)\s*=\s*(-?\d+(?:\.\d+)?)$/);
+      const inMatch = cond.match(/^(\w+)\s+IN\s*\(([^)]+)\)$/i);
+      
       if (eqMatch) q = q.eq(eqMatch[1], eqMatch[2]);
       else if (numEqMatch) q = q.eq(numEqMatch[1], Number(numEqMatch[2]));
+      else if (inMatch) {
+        const vals = inMatch[2].split(',').map(v => v.trim().replace(/^'|'$/g, '').replace(/^\|\|\||\|\|\|$/g, ''));
+        q = q.in(inMatch[1], vals);
+      }
     }
 
     const { error } = await q;
@@ -370,10 +335,38 @@ async function executeViaRest(originalSql, transformed, args) {
     return { rows: [], rowsAffected: 1 };
   }
 
-  // ── Fallback for JOIN queries and complex SELECT ──
-  // Use the Supabase REST API's raw SQL endpoint via RPC (if exec_sql function exists)
-  // Or just throw a clear error
   throw new Error(`[DB] Cannot parse SQL via REST: ${transformed.substring(0, 120)}`);
+}
+
+// ── JOIN fallback for Vercel REST ──────────────────────────────────────────────
+async function executeJoinFallback(originalSql, transformed, args) {
+  const sb = getSupabaseClient();
+
+  const appliedJobsJoin = transformed.match(
+    /SELECT\s+j\.\*\s+FROM\s+(\w+)\s+\w+\s+JOIN\s+jobs\s+j\s+ON\s+\w+\.job_id\s+=\s+j\.id\s+WHERE\s+\w+\.user_id\s*=\s*\$1/i
+  );
+  if (appliedJobsJoin) {
+    const joinTable = appliedJobsJoin[1];
+    const userId = args[0];
+    const { data: refs } = await sb.from(joinTable).select('job_id').eq('user_id', userId);
+    if (!refs || refs.length === 0) return { rows: [], rowsAffected: 0 };
+    const { data: jobs } = await sb.from('jobs').select('*').in('id', refs.map(r => r.job_id));
+    return { rows: jobs || [], rowsAffected: 0 };
+  }
+
+  const likedJobsJoin = transformed.match(
+    /SELECT\s+.+\s+FROM\s+liked_jobs\s+\w+\s+JOIN\s+jobs\s+j\s+ON.+WHERE\s+\w+\.user_id\s*=\s*\$1/i
+  );
+  if (likedJobsJoin) {
+    const userId = args[0];
+    const { data: refs } = await sb.from('liked_jobs').select('job_id').eq('user_id', userId);
+    if (!refs || refs.length === 0) return { rows: [], rowsAffected: 0 };
+    const { data: jobs } = await sb.from('jobs').select('*').in('id', refs.map(r => r.job_id));
+    return { rows: jobs || [], rowsAffected: 0 };
+  }
+
+  console.warn('[DB] Unhandled JOIN in REST fallback — returning empty:', transformed.substring(0, 120));
+  return { rows: [], rowsAffected: 0 };
 }
 
 // ── Main execute() ─────────────────────────────────────────────────────────────
@@ -388,75 +381,36 @@ async function execute(sqlOrObj, argsParam) {
   }
 
   const transformed = transformSql(sql);
-  if (!transformed) return { rows: [], rowsAffected: 0 }; // PRAGMA
+  if (!transformed) return { rows: [], rowsAffected: 0 };
 
-  // Try pg pool if SUPABASE_DB_URL is set
-  if (_usePg) {
+  // 1. Try Direct PostgreSQL Connection Pool if active
+  if (_usePgPool) {
     try {
       return await executeViaPg(transformed, queryArgs);
     } catch (err) {
       if (err.code === '23505') return { rows: [], rowsAffected: 0 };
       if (err.code === '42701') return { rows: [], rowsAffected: 0 };
-      if (err.code === '42P01') {
-        console.warn('[DB] Table not found:', err.message.substring(0, 80));
-        return { rows: [], rowsAffected: 0 };
-      }
-      // Connection issue → fall through to REST
-      console.warn('[DB] pg failed, falling back to REST:', err.message.substring(0, 80));
-      _usePg = false;
+      if (err.code === '42P01') return { rows: [], rowsAffected: 0 };
+
+      // Connection/Network limits (like Vercel IPv6 restrictions)
+      console.warn('[DB Pool Failed] Falling back automatically to Supabase REST SDK:', err.message);
+      _usePgPool = false; // Disable pool and fall through
     }
   }
 
-  // Use Supabase REST API
+  // 2. Self-Healing Fallback: Supabase REST SDK over IPv4 HTTPS
   try {
     return await executeViaRest(sql, transformed, queryArgs);
   } catch (err) {
     if (err.message.includes('Cannot parse SQL') && transformed.match(/JOIN/i)) {
-      // JOINs: manually handle the common patterns via multiple SDK calls
       return await executeJoinFallback(sql, transformed, queryArgs);
     }
-    console.error('[DB] REST error:', err.message, err.stack, 'SQL:', sql, 'transformed:', transformed, 'args:', queryArgs);
+    console.error('[DB REST Exception]:', err.message, 'SQL:', sql);
     throw err;
   }
 }
 
-// ── JOIN fallback for common route patterns ────────────────────────────────────
-async function executeJoinFallback(originalSql, transformed, args) {
-  const sb = getSupabaseClient();
-
-  // Pattern: SELECT j.* FROM applied_jobs a JOIN jobs j ON a.job_id = j.id WHERE a.user_id = $1
-  const appliedJobsJoin = transformed.match(
-    /SELECT\s+j\.\*\s+FROM\s+(\w+)\s+\w+\s+JOIN\s+jobs\s+j\s+ON\s+\w+\.job_id\s+=\s+j\.id\s+WHERE\s+\w+\.user_id\s*=\s*\$1/i
-  );
-  if (appliedJobsJoin) {
-    const joinTable = appliedJobsJoin[1];
-    const userId = args[0];
-    const { data: refs, error: e1 } = await sb.from(joinTable).select('job_id').eq('user_id', userId);
-    if (e1) throw new Error(e1.message);
-    if (!refs || refs.length === 0) return { rows: [], rowsAffected: 0 };
-    const jobIds = refs.map(r => r.job_id);
-    const { data: jobs, error: e2 } = await sb.from('jobs').select('*').in('id', jobIds);
-    if (e2) throw new Error(e2.message);
-    return { rows: jobs || [], rowsAffected: 0 };
-  }
-
-  // Pattern: SELECT j.* FROM liked_jobs JOIN jobs j ...
-  const likedJobsJoin = transformed.match(
-    /SELECT\s+.+\s+FROM\s+liked_jobs\s+\w+\s+JOIN\s+jobs\s+j\s+ON.+WHERE\s+\w+\.user_id\s*=\s*\$1/i
-  );
-  if (likedJobsJoin) {
-    const userId = args[0];
-    const { data: refs } = await sb.from('liked_jobs').select('job_id').eq('user_id', userId);
-    if (!refs || refs.length === 0) return { rows: [], rowsAffected: 0 };
-    const { data: jobs } = await sb.from('jobs').select('*').in('id', refs.map(r => r.job_id));
-    return { rows: jobs || [], rowsAffected: 0 };
-  }
-
-  console.warn('[DB] Unhandled JOIN — returning empty:', transformed.substring(0, 120));
-  return { rows: [], rowsAffected: 0 };
-}
-
-// ── batch() ────────────────────────────────────────────────────────────────────
+// ── batch() ──
 async function batch(statements, _mode) {
   const results = [];
   for (const stmt of statements) {
@@ -465,22 +419,18 @@ async function batch(statements, _mode) {
   return results;
 }
 
-// ── getDb() ────────────────────────────────────────────────────────────────────
-const dbAdapter = { execute, batch };
-function getDb() { return dbAdapter; }
-
-// ── initDb() — connectivity check ─────────────────────────────────────────────
+// ── initDb() ──
 async function initDb() {
   try {
     const r = await execute('SELECT COUNT(*) as cnt FROM jobs');
     const cnt = r.rows[0]?.cnt ?? '?';
-    console.log(`[DB] Supabase connected. Jobs: ${cnt}`);
+    console.log(`[DB] Database adapter initialized. Active Mode: ${_usePgPool ? 'TCP_ConnectionPool' : 'HTTPS_RestFallback'}. Jobs: ${cnt}`);
   } catch (e) {
-    console.warn('[DB] initDb warn:', e.message);
+    console.warn('[DB] initDb warning:', e.message);
   }
 }
 
-// ── ensureVercelUser (backward-compat no-op) ───────────────────────────────────
+// ── ensureVercelUser ──
 async function ensureVercelUser(_db, decoded) {
   if (!decoded?.id) return;
   try {
@@ -503,6 +453,8 @@ async function ensureVercelUser(_db, decoded) {
   } catch (_) { /* silent */ }
 }
 
+const dbAdapter = { execute, batch };
+function getDb() { return dbAdapter; }
 function getSupabase() { return getSupabaseClient(); }
 
 module.exports = { getDb, initDb, ensureVercelUser, getSupabase, getPool };

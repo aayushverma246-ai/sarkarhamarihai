@@ -59,16 +59,39 @@ body.capacitor-app .cap-safe-all {
   padding-right: env(safe-area-inset-right);
 }
 
-/* ── Mobile-native touch feedback ── */
+/* ── Mobile-native touch feedback & Snappy Tap Latency (0ms Delay) ── */
 body.capacitor-app button,
-body.capacitor-app a {
-  -webkit-tap-highlight-color: rgba(239, 68, 68, 0.1);
+body.capacitor-app a,
+body.capacitor-app .card-hover,
+body.capacitor-app [role="button"],
+body.capacitor-app input,
+body.capacitor-app select {
+  touch-action: manipulation !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+/* ── Content Visibility & Lazy Layout calculation ── */
+/* Defer rendering of off-screen list cards to instantly double scroll speed */
+.card-hover {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 150px;
+}
+
+/* ── High-Performance GPU Acceleration Layers ── */
+/* Forces mobile GPU compositing only where strictly beneficial without VRAM thrashing */
+.gpu-accelerated,
+nav,
+.cap-safe-bottom {
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+  will-change: transform;
 }
 
 /* Disable hover effects on touch devices (prevents sticky hover) */
 @media (hover: none) {
   .card-hover:hover {
-    transform: none;
+    transform: none !important;
   }
 }
 
@@ -379,14 +402,14 @@ html {
 }
 
 /* Isolate the custom Theme Toggle circular ripple so it doesn't cross-fade */
-::view-transition-old(root):has(.theme-transitioning),
-::view-transition-new(root):has(.theme-transitioning) {
+html.theme-transitioning::view-transition-old(root),
+html.theme-transitioning::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
   display: block;
 }
 
-::view-transition-new(root):has(.theme-transitioning) {
+html.theme-transitioning::view-transition-new(root) {
   z-index: 9999;
 }
 
@@ -701,167 +724,195 @@ html.light-mode ::selection {
   color: #000;
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   LIGHT MODE â€” Extended Overrides (Consolidated)
-   Catches hex codes used across newer components.
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ==========================================================================
+   LIGHT MODE — Robust Clean Theme Override System
+   ========================================================================== */
 
-/* Override all dark hex backgrounds used in newer components */
-.light-mode .bg-\[\#0c0c0c\] { background-color: #f8fafc !important; }
-.light-mode .bg-\[\#1a1a1a\] { background-color: #f1f5f9 !important; }
-.light-mode .bg-\[\#1c1c1c\] { background-color: #f1f5f9 !important; }
-.light-mode .bg-\[\#202020\] { background-color: #f1f5f9 !important; }
-.light-mode .bg-\[\#242424\] { background-color: #e2e8f0 !important; }
-.light-mode .bg-\[\#252525\] { background-color: #e2e8f0 !important; }
-.light-mode .bg-\[\#222\] { background-color: #f1f5f9 !important; }
-.light-mode .bg-\[\#333\] { background-color: #e2e8f0 !important; }
-
-/* Extended borders for newer components */
-.light-mode .border-\[\#191919\],
-.light-mode .border-\[\#1a1a1a\],
-.light-mode .border-\[\#252525\],
-.light-mode .border-\[\#242424\],
-.light-mode .border-\[\#333\],
-.light-mode .border-\[\#0f0f0f\] {
-  border-color: #e2e8f0 !important;
+/* Canvas/Page wrappers: premium light slate background */
+html.light-mode,
+html.light-mode body,
+html.light-mode #root,
+html.light-mode [class*="bg-[#050505]"],
+html.light-mode [class*="bg-[#080808]"],
+html.light-mode [class*="bg-[#060608]"],
+html.light-mode [class*="bg-[#08080c]"] {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
 }
 
-/* Extended hover states */
-.light-mode .hover\:bg-\[\#222\]:hover,
-.light-mode .hover\:bg-\[\#333\]:hover,
-.light-mode .hover\:bg-\[\#1c1c1c\]:hover {
-  background-color: #e2e8f0 !important;
-}
-
-.light-mode .hover\:border-\[\#252525\]:hover,
-.light-mode .hover\:border-\[\#2a2a2a\]:hover,
-.light-mode .hover\:border-\[\#333\]:hover {
-  border-color: #94a3b8 !important;
-}
-
-/* â”€â”€ Text Color Hierarchy (proper contrast!) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-.light-mode .text-gray-50,
-.light-mode .text-gray-100 { color: #020617 !important; }
-
-.light-mode .text-gray-200,
-.light-mode .text-gray-300 { color: #0f172a !important; }
-
-.light-mode .text-gray-400 { color: #475569 !important; }
-
-.light-mode .text-gray-500 { color: #334155 !important; }
-
-.light-mode .text-gray-600 { color: #334155 !important; }
-
-.light-mode .text-gray-700,
-.light-mode .text-gray-800 { color: #1e293b !important; }
-
-.light-mode .text-gray-900 { color: #020617 !important; }
-
-/* â”€â”€ Semantic Color Overrides (for badges/tags) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-.light-mode .text-emerald-400 { color: #059669 !important; }
-.light-mode .text-amber-400 { color: #d97706 !important; }
-.light-mode .text-orange-400,
-.light-mode .text-orange-600 { color: #ea580c !important; }
-.light-mode .text-orange-700 { color: #c2410c !important; }
-.light-mode .text-blue-400 { color: #2563eb !important; }
-.light-mode .text-red-400 { color: #dc2626 !important; }
-.light-mode .text-purple-400 { color: #9333ea !important; }
-
-.light-mode .bg-emerald-900\/15 {
-  background-color: #d1fae5 !important;
-  border-color: #a7f3d0 !important;
-}
-.light-mode .bg-amber-900\/15 {
-  background-color: #fef3c7 !important;
-  border-color: #fde68a !important;
-}
-.light-mode .bg-orange-900\/15 {
-  background-color: #ffedd5 !important;
-  border-color: #fed7aa !important;
-}
-.light-mode .bg-blue-900\/20,
-.light-mode .bg-blue-950\/5 {
-  background-color: #dbeafe !important;
-  border-color: #bfdbfe !important;
-}
-.light-mode .bg-red-900\/20 {
-  background-color: #fee2e2 !important;
-  border-color: #fecaca !important;
-}
-.light-mode .bg-purple-900\/40 {
-  background-color: #f3e8ff !important;
-  border-color: #e9d5ff !important;
-}
-
-/* â”€â”€ Hover Text Colors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-.light-mode .hover\:text-gray-200:hover { color: #020617 !important; }
-.light-mode .hover\:text-gray-300:hover { color: #020617 !important; }
-.light-mode .hover\:text-gray-400:hover { color: #0f172a !important; }
-
-/* â”€â”€ White text protection (keep white on colored BGs) â”€â”€â”€â”€ */
-.light-mode .text-white:not(button *):not(button):not(.bg-red-800 *):not(.bg-emerald-700 *):not(span):not(.bg-gradient-to-br *):not(.bg-gradient-to-r *) {
-  color: #020617 !important;
-}
-
-.light-mode .hover\:text-white:hover:not(button *):not(button):not(.bg-red-800 *):not(.bg-emerald-700 *):not(span) {
-  color: #000000 !important;
-}
-
-/* â”€â”€ Placeholder Colors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-.light-mode .placeholder-gray-600::placeholder,
-.light-mode .placeholder-gray-700::placeholder {
-  color: #64748b !important;
-}
-
-/* â”€â”€ Input Overrides â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-.light-mode .hover\:bg-red-900\/10:hover {
-  background-color: #fca5a533 !important;
-  color: #dc2626 !important;
-}
-
-.light-mode input.target-date-input {
-  color-scheme: light !important;
-}
-
-/* â”€â”€ Skeleton loader light mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-.light-mode .animate-pulse > div,
-.light-mode .animate-pulse {
-  --tw-pulse-color: rgba(0,0,0,0.04);
-}
-
-.light-mode .bg-\[\#1a1a1a\].rounded {
-  background-color: #e2e8f0 !important;
-}
-
-/* ── Slide animation for loading bars ── */
-@keyframes slide {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(400%); }
-}
-
-/* ── Light-mode semantic helper classes ── */
-/* Used by RecommendationsWidget and other rebuilt components */
+/* Card and Container surfaces: clean crisp white */
+html.light-mode [class*="bg-[#0a0a0a]"],
+html.light-mode [class*="bg-[#0b0b0b]"],
+html.light-mode [class*="bg-[#0c0c0c]"],
+html.light-mode [class*="bg-[#0d0d0d]"],
+html.light-mode [class*="bg-[#0e0e0e]"],
+html.light-mode [class*="bg-[#101010]"],
+html.light-mode [class*="bg-[#111]"],
+html.light-mode [class*="bg-[#111111]"],
+html.light-mode [class*="bg-[#141414]"],
+html.light-mode [class*="bg-[#151515]"],
+html.light-mode [class*="bg-[#191919]"],
+html.light-mode [class*="bg-[#1a1a1a]"],
+html.light-mode [class*="bg-[#1c1c1c]"],
+html.light-mode [class*="bg-[#202020]"],
+html.light-mode [class*="bg-[#222]"],
 html.light-mode .light-card {
   background-color: #ffffff !important;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.06) !important;
 }
 
+/* Sub-panels and inner sections */
+html.light-mode [class*="bg-[#242424]"],
+html.light-mode [class*="bg-[#252525]"],
+html.light-mode [class*="bg-[#333]"] {
+  background-color: #f1f5f9 !important;
+}
+
+/* Glassmorphism elements */
+html.light-mode .bg-\[\#0e0e12\]\/95 { background-color: rgba(255, 255, 255, 0.95) !important; }
+html.light-mode .bg-\[\#121217\]\/40 { background-color: rgba(255, 255, 255, 0.4) !important; }
+html.light-mode .bg-\[\#0b0b0f\]\/80 { background-color: rgba(255, 255, 255, 0.8) !important; }
+
+/* Force clean gray borders */
+html.light-mode [class*="border-[#"],
+html.light-mode [class*="border-white/"],
+html.light-mode .border-white\/10,
+html.light-mode .border-white\/5,
 html.light-mode .light-border {
-  border-color: #e2e8f0 !important;
+  border-color: #cbd5e1 !important;
 }
 
 html.light-mode .light-border-subtle {
   border-color: #f1f5f9 !important;
 }
 
+/* Hover background changes */
+html.light-mode [class*="hover:bg-[#"]:hover,
+html.light-mode [class*="hover:bg-white"]:hover,
+html.light-mode .hover\:bg-\[\#141414\]:hover,
+html.light-mode .hover\:bg-\[\#101010\]:hover,
+html.light-mode .hover\:bg-\[\#111\]:hover,
+html.light-mode .hover\:bg-\[\#151515\]:hover,
+html.light-mode .hover\:bg-\[\#1a1a1a\]:hover,
+html.light-mode .hover\:bg-\[\#222\]:hover,
+html.light-mode .hover\:bg-\[\#333\]:hover,
+html.light-mode .hover\:bg-\[\#1c1c1c\]:hover {
+  background-color: #f8fafc !important;
+}
+
+/* Direct input overrides */
+html.light-mode input[type="text"],
+html.light-mode input[type="email"],
+html.light-mode input[type="password"],
+html.light-mode input[type="number"],
+html.light-mode select,
+html.light-mode textarea {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html.light-mode input:focus,
+html.light-mode select:focus,
+html.light-mode textarea:focus {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
+}
+
+/* Dynamic text hierarchy and contrast fixes */
+html.light-mode [class*="text-gray-"],
+html.light-mode [class*="text-slate-1"],
+html.light-mode [class*="text-slate-2"],
+html.light-mode [class*="text-slate-3"],
+html.light-mode [class*="text-zinc-"],
+html.light-mode [class*="text-neutral-"] {
+  color: #0f172a !important;
+}
+
+/* Make sure text elements that default to white look crisp and dark */
+html.light-mode .text-white,
+html.light-mode .text-gray-100,
+html.light-mode .text-gray-200,
+html.light-mode .text-gray-300,
+html.light-mode h1,
+html.light-mode h2,
+html.light-mode h3,
+html.light-mode h4,
+html.light-mode h5,
+html.light-mode h6,
 html.light-mode .light-text {
   color: #0f172a !important;
 }
 
+/* Secondary descriptions */
+html.light-mode .text-gray-400,
+html.light-mode .text-gray-500,
+html.light-mode .text-gray-600,
 html.light-mode .light-text-secondary {
   color: #475569 !important;
 }
 
+/* Accent status badges & texts */
+html.light-mode .text-emerald-400 { color: #059669 !important; }
+html.light-mode .text-amber-400 { color: #d97706 !important; }
+html.light-mode .text-orange-400,
+html.light-mode .text-orange-600 { color: #ea580c !important; }
+html.light-mode .text-orange-700 { color: #c2410c !important; }
+html.light-mode .text-blue-400 { color: #2563eb !important; }
+html.light-mode .text-red-400 { color: #dc2626 !important; }
+html.light-mode .text-purple-400 { color: #9333ea !important; }
+
+html.light-mode .bg-emerald-900\/15 {
+  background-color: #d1fae5 !important;
+  border-color: #a7f3d0 !important;
+}
+html.light-mode .bg-amber-900\/15 {
+  background-color: #fef3c7 !important;
+  border-color: #fde68a !important;
+}
+html.light-mode .bg-orange-900\/15 {
+  background-color: #ffedd5 !important;
+  border-color: #fed7aa !important;
+}
+html.light-mode .bg-blue-900\/20,
+html.light-mode .bg-blue-950\/5 {
+  background-color: #dbeafe !important;
+  border-color: #bfdbfe !important;
+}
+html.light-mode .bg-red-900\/20 {
+  background-color: #fee2e2 !important;
+  border-color: #fecaca !important;
+}
+html.light-mode .bg-purple-900\/40 {
+  background-color: #f3e8ff !important;
+  border-color: #e9d5ff !important;
+}
+
+/* White text protection (keep button labels white on red/green/blue backings) */
+html.light-mode button .text-white,
+html.light-mode button.bg-red-600,
+html.light-mode button.bg-red-800,
+html.light-mode [class*="bg-red-"],
+html.light-mode [class*="bg-emerald-"],
+html.light-mode [class*="bg-blue-"],
+html.light-mode [class*="bg-gradient-"] {
+  color: #ffffff !important;
+}
+
+html.light-mode button .text-white *,
+html.light-mode button.bg-red-600 *,
+html.light-mode button.bg-red-800 * {
+  color: #ffffff !important;
+}
+
+/* Placeholders */
+html.light-mode ::placeholder {
+  color: #64748b !important;
+}
+
+/* Skeletons */
+html.light-mode .animate-pulse > div,
+html.light-mode .animate-pulse,
 html.light-mode .light-skeleton {
   background-color: #e2e8f0 !important;
+  --tw-pulse-color: rgba(0,0,0,0.06);
 }

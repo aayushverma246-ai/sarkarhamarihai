@@ -596,11 +596,10 @@ export default function JobDetailsPage() {
     if (!cached) { navigate('/login'); return; }
     if (!job) return;
 
-    // Snappy Optimistic UI Toggle for both like and applied
+    // Decoupled snappier optimistic Saved (Liked) toggle
     setLikeLoading(true);
     const newStatus = !liked;
     setLiked(newStatus);
-    setApplied(newStatus);
 
     try {
       if (newStatus) {
@@ -610,12 +609,10 @@ export default function JobDetailsPage() {
       }
       // Broadcast to the Navbar Notification Bell and store sync
       window.dispatchEvent(new Event('app:likeToggled'));
-      window.dispatchEvent(new Event('app:appliedToggled'));
     } catch (err) {
       console.error(err);
-      // Revert if server fails
-      setLiked(liked);
-      setApplied(applied);
+      // Revert ONLY saved status if server fails
+      setLiked(!newStatus);
     } finally {
       setLikeLoading(false);
     }
@@ -624,19 +621,19 @@ export default function JobDetailsPage() {
   const handleApplyToggle = async () => {
     if (!cached) { navigate('/login'); return; }
     if (!job) return;
+
+    // Decoupled snappier optimistic Applied toggle
     setAppliedLoading(true);
     const newStatus = !applied;
     setApplied(newStatus);
-    setLiked(newStatus);
 
     try {
       await api.toggleApplied(job.id);
-      window.dispatchEvent(new Event('app:likeToggled'));
       window.dispatchEvent(new Event('app:appliedToggled'));
     } catch (err) {
       console.error(err);
-      setApplied(applied);
-      setLiked(liked);
+      // Revert ONLY applied status if server fails
+      setApplied(!newStatus);
     } finally {
       setAppliedLoading(false);
     }
@@ -1293,6 +1290,7 @@ export default function JobDetailsPage() {
                   try {
                     await api.unmarkApplied(job.id);
                     setApplied(false);
+                    window.dispatchEvent(new Event('app:appliedToggled'));
                     setShowUnmarkSuccess(true);
                     setTimeout(() => setShowUnmarkSuccess(false), 3000);
                   } catch (err) {

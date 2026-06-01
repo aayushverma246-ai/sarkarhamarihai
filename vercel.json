@@ -4,7 +4,8 @@
         "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEzNDgyNywiZXhwIjoyMDkwNzEwODI3fQ.wbX4lhJKE8OtzIl2RJamsFA71DRwo-B7QCL4UzAsr9A",
         "JWT_SECRET": "sarkarhamarhai_super_secret_jwt_key_2024_prod",
         "CRON_SECRET": "sarkar_cron_key_v1",
-        "GEMINI_API_KEY_NEW": "AQ.Ab8RN6LYEzKBnmxzkLnhrVzArhoTYQpUblMPnEjIrc8fXAq6aQ",
+        "GEMINI_API_KEY_NEW": "AQ.Ab8RN6Lp_0EXPCaW72bDhFXfM7KrFJ7RK2URxHXmT-Lh8FWIqA",
+        "SUPABASE_DB_PASSWORD": "Aayush@192005",
         "VITE_API_URL": "/api"
     },
     "headers": [
@@ -117,6 +118,10 @@
         "api/cron/discovery.js": {
             "includeFiles": "{backend/src/**,.env,backend/.env}",
             "maxDuration": 90
+        },
+        "api/cron/healer.js": {
+            "includeFiles": "{scripts/**}",
+            "maxDuration": 90
         }
     },
     "crons": [
@@ -135,6 +140,10 @@
         {
             "path": "/api/cron/verify",
             "schedule": "0 20 * * *"
+        },
+        {
+            "path": "/api/cron/healer",
+            "schedule": "0 22 * * *"
         }
     ]
 }

@@ -85,8 +85,74 @@ const jobsToSetup = [
             months: [-1],
             wdays: [-1]
         }
+    },
+    {
+        title: "SarkarHamariHai - Deep Audit",
+        url: "https://sarkarhamarihai.vercel.app/api/cron/deep-audit?secret=sarkar_cron_key_v1",
+        schedule: {
+            timezone: "Asia/Kolkata",
+            expiresAt: 0,
+            hours: [1], // 01:00 AM IST
+            minutes: [0],
+            mdays: [-1],
+            months: [-1],
+            wdays: [-1]
+        }
+    },
+    {
+        title: "SarkarHamariHai - Verification Engine",
+        url: "https://sarkarhamarihai.vercel.app/api/cron/verify?secret=sarkar_cron_key_v1",
+        schedule: {
+            timezone: "Asia/Kolkata",
+            expiresAt: 0,
+            hours: [2], // 02:00 AM IST
+            minutes: [0],
+            mdays: [-1],
+            months: [-1],
+            wdays: [-1]
+        }
+    },
+    {
+        title: "SarkarHamariHai - Refresh Cache",
+        url: "https://sarkarhamarihai.vercel.app/api/cron/refresh?secret=sarkar_cron_key_v1",
+        schedule: {
+            timezone: "Asia/Kolkata",
+            expiresAt: 0,
+            hours: [0, 6, 12, 18], // Every 6 hours
+            minutes: [30],
+            mdays: [-1],
+            months: [-1],
+            wdays: [-1]
+        }
+    },
+    {
+        title: "SarkarHamariHai - Discovery Scraper",
+        url: "https://sarkarhamarihai.vercel.app/api/cron/discovery?secret=sarkar_cron_key_v1",
+        schedule: {
+            timezone: "Asia/Kolkata",
+            expiresAt: 0,
+            hours: [3], // 03:00 AM IST
+            minutes: [0],
+            mdays: [-1],
+            months: [-1],
+            wdays: [-1]
+        }
+    },
+    {
+        title: "SarkarHamariHai - Healer",
+        url: "https://sarkarhamarihai.vercel.app/api/cron/healer?secret=sarkar_cron_key_v1",
+        schedule: {
+            timezone: "Asia/Kolkata",
+            expiresAt: 0,
+            hours: [4], // 04:00 AM IST
+            minutes: [0],
+            mdays: [-1],
+            months: [-1],
+            wdays: [-1]
+        }
     }
 ];
+
 
 function request(method, path, body = null) {
     return new Promise((resolve, reject) => {
@@ -151,7 +217,17 @@ async function run() {
         for (const jobConfig of jobsToSetup) {
             const existingId = existingTitlesMap[jobConfig.title];
             if (existingId) {
-                console.log(`- [Skip] "${jobConfig.title}" already exists (Job ID: ${existingId})`);
+                console.log(`- [Update] "${jobConfig.title}" already exists (Job ID: ${existingId}) -> Syncing settings`);
+                await request('PATCH', `/jobs/${existingId}`, {
+                    job: {
+                        title: jobConfig.title,
+                        url: jobConfig.url,
+                        enabled: true,
+                        saveResponses: true,
+                        schedule: jobConfig.schedule
+                    }
+                });
+                await sleep(5000); // Throttling delay to avoid 429
                 continue;
             }
 

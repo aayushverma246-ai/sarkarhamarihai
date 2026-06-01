@@ -2,14 +2,10 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const { getRecommendations } = require('../services/gemini_recommender');
-const { createClient } = require('@supabase/supabase-js');
+const { getSupabase } = require('../db');
 
 function getSb() {
-  return createClient(
-    process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co',
-    process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0Ymd1bmFydGtudHJxeHhzZHBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEzNDgyNywiZXhwIjoyMDkwNzEwODI3fQ.wbX4lhJKE8OtzIl2RJamsFA71DRwo-B7QCL4UzAsr9A',
-    { auth: { persistSession: false, autoRefreshToken: false } }
-  );
+  return getSupabase();
 }
 
 const getTodayIST = () => {
@@ -35,18 +31,13 @@ router.post('/recommendations', auth, async (req, res) => {
     const userId = req.user.id;
     const sb = getSb();
 
-    // Get source exam IDs from applied + liked (which are unified)
+    // Get source exam IDs from applied
     let sourceIds = (appliedExams || []).map(e => e.id).filter(Boolean);
 
     // Fetch applied jobs as source from applied_jobs table
     const { data: appliedRows } = await sb.from('applied_jobs')
       .select('job_id').eq('user_id', userId);
     if (appliedRows) sourceIds.push(...appliedRows.map(r => r.job_id));
-
-    // Fetch liked jobs as source from liked_jobs table
-    const { data: likedRows } = await sb.from('liked_jobs')
-      .select('job_id').eq('user_id', userId);
-    if (likedRows) sourceIds.push(...likedRows.map(r => r.job_id));
 
     sourceIds = [...new Set(sourceIds)];
 
@@ -64,7 +55,7 @@ router.post('/recommendations', auth, async (req, res) => {
         ...job,
         similarity: 0,
         overlap_score: 0,
-        explanation: 'Popular exam — apply to or save exams to unlock AI syllabus matching.',
+        explanation: 'Popular exam — apply to exams to unlock AI syllabus matching.',
         overlapping_topics: [],
         missing_topics: [],
         difficulty_gap: 'high',

@@ -1,8 +1,9 @@
 const { discoverMissingJobs } = require('../../backend/src/engines/discovery');
 
 module.exports = async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && req.query.secret !== process.env.CRON_SECRET) {
+  const secret = req.query?.secret || '';
+  const authHeader = req.headers?.authorization || '';
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1')) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

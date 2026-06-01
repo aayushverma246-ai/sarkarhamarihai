@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # Local Database Emulation
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: sarkar_postgres_local
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: local_dev_password_2026
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Local API Runner
+  api-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sarkar_api_local
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      - JWT_SECRET=sarkar_dev_secret_jwt_key
+      # Connects directly to our local PostgreSQL service in the container network
+      - DATABASE_URL=postgresql://postgres:local_dev_password_2026@postgres-db:5432/postgres
+      - USE_VERTEX_AI=false # Disables Vertex AI locally, falling back to GEMINI_API_KEY_NEW
+      - GEMINI_API_KEY_NEW=${GEMINI_API_KEY_NEW}
+    restart: always
+
+volumes:
+  postgres_data:

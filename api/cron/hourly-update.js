@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
   const startTime = Date.now();
   const sb = getSb();
   const report = { phases: {}, errors: [] };
-  const maxMsQuery = req.query?.maxDuration ? parseInt(req.query.maxDuration) : 8000; // default 8s for safety on Vercel Hobby tier
+  const maxMsQuery = req.query?.maxDuration ? parseInt(req.query.maxDuration) : 80000; // default 80s as Vercel allows up to 90s
   const MAX_MS = Math.min(maxMsQuery, 85000);
 
   try {
