@@ -335,37 +335,23 @@ router.get('/all-minimal', async (req, res) => {
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, job_category, state, states, application_start_date, application_end_date, vacancies, official_application_link, last_verified_at, created_at';
 
         const allRows = [];
-        const { getPool } = require('../db');
-        const pool = getPool();
-        const isRest = !pool;
+        const limit = 1000;
+        let offset = 0;
 
-        if (isRest) {
-            // Sequential cursor pagination — guarantees every page is fetched reliably without triggering rate limits
-            const limit = 1000;
-            let offset = 0;
-            while (true) {
-                try {
-                    const result = await db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${offset}`);
-                    const rows = result.rows || [];
-                    if (rows.length === 0) break;
-                    allRows.push(...rows);
-                    if (rows.length < limit) break; // last page detected
-                    offset += limit;
-                } catch (err) {
-                    console.warn(`[all-minimal sequential page fail at offset ${offset}]:`, err.message);
-                    break; // stop on error to avoid infinite loop
-                }
-            }
-        } else {
-            // Direct PG connection — can fetch in larger batches
-            const limit = 5000;
-            let offset = 0;
-            for (let page = 0; page < 5; page++) {
+        // Fetch paginated jobs sequentially to guarantee compatibility with both:
+        //  1. PostgreSQL direct connection (no limits).
+        //  2. Supabase REST fallback client (which enforces a strict max limit of 1000 rows per query).
+        while (true) {
+            try {
                 const result = await db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${offset}`);
                 const rows = result.rows || [];
+                if (rows.length === 0) break;
                 allRows.push(...rows);
-                if (rows.length < limit) break; // last page
+                if (rows.length < limit) break; // last page detected or capped by server-side limit
                 offset += limit;
+            } catch (err) {
+                console.warn(`[all-minimal sequential page fail at offset ${offset}]:`, err.message);
+                break; // stop on error to avoid infinite loop
             }
         }
 
