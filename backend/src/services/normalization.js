@@ -1,4 +1,4 @@
-const { normalizeSyllabus } = require('./lyzr');
+const { normalizeSyllabus } = require('./gemini');
 
 /**
  * Normalizes syllabus text into a standard structure.
@@ -23,7 +23,7 @@ async function getNormalizedSyllabus(rawText) {
         console.error('Normalization service error:', err.message);
     }
 
-    // Fallback: simple parsing if Lyzr fails or returns invalid
+    // Fallback: simple parsing if Vertex AI fails or returns invalid
     return [{
         subject: "General",
         topics: [

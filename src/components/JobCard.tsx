@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { getCachedUser } from '../api';
 import { Job } from '../types';
 import { useLanguage } from '../i18n/LanguageContext';
+import { translateDynamicData } from '../utils/translateHelper';
 import { CheckCircle2, Send, Eye, Clock, Bell } from 'lucide-react';
 import { formatRelativeTime } from '../utils';
 interface Props {
@@ -15,18 +16,19 @@ interface Props {
   staggerIndex?: number;
   isReminded?: boolean;
   onRemindToggle?: (reminded: boolean) => void;
+  user?: any;
 }
 
-const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isApplied, onApplyToggle, onBeforeNavigate, staggerIndex = 0, isReminded = false, onRemindToggle }: Props) {
+const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isApplied, onApplyToggle, onBeforeNavigate, staggerIndex = 0, isReminded = false, onRemindToggle, user: propUser }: Props) {
   const navigate = useNavigate();
-  const user = getCachedUser();
+  const user = propUser || getCachedUser();
   const { t, language } = useLanguage();
   const [likeBeat, setLikeBeat] = useState(false);
   // Prevent double-click navigation
   const navigatingRef = React.useRef(false);
 
   // Dynamic translated title
-  const examTitle = (job as any)[`exam_name_${language}`] || job.job_name;
+  const examTitle = (job as any)[`exam_name_${language}`] || translateDynamicData(job.job_name, language, 'job_name');
 
   // STRICT RULE: If missing timestamps entirely, do not display.
   // Use last_verified_at as primary (matches JobDetailsPage), with fallbacks.
@@ -36,32 +38,55 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
 
   const activeTimestamp = (job as any).last_verified_at || (job as any).verified_at || (job as any).last_updated || (job as any).last_checked_at || (job as any).created_at;
 
-  const handleLike = (e: React.MouseEvent) => {
+  const [isPending, setIsPending] = useState(false);
+
+  const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!user) return;
+    if (!user || isPending) return;
+    setIsPending(true);
     if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(15);
 
     // Trigger heartbeat pulse
     setLikeBeat(true);
     setTimeout(() => setLikeBeat(false), 400);
-    onLikeToggle(isLiked);
+    try {
+      await onLikeToggle(isLiked);
+    } catch (err) {
+      console.error('Like toggle failed:', err);
+    } finally {
+      setIsPending(false);
+    }
   };
 
-  const handleApply = (e: React.MouseEvent) => {
+  const handleApply = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!user) return;
+    if (!user || isPending) return;
+    setIsPending(true);
     if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(15);
-    onApplyToggle(isApplied);
+    try {
+      await onApplyToggle(isApplied);
+    } catch (err) {
+      console.error('Apply toggle failed:', err);
+    } finally {
+      setIsPending(false);
+    }
   };
 
-  const handleReminder = (e: React.MouseEvent) => {
+  const handleReminder = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!user) return;
+    if (!user || isPending) return;
+    setIsPending(true);
     if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(15);
-    onRemindToggle?.(isReminded);
+    try {
+      await onRemindToggle?.(isReminded);
+    } catch (err) {
+      console.error('Reminder toggle failed:', err);
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const isLive = job.form_status === 'LIVE';
@@ -135,8 +160,8 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
   // Dynamic relevance Match
   const isHighMatch = isEligible && job.salary_min >= 40000;
 
-  // Stagger entry animation up to 25 items for a beautiful cascading effect
-  const delay = Math.min(staggerIndex, 25) * 0.03;
+  // Stagger entry animation only for the first 15 items to avoid late animation pop-ins during scroll
+  const delay = staggerIndex < 15 ? staggerIndex * 0.03 : 0;
 
   return (
     <div
@@ -166,7 +191,7 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
               {statusLabel}
             </span>
             <span className="text-[9.5px] text-gray-600 bg-[#111] px-1.5 py-0.5 rounded border border-[#191919] truncate max-w-[140px] font-medium">
-              {job.organization}
+              {translateDynamicData(job.organization, language, 'organization')}
             </span>
             {isHighMatch && (
               <span className="text-[9.5px] px-1.5 py-0.5 rounded border font-bold tracking-tight text-emerald-400 bg-emerald-900/15 border-emerald-900/25 flex items-center gap-1">
@@ -210,7 +235,7 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
               }`}
           >
             <svg className={`w-4 h-4 ${likeBeat ? 'animate-heartbeat' : ''}`} viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" stroke d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
             </svg>
           </button>
 
@@ -264,7 +289,7 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
         </div>
         <div className="bg-[#090909]/40 rounded-lg p-2.5 border border-[#141414]">
           <p className="text-[10px] text-gray-700 font-bold uppercase tracking-wider">{t('job.qualification')}</p>
-          <p className="text-xs text-gray-400 font-bold mt-1.5 truncate">{job.qualification_required}</p>
+          <p className="text-xs text-gray-400 font-bold mt-1.5 truncate">{translateDynamicData(job.qualification_required, language, 'qualification')}</p>
         </div>
         {job.salary_max > 0 && (
           <div className="col-span-2 bg-[#090909]/40 rounded-lg p-2.5 border border-[#141414]">

@@ -20,9 +20,19 @@ export default function AuthCallbackPage() {
             const isMobileBrowser = /android|iphone|ipad|ipod/i.test(ua);
 
             const hasTokens = (hash && hash.includes('access_token')) || (search && search.includes('access_token'));
-            if (isMobileBrowser && hasTokens) {
+            const isMobilePlatform = window.location.href.includes('platform=mobile');
+            if (isMobileBrowser && isMobilePlatform && hasTokens) {
                 const tokenPart = hash || search;
-                const deepLinkUrl = 'com.sarkarhamarihai.app://auth/callback' + tokenPart;
+                
+                // On Android, programmatic redirect to custom schemes is blocked by Chrome.
+                // We use Android Intent URLs to force Chrome to launch the app package.
+                const isAndroid = /android/i.test(ua);
+                let deepLinkUrl = 'com.sarkarhamarihai.app://auth/callback' + tokenPart;
+                if (isAndroid) {
+                    const cleanParams = tokenPart.startsWith('#') || tokenPart.startsWith('?') ? tokenPart.substring(1) : tokenPart;
+                    deepLinkUrl = `intent://auth/callback?${cleanParams}#Intent;scheme=com.sarkarhamarihai.app;package=com.sarkarhamarihai.app;end`;
+                }
+
                 if (mounted) {
                     setIsMobileRedirect(true);
                     setAppUrl(deepLinkUrl);
@@ -60,7 +70,11 @@ export default function AuthCallbackPage() {
                 
                 if (mounted) {
                     setCachedUser(user);
-                    navigate('/dashboard', { replace: true });
+                    if (user && user.age === 0 && !user.email?.startsWith('guest@')) {
+                        navigate('/profile-setup', { replace: true });
+                    } else {
+                        navigate('/dashboard', { replace: true });
+                    }
                 }
             } catch (err: any) {
                 console.error('Auth callback error:', err);

@@ -163,22 +163,22 @@ export default function LandingPage() {
 
             {/* ── HEADER ── */}
             <header className="fixed top-0 w-full z-50 bg-black/40 backdrop-blur-2xl border-b border-white/[0.05]">
-                <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-                    <div className="flex items-center gap-3 cursor-pointer group" onClick={() => navigate('/')}>
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
+                    <div className="flex items-center gap-2 sm:gap-3 cursor-pointer group" onClick={() => navigate('/')}>
                         <div className="relative">
                             <div className="absolute inset-0 bg-red-600 blur-lg opacity-0 group-hover:opacity-40 transition-opacity duration-700" />
-                            <Logo className="w-8 h-8 text-red-500 relative z-10" />
+                            <Logo size={32} className="relative z-10" />
                         </div>
-                        <span className="text-lg font-normal tracking-wide text-white uppercase">
+                        <span className="text-base sm:text-lg font-normal tracking-wide text-white uppercase hidden sm:block">
                             SarkarHamariHai
                         </span>
                     </div>
-                    <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-3 sm:gap-6">
                         <button
                             onClick={() => navigate('/login')}
                             onMouseEnter={() => setRobotEmotion('wow')}
                             onMouseLeave={() => setRobotEmotion('neutral')}
-                            className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 hover:text-white px-6 py-2.5 text-[13px] font-semibold uppercase tracking-wide transition-all rounded-full backdrop-blur-md"
+                            className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 hover:text-white px-4 py-1.5 sm:px-6 sm:py-2.5 text-[11px] sm:text-[13px] font-semibold uppercase tracking-wide transition-all rounded-full backdrop-blur-md whitespace-nowrap"
                         >
                             LOG IN
                         </button>
@@ -186,7 +186,7 @@ export default function LandingPage() {
                             onClick={() => navigate('/signup')}
                             onMouseEnter={() => setRobotEmotion('happy')}
                             onMouseLeave={() => setRobotEmotion('neutral')}
-                            className="bg-red-600 hover:bg-red-500 text-white px-7 py-2.5 text-[15px] font-semibold transition-all rounded-full shadow-lg hover:shadow-red-500/20"
+                            className="bg-red-600 hover:bg-red-500 text-white px-4 py-1.5 sm:px-7 sm:py-2.5 text-[12px] sm:text-[15px] font-semibold transition-all rounded-full shadow-lg hover:shadow-red-500/20 whitespace-nowrap"
                         >
                             Sign Up
                         </button>

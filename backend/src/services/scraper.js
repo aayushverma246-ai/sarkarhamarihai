@@ -9,11 +9,7 @@
  */
 
 const axios = require('axios');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-
-const apiKey = process.env.GEMINI_API_KEY_NEW ? process.env.GEMINI_API_KEY_NEW.trim() : null;
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
-const MODEL_NAME = "gemini-flash-latest";
+const { generateContentDynamic } = require('./gemini');
 
 // Simulated browser headers to prevent Cloudflare/IPS blocking
 const DEFAULT_HEADERS = {
@@ -94,11 +90,7 @@ async function scrapeExamData(jobName, organization, officialLink) {
         result.mode = 'ai_augmented';
     }
 
-    if (!genAI) {
-        result.error = "GEMINI_API_KEY_NEW is not configured.";
-        result.logs.push(`[Scraper] Critical failure: ${result.error}`);
-        return result;
-    }
+    // Vertex AI automatically manages keyless/developer SDK configurations
 
     // Define prompt for structured JSON extraction
     let prompt = '';
@@ -153,17 +145,9 @@ RULES:
     let parsedText = '';
 
     try {
-        if (!genAI) {
-            throw new Error("GEMINI_API_KEY_NEW is not configured.");
-        }
-        const model = genAI.getGenerativeModel({
-            model: MODEL_NAME,
-            generationConfig: { responseMimeType: "application/json" }
-        });
-
-        result.logs.push(`[Scraper] Querying Gemini AI model ${MODEL_NAME}...`);
-        const completionResponse = await model.generateContent(prompt);
-        parsedText = completionResponse.response.text();
+        result.logs.push(`[Scraper] Querying Vertex AI content generation...`);
+        const response = await generateContentDynamic(prompt, "application/json", 15000);
+        parsedText = response.text();
     } catch (err) {
         result.logs.push(`[Scraper] ⚠️ Gemini extraction failed: ${err.message}`);
         throw err;

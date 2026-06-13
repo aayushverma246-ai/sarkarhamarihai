@@ -5,7 +5,8 @@ import { Job } from '../types';
 import Navbar from '../components/Navbar';
 import GovLoader from '../components/GovLoader';
 import { useLanguage } from '../i18n/LanguageContext';
-import { formatRelativeTime } from '../utils';
+import { formatRelativeTime, meetsAge, meetsQualification } from '../utils';
+import { translateDynamicData } from '../utils/translateHelper';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -750,27 +751,267 @@ export default function JobDetailsPage() {
       setTimeout(poll, 1500); // Give backend 1.5s head start
     } catch (err: any) {
       console.error('[V14 MasterPlan] API Fail:', err);
-      // Client-side fallback
-      const syllabus = (job as any).syllabus || job.job_name;
-      const kw = syllabus.split(/[,;|(\n]/).map((s: string) => s.trim()).filter((s: string) => s.length > 2);
-      const chunk = Math.max(1, Math.ceil(kw.length / 4));
-      const fallback = {
-        overview: { exam_name: job.job_name, readiness_score: 15, feasibility_status: 'Achievable', recommended_daily_hours: 4, days_remaining: 90, key_insight: 'Start with fundamentals, build daily consistency.', is_ready: true },
-        syllabus_breakdown: [{ subject: kw[0] || 'General Studies', topics: kw.slice(0, 4), weightage: 'High', priority_order: 1 }],
-        phase_plan: [
-          { phase_name: 'Phase 1: Foundation', duration: '3 weeks', focus: 'Core concepts', daily_targets: kw.slice(0, 3), milestone: 'Complete basics' },
-          { phase_name: 'Phase 2: Practice', duration: '4 weeks', focus: 'Problem solving', daily_targets: kw.slice(chunk, chunk + 3), milestone: 'Mock readiness' },
-          { phase_name: 'Phase 3: Revision', duration: '2 weeks', focus: 'Full revision + mocks', daily_targets: ['Revise weak areas', 'Daily mock tests'], milestone: 'Exam day' }
+      // Dynamic client-side fallback
+      const syllabus = job.syllabus || '';
+      const kw = syllabus.split(/[,;|(\n\t•\-+]/).map((s: string) => s.trim()).filter((s: string) => s.length > 2 && !/^(and|or|of|the|with|to|in|for|on|at|by|from|about)$/i.test(s));
+
+      const quantKeywords = ['math', 'quant', 'arithmetic', 'algebra', 'geometry', 'number', 'percentage', 'ratio', 'proportion', 'profit', 'loss', 'discount', 'interest', 'time', 'work', 'distance', 'speed', 'average', 'mixture', 'alligation', 'mensuration', 'trigonometry', 'data', 'interpretation', 'di', 'numerical', 'ability', 'simplification', 'series', 'decimal', 'fraction'];
+      const reasoningKeywords = ['reasoning', 'logic', 'analogy', 'series', 'syllogism', 'coding', 'decoding', 'direction', 'blood', 'relation', 'ranking', 'arrangement', 'puzzle', 'non-verbal', 'verbal', 'classification', 'pattern', 'figure', 'mirror', 'water', 'image', 'matrix', 'critical', 'statement', 'assumption', 'conclusion'];
+      const englishKeywords = ['english', 'grammar', 'vocabulary', 'comprehension', 'passage', 'cloze', 'fill', 'blank', 'synonym', 'antonym', 'error', 'correction', 'spelling', 'idiom', 'phrase', 'one-word', 'substitution', 'active', 'passive', 'voice', 'direct', 'indirect', 'speech'];
+      const gsKeywords = ['history', 'geography', 'polity', 'economy', 'economics', 'science', 'physics', 'chemistry', 'biology', 'current', 'affairs', 'general', 'awareness', 'knowledge', 'gk', 'ga', 'constitution', 'culture', 'heritage', 'static', 'books', 'authors', 'awards', 'sports', 'national', 'international'];
+
+      const subjectMap: Record<string, string[]> = {
+        'Quantitative Aptitude': [],
+        'Logical Reasoning': [],
+        'General English': [],
+        'General Studies': []
+      };
+
+      kw.forEach(topic => {
+        const tLower = topic.toLowerCase();
+        if (quantKeywords.some(k => tLower.includes(k))) {
+          subjectMap['Quantitative Aptitude'].push(topic);
+        } else if (reasoningKeywords.some(k => tLower.includes(k))) {
+          subjectMap['Logical Reasoning'].push(topic);
+        } else if (englishKeywords.some(k => tLower.includes(k))) {
+          subjectMap['General English'].push(topic);
+        } else if (gsKeywords.some(k => tLower.includes(k)) || tLower.includes('general')) {
+          subjectMap['General Studies'].push(topic);
+        } else {
+          subjectMap['General Studies'].push(topic);
+        }
+      });
+
+      if (subjectMap['Quantitative Aptitude'].length === 0) {
+        subjectMap['Quantitative Aptitude'] = ['Simplification', 'Number System', 'Percentage & Average', 'Ratio & Proportion', 'Profit & Loss', 'Data Interpretation'];
+      }
+      if (subjectMap['Logical Reasoning'].length === 0) {
+        subjectMap['Logical Reasoning'] = ['Coding-Decoding', 'Syllogisms', 'Alphanumeric Series', 'Blood Relations', 'Direction Sense', 'Puzzles'];
+      }
+      if (subjectMap['General English'].length === 0) {
+        subjectMap['General English'] = ['Reading Comprehension', 'Error Spotting', 'Cloze Test', 'Sentence Improvement', 'Fill in the Blanks', 'Vocabulary'];
+      }
+      if (subjectMap['General Studies'].length === 0) {
+        subjectMap['General Studies'] = ['Current Affairs', 'Indian History', 'Geography', 'Indian Polity & Constitution', 'General Science', 'Economic Scene'];
+      }
+
+      const syllabus_breakdown = Object.entries(subjectMap)
+        .filter(([_, tList]) => tList.length > 0)
+        .map(([subject, tList], idx) => {
+          let weightage = 'Medium';
+          if (subject === 'General Studies' || subject === 'Quantitative Aptitude') weightage = 'High';
+          if (subject === 'General English') weightage = 'Low';
+          return {
+            subject,
+            topics: tList.slice(0, 8),
+            weightage,
+            priority_order: idx + 1
+          };
+        });
+
+      let readiness_score = 45;
+      let key_insight = 'Start with building fundamentals and daily revisions.';
+      let recommended_daily_hours = 6;
+      let feasibility_status = 'Achievable';
+
+      if (user) {
+        const meetsAgeVal = meetsAge(user, job);
+        const meetsQualVal = meetsQualification(user, job);
+
+        if (!meetsAgeVal) readiness_score -= 25;
+        if (!meetsQualVal) readiness_score -= 30;
+
+        const isCompleted = user.qualification_status === 'Completed';
+        recommended_daily_hours = isCompleted ? 7 : 4;
+
+        if (user.category && user.category !== 'General') {
+          key_insight = `As an ${user.category} candidate, you have age relaxations; focus on maximizing mock test accuracy.`;
+        } else {
+          key_insight = `Focus on consistent study of core topics to exceed general cutoff standards.`;
+        }
+
+        if (user.qualification_type) {
+          key_insight += ` Your educational background as a ${user.qualification_type} holder aligns well with the syllabus.`;
+        }
+
+        if (meetsAgeVal && meetsQualVal) {
+          readiness_score = 65;
+          if (job.state && job.state !== 'All India' && user.state && job.state.toLowerCase() === user.state.toLowerCase()) {
+            readiness_score += 10;
+            key_insight += ` You have a local state eligibility advantage for ${job.state}.`;
+          }
+        }
+
+        readiness_score = Math.max(15, Math.min(95, readiness_score));
+      } else {
+        key_insight = 'Log in and complete your profile to customize this study blueprint.';
+      }
+
+      if (readiness_score >= 75) feasibility_status = 'Highly Feasible';
+      else if (readiness_score >= 50) feasibility_status = 'Achievable';
+      else if (readiness_score >= 30) feasibility_status = 'Challenging';
+      else feasibility_status = 'Risky (Needs Intensive Prep)';
+
+      let days_remaining = 90;
+      if (job.application_end_date) {
+        const diff = new Date(job.application_end_date).getTime() - Date.now();
+        const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+        if (days > 0) {
+          days_remaining = days + 45;
+        } else {
+          days_remaining = 30;
+        }
+      }
+
+      const phase_plan = [
+        {
+          phase_name: 'Phase 1: Foundation Building',
+          duration: `${Math.round(days_remaining * 0.4)} days`,
+          focus: 'Mastering basic concepts & subject logic',
+          daily_targets: [
+            ...(subjectMap['Quantitative Aptitude'] || []).slice(0, 2),
+            ...(subjectMap['Logical Reasoning'] || []).slice(0, 2),
+            'Note-making and basic formula sheets'
+          ],
+          milestone: 'Complete 100% concept clarity of core subjects'
+        },
+        {
+          phase_name: 'Phase 2: Practice & Sectional Tests',
+          duration: `${Math.round(days_remaining * 0.4)} days`,
+          focus: 'Building speed, accuracy & solving papers',
+          daily_targets: [
+            ...(subjectMap['General English'] || []).slice(0, 2),
+            ...(subjectMap['General Studies'] || []).slice(0, 2),
+            'Previous year questions (PYQs) practice',
+            'Sectional mock tests (2 times/week)'
+          ],
+          milestone: 'Achieve >80% accuracy in sectional mocks'
+        },
+        {
+          phase_name: 'Phase 3: Revision & Full Mocks',
+          duration: `${Math.round(days_remaining * 0.2)} days`,
+          focus: 'Simulating exam environment & fixing weak areas',
+          daily_targets: [
+            'Daily full-length mock tests',
+            'Revision of weak concepts & error logbook',
+            'Current affairs of last 6 months'
+          ],
+          milestone: 'Reach target percentile in final mock series'
+        }
+      ];
+
+      const morningHrs = Math.floor(recommended_daily_hours * 0.4);
+      const afternoonHrs = Math.floor(recommended_daily_hours * 0.3);
+      const eveningHrs = recommended_daily_hours - morningHrs - afternoonHrs;
+
+      const daily_strategy = {
+        morning: {
+          duration: `${morningHrs}h`,
+          activities: [
+            'Study core quantitative or reasoning theory',
+            'Solve practice worksheets and clear doubts'
+          ]
+        },
+        afternoon: {
+          duration: `${afternoonHrs}h`,
+          activities: [
+            'Read general studies topics (History/Polity)',
+            'Prepare current affairs and revise vocabulary'
+          ]
+        },
+        evening: {
+          duration: `${eveningHrs}h`,
+          activities: [
+            'Attempt 1 sectional test or quiz',
+            'Review notes created during the day',
+            'Spaced repetition revision of older topics'
+          ]
+        }
+      };
+
+      const weekly_strategy = {
+        weekdays: 'Alternate between Quantitative Aptitude/English and Reasoning/General Studies daily.',
+        saturday: 'Take 1 Full-length Mock Test. Spend 2 hours in detailed error analysis.',
+        sunday: 'Consolidate notes from the week, revise weak areas, and relax in the evening.'
+      };
+
+      const resources: { type: string; name: string; purpose: string }[] = [];
+      if (subjectMap['Quantitative Aptitude'].length > 0) {
+        resources.push({ type: 'Book', name: 'Quantitative Aptitude for Competitive Examinations by R.S. Aggarwal', purpose: 'Concept building and ample practice questions' });
+      }
+      if (subjectMap['Logical Reasoning'].length > 0) {
+        resources.push({ type: 'Book', name: 'A Modern Approach to Verbal & Non-Verbal Reasoning by R.S. Aggarwal', purpose: 'Logical shortcuts, patterns, and non-verbal section' });
+      }
+      if (subjectMap['General English'].length > 0) {
+        resources.push({ type: 'Book', name: 'English for Competitive Examinations by SP Bakshi (Arihant)', purpose: 'Grammar rules clarification and vocabulary builder' });
+      }
+      if (subjectMap['General Studies'].length > 0) {
+        resources.push({ type: 'Book', name: "Lucent's General Knowledge", purpose: 'Static GK reference' });
+        resources.push({ type: 'Platform', name: 'Press Information Bureau (PIB) / Government Portals', purpose: 'Authentic current affairs, policies, and schemes data' });
+      }
+
+      const revision_plan = {
+        method: 'Active Recall & Spaced Repetition (Leitner Box System)',
+        cycles: [
+          'Daily cycle: Spend last 30 minutes of your study day reviewing today\'s notes.',
+          'Weekly cycle: Spend Sunday morning revising notes from the past 7 days.',
+          'Monthly cycle: Spend 2 days at the end of the month revising major subject milestones.'
         ],
-        daily_strategy: { morning: { duration: '3h', activities: ['New topic study', 'Note-making'] }, afternoon: { duration: '2h', activities: ['Practice questions', 'Previous year papers'] }, evening: { duration: '2h', activities: ['Revision', 'Current affairs'] } },
-        weekly_strategy: { weekdays: 'Rotate subjects daily', saturday: 'Full mock test + analysis', sunday: 'Weekly revision + weak areas' },
-        resources: [{ type: 'Book', name: 'Standard textbook', purpose: 'Concept building' }],
-        revision_plan: { method: 'Active Recall + Spaced Repetition', cycles: ['After each topic', 'Weekly consolidated', 'Pre-exam sweep'], spaced_repetition: 'Day 1, 3, 7, 14, 30 intervals' },
-        mock_test_strategy: { start_after: 'Phase 2', frequency: '2 per week, daily in last month', analysis_method: 'Categorize mistakes: conceptual vs silly', recommended_sources: ['Previous year papers'] },
-        weak_area_plan: { identification_method: 'Track mock errors by topic', improvement_tactics: ['30 min daily on weakest subject', 'Topic-wise quizzes'], time_allocation: '20% of study time' },
-        final_month_strategy: { last_30_days: 'Only revision + mocks', last_7_days: 'Light revision, formula sheets', exam_day: 'Arrive early, attempt easy first', mental_preparation: '7-8 hours sleep, eat light' },
-        warnings: ['Do not start new topics in final month', 'Track progress weekly'],
-        success_formula: ['Consistency beats intensity', 'Mock tests are non-negotiable', 'Track progress weekly'],
+        spaced_repetition: 'Implement intervals of Day 1, Day 3, Day 7, Day 14, and Day 30 to move topics to long-term memory.'
+      };
+
+      const mock_test_strategy = {
+        start_after: 'Complete at least 50% of the syllabus (around middle of Phase 2)',
+        frequency: '1 test per week in Phase 2, increasing to 3-4 tests per week in the final Phase',
+        analysis_method: 'Maintain an Error Logbook. Group mistakes into: 1. Conceptual Errors, 2. Calculation/Silly Mistakes, 3. Time Pressure issues.',
+        recommended_sources: [
+          'Official previous year papers (PYQs) from the last 5 cycles',
+          'Standard mock portals matching current year pattern'
+        ]
+      };
+
+      const weak_area_plan = {
+        identification_method: 'Analyze sectional mock percentiles. Any topic scoring below 70% consistently is a weak area.',
+        improvement_tactics: [
+          'Allocate 1 hour daily exclusively to practice your weakest topic.',
+          'Solve 50 questions of that topic untimed first, then 30 questions timed.',
+          'Consult standard reference books or video explainers for concept re-learning.'
+        ],
+        time_allocation: '20% to 25% of your daily study hours'
+      };
+
+      const final_month_strategy = {
+        last_30_days: 'Stop learning any new topics. Focus 100% on revision, formula sheets, and full mocks.',
+        last_7_days: 'Take light mock tests, prioritize sleep (7-8 hours), revise core summaries, and check exam center location.',
+        exam_day: 'Stay calm. Read instructions carefully. Do not spend more than 1 minute on any single question. Follow a multi-round attempt strategy (easy questions first).',
+        mental_preparation: 'Practice deep breathing. Keep telling yourself you have prepared consistently. Maintain good physical health.'
+      };
+
+      const warnings = [
+        'Avoid picking up completely new subjects or heavy reference books in the final month.',
+        'Do not skip mock test analysis; a mock test without 2 hours of analysis is wasted study time.',
+        'Beware of negative marking. Avoid blind guessing on questions where you cannot eliminate at least 2 options.'
+      ];
+
+      const success_formula = [
+        'Consistency over intensity: 6 hours daily is 10x better than 14 hours once a week.',
+        'Strict feedback loop: Use mock test analysis to redirect your study focus.',
+        'Health is wealth: Do not compromise on sleep, especially in the final week before the exam.'
+      ];
+
+      const fallback = {
+        overview: { exam_name: job.job_name, readiness_score, feasibility_status, recommended_daily_hours, days_remaining, key_insight, is_ready: true },
+        syllabus_breakdown,
+        phase_plan,
+        daily_strategy,
+        weekly_strategy,
+        resources,
+        revision_plan,
+        mock_test_strategy,
+        weak_area_plan,
+        final_month_strategy,
+        warnings,
+        success_formula,
         is_ready: true, is_permanent: true
       };
       setRoadmap(fallback as any);
@@ -815,7 +1056,7 @@ export default function JobDetailsPage() {
     try { return new URL(url).hostname.replace('www.', ''); } catch { return url; }
   };
 
-  const examTitle = (job as any)[`exam_name_${language}`] || job.job_name;
+  const examTitle = (job as any)[`exam_name_${language}`] || translateDynamicData(job.job_name, language, 'job_name');
 
   // Calculate generic countdowns
   let daysRemaining = null;
@@ -868,7 +1109,7 @@ export default function JobDetailsPage() {
                 <div className="flex flex-wrap items-center gap-2 mb-4">
                   <StatusBadge status={job.form_status} />
                   <span className="text-[11px] font-bold text-gray-500 bg-[#141414] border border-[#1e1e1e] px-2.5 py-1 rounded-full uppercase tracking-wider">
-                    {job.job_category}
+                    {translateDynamicData(job.job_category, language, 'category')}
                   </span>
                   {(job as any).allows_final_year_students && (
                     <span className="text-[11px] font-bold text-blue-400 bg-blue-950/40 border border-blue-900/30 px-2.5 py-1 rounded-full uppercase tracking-wider">
@@ -881,7 +1122,7 @@ export default function JobDetailsPage() {
 
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-3 mt-4 text-[11px]">
                   <span className="text-gray-400 font-bold uppercase tracking-widest bg-gray-500/5 px-2 py-0.5 rounded border border-gray-500/10">
-                    {job.organization}
+                    {translateDynamicData(job.organization, language, 'organization')}
                   </span>
 
                   {/* Verification Indicator */}
@@ -1058,7 +1299,7 @@ export default function JobDetailsPage() {
         {/* ── ELIGIBILITY ──────────────────────────────────────────── */}
         <Section title={t('job.eligibility')} icon="✅">
           <div className="divide-y divide-[#111] pb-5">
-            <InfoRow label={t('job.qualification')} value={job.qualification_required} />
+            <InfoRow label={t('job.qualification')} value={translateDynamicData(job.qualification_required, language, 'qualification')} />
             <InfoRow label={t('job.ageLimit')} value={`${job.minimum_age} – ${job.maximum_age} ${t('job.years')}`} />
             {(job as any).allows_final_year_students && (
               <InfoRow label={t('job.finalYear')} value={

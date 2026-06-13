@@ -48,25 +48,14 @@ function withStatus(job) {
 // GET /api/apply/applied — get all applied jobs for current user
 router.get('/applied', auth, async (req, res) => {
     try {
-        const sb = getSb();
-        // Step 1: Get applied job IDs
-        const { data: refs, error: refErr } = await sb.from('applied_jobs')
-            .select('job_id')
-            .eq('user_id', req.user.id)
-            .order('created_at', { ascending: false });
-        
-        if (refErr) throw refErr;
-        if (!refs || refs.length === 0) return res.json([]);
-        
-        const ids = refs.map(r => r.job_id);
-        
-        // Step 2: Fetch those jobs
-        const { data: jobs, error: jobErr } = await sb.from('jobs')
-            .select('*')
-            .in('id', ids);
-        
-        if (jobErr) throw jobErr;
-        res.json((jobs || []).map(j => withStatus(j)));
+        const { getDb } = require('../db');
+        const db = getDb();
+        const result = await db.execute({
+            sql: `SELECT j.* FROM applied_jobs a JOIN jobs j ON a.job_id = j.id WHERE a.user_id = ? ORDER BY a.created_at DESC`,
+            args: [req.user.id]
+        });
+        const jobs = result.rows || [];
+        res.json(jobs.map(j => withStatus(j)));
     } catch (err) {
         console.error('GET /applied error:', err.message);
         res.status(500).json({ error: 'Server error' });
@@ -76,22 +65,14 @@ router.get('/applied', auth, async (req, res) => {
 // GET /api/apply/reminders — get all reminded jobs for current user
 router.get('/reminders', auth, async (req, res) => {
     try {
-        const sb = getSb();
-        const { data: refs, error: refErr } = await sb.from('job_reminders')
-            .select('job_id')
-            .eq('user_id', req.user.id);
-        
-        if (refErr) throw refErr;
-        if (!refs || refs.length === 0) return res.json([]);
-        
-        const ids = refs.map(r => r.job_id);
-        
-        const { data: jobs, error: jobErr } = await sb.from('jobs')
-            .select('*')
-            .in('id', ids);
-        
-        if (jobErr) throw jobErr;
-        res.json((jobs || []).map(j => withStatus(j)));
+        const { getDb } = require('../db');
+        const db = getDb();
+        const result = await db.execute({
+            sql: `SELECT j.* FROM job_reminders r JOIN jobs j ON r.job_id = j.id WHERE r.user_id = ? ORDER BY r.created_at DESC`,
+            args: [req.user.id]
+        });
+        const jobs = result.rows || [];
+        res.json(jobs.map(j => withStatus(j)));
     } catch (err) {
         console.error('GET /reminders error:', err.message);
         res.status(500).json({ error: 'Server error' });
@@ -136,13 +117,14 @@ router.post('/toggle', auth, async (req, res) => {
             .eq('job_id', job_id)
             .limit(1);
 
+        let applied = false;
         if (existing && existing.length > 0) {
             // Remove applied
             await sb.from('applied_jobs')
                 .delete()
                 .eq('user_id', req.user.id)
                 .eq('job_id', job_id);
-            res.json({ applied: false });
+            applied = false;
         } else {
             // Add applied
             const id = 'app_' + Math.random().toString(36).substring(2, 9);
@@ -150,11 +132,30 @@ router.post('/toggle', auth, async (req, res) => {
                 .insert({ id, user_id: req.user.id, job_id });
             if (error) {
                 // Might be duplicate — that's fine
-                if (error.code === '23505') return res.json({ applied: true });
-                throw error;
+                if (error.code === '23505') {
+                    applied = true;
+                } else {
+                    throw error;
+                }
+            } else {
+                applied = true;
             }
-            res.json({ applied: true });
         }
+
+        // Invalidate recommendation cache in DB
+        await sb.from('ai_recommendation_cache')
+            .delete()
+            .like('key', `reco:${req.user.id}:%`);
+
+        // Invalidate memory cache in backend service
+        try {
+            const { invalidateRecommendationsCache } = require('../services/gemini_recommender');
+            invalidateRecommendationsCache(req.user.id);
+        } catch (e) {
+            console.error('Failed to invalidate recommendations memory cache:', e);
+        }
+
+        res.json({ applied });
     } catch (err) {
         console.error('POST /toggle error:', err.message);
         res.status(500).json({ error: 'Server error' });
@@ -231,6 +232,19 @@ router.delete('/applied-exam', auth, async (req, res) => {
             .delete()
             .eq('user_id', req.user.id)
             .eq('job_id', exam_id);
+
+        // Invalidate recommendation cache in DB
+        await sb.from('ai_recommendation_cache')
+            .delete()
+            .like('key', `reco:${req.user.id}:%`);
+
+        // Invalidate memory cache in backend service
+        try {
+            const { invalidateRecommendationsCache } = require('../services/gemini_recommender');
+            invalidateRecommendationsCache(req.user.id);
+        } catch (e) {
+            console.error('Failed to invalidate recommendations memory cache:', e);
+        }
 
         res.json({ success: true, message: 'Unmarked as applied' });
     } catch (err) {

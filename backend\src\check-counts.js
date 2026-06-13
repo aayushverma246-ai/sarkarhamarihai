@@ -1,5 +1,5 @@
-const { getDb } = require('./db');
 require('dotenv').config();
+const { getDb } = require('./db');
 
 async function run() {
     try {

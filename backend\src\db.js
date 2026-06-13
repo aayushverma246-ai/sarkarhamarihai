@@ -29,7 +29,7 @@ if (!connectionString && process.env.SUPABASE_DB_PASSWORD) {
 // ── Singletons ────────────────────────────────────────────────────────────────
 let _pool = null;
 let _supabase = null;
-let _usePgPool = !!connectionString; // Active if database credentials are present
+let _usePgPool = !!connectionString && process.env.VERCEL !== '1'; // Active if database credentials are present and not on Vercel
 
 function getSupabaseClient() {
   if (_supabase) return _supabase;
@@ -342,27 +342,43 @@ async function executeViaRest(originalSql, transformed, args) {
 async function executeJoinFallback(originalSql, transformed, args) {
   const sb = getSupabaseClient();
 
-  const appliedJobsJoin = transformed.match(
-    /SELECT\s+j\.\*\s+FROM\s+(\w+)\s+\w+\s+JOIN\s+jobs\s+j\s+ON\s+\w+\.job_id\s+=\s+j\.id\s+WHERE\s+\w+\.user_id\s*=\s*\$1/i
+  const genericUserJobsJoin = transformed.match(
+    /SELECT\s+j\.\*\s+FROM\s+(\w+)\s+(\w+)\s+JOIN\s+jobs\s+j\s+ON\s+\2\.job_id\s*=\s*j\.id\s+WHERE\s+\2\.user_id\s*=\s*\$1/i
   );
-  if (appliedJobsJoin) {
-    const joinTable = appliedJobsJoin[1];
-    const userId = args[0];
-    const { data: refs } = await sb.from(joinTable).select('job_id').eq('user_id', userId);
-    if (!refs || refs.length === 0) return { rows: [], rowsAffected: 0 };
-    const { data: jobs } = await sb.from('jobs').select('*').in('id', refs.map(r => r.job_id));
-    return { rows: jobs || [], rowsAffected: 0 };
-  }
 
-  const likedJobsJoin = transformed.match(
-    /SELECT\s+.+\s+FROM\s+liked_jobs\s+\w+\s+JOIN\s+jobs\s+j\s+ON.+WHERE\s+\w+\.user_id\s*=\s*\$1/i
-  );
-  if (likedJobsJoin) {
+  if (genericUserJobsJoin) {
+    const joinTable = genericUserJobsJoin[1];
     const userId = args[0];
-    const { data: refs } = await sb.from('liked_jobs').select('job_id').eq('user_id', userId);
+
+    const { data: refs, error: refsErr } = await sb.from(joinTable)
+      .select('job_id')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (refsErr) throw new Error(`[executeJoinFallback refs] ${refsErr.message}`);
     if (!refs || refs.length === 0) return { rows: [], rowsAffected: 0 };
-    const { data: jobs } = await sb.from('jobs').select('*').in('id', refs.map(r => r.job_id));
-    return { rows: jobs || [], rowsAffected: 0 };
+
+    const jobIds = refs.map(r => r.job_id).filter(id => id !== null && id !== undefined);
+    if (jobIds.length === 0) return { rows: [], rowsAffected: 0 };
+
+    const { data: jobs, error: jobsErr } = await sb.from('jobs')
+      .select('*')
+      .in('id', jobIds);
+
+    if (jobsErr) throw new Error(`[executeJoinFallback jobs] ${jobsErr.message}`);
+
+    const jobsMap = {};
+    if (jobs) {
+      jobs.forEach(job => {
+        jobsMap[job.id] = job;
+      });
+    }
+
+    const orderedJobs = jobIds
+      .map(id => jobsMap[id])
+      .filter(job => !!job);
+
+    return { rows: orderedJobs, rowsAffected: 0 };
   }
 
   console.warn('[DB] Unhandled JOIN in REST fallback — returning empty:', transformed.substring(0, 120));
@@ -399,12 +415,18 @@ async function execute(sqlOrObj, argsParam) {
   }
 
   // 2. Self-Healing Fallback: Supabase REST SDK over IPv4 HTTPS
+  if (transformed.match(/JOIN/i)) {
+    try {
+      return await executeJoinFallback(sql, transformed, queryArgs);
+    } catch (err) {
+      console.error('[DB REST JOIN Fallback Exception]:', err.message, 'SQL:', sql);
+      throw err;
+    }
+  }
+
   try {
     return await executeViaRest(sql, transformed, queryArgs);
   } catch (err) {
-    if (err.message.includes('Cannot parse SQL') && transformed.match(/JOIN/i)) {
-      return await executeJoinFallback(sql, transformed, queryArgs);
-    }
     console.error('[DB REST Exception]:', err.message, 'SQL:', sql);
     throw err;
   }

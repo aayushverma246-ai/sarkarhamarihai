@@ -194,7 +194,9 @@ export default function Navbar({ user }: Props) {
                   </span>
                 )}
               </Link>
-              <Link to="/admin" viewTransition className={linkClass('/admin')}>{t('nav.manage')}</Link>
+              {user?.email === 'aayushverma246@gmail.com' && (
+                <Link to="/admin" viewTransition className={linkClass('/admin')}>{t('nav.manage')}</Link>
+              )}
             </div>
 
             {/* Right side */}
@@ -316,7 +318,8 @@ export default function Navbar({ user }: Props) {
                       { path: '/profile', label: t('nav.profile') },
                       { path: '/notifications', label: `${t('nav.notifications')}${notifCount > 0 ? ` (${notifCount})` : ''}` },
                       { path: '/admin', label: t('nav.manage') },
-                    ].map(({ path, label }) => (
+                    ].filter(({ path }) => path !== '/admin' || user?.email === 'aayushverma246@gmail.com')
+                    .map(({ path, label }) => (
                       <Link
                         key={path}
                         to={path === '/dashboard' ? `/dashboard?tab=${localStorage.getItem('dashboard_last_tab') || 'all'}` : path}

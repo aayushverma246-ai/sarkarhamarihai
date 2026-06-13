@@ -1,5 +1,5 @@
 const { getDb } = require('./db');
-const { normalizeSyllabus, estimateLiveData } = require('./services/lyzr');
+const { normalizeSyllabus, estimateLiveData } = require('./services/gemini');
 require('dotenv').config();
 
 async function auditAndEnrich() {

@@ -187,21 +187,22 @@ function withStatus(job, todayStr) {
     };
 }
 
-const qualificationOrder = {
-    '10th': 1,
-    'Class 10': 1,
-    '12th': 2,
-    'Class 12': 2,
-    'Diploma': 2.5,
-    'Graduation': 3,
-    'Post Graduation': 4,
-    'PhD': 5
-};
+function getQualificationLevel(qualStr) {
+    if (!qualStr) return 0;
+    const normalized = qualStr.toLowerCase();
+    if (normalized.includes('phd') || normalized.includes('doctorate')) return 5;
+    if (normalized.includes('post grad') || normalized.includes('postgrad') || normalized.includes('master') || normalized.includes('m.tech') || normalized.includes('m.sc') || normalized.includes('mba') || normalized.includes('m.com') || normalized.includes('m.ca')) return 4;
+    if (normalized.includes('graduat') || normalized.includes('degree') || normalized.includes('b.tech') || normalized.includes('b.e.') || normalized.includes('b.sc') || normalized.includes('b.com') || normalized.includes('b.a') || normalized.includes('bachelor')) return 3;
+    if (normalized.includes('diploma')) return 2.5;
+    if (normalized.includes('12th') || normalized.includes('class 12') || normalized.includes('hsc') || normalized.includes('intermediate') || normalized.includes('senior secondary')) return 2;
+    if (normalized.includes('10th') || normalized.includes('class 10') || normalized.includes('ssc') || normalized.includes('matric') || normalized.includes('high school')) return 1;
+    return 0;
+}
 
 function meetsQualification(user, job) {
     if (!user.qualification_type) return false;
-    const userLevel = qualificationOrder[user.qualification_type] || 0;
-    const jobLevel = qualificationOrder[job.qualification_required] || 0;
+    const userLevel = getQualificationLevel(user.qualification_type);
+    const jobLevel = getQualificationLevel(job.qualification_required);
     if (userLevel === 0 || jobLevel === 0) return false;
 
     if (user.qualification_status === 'Completed') {
@@ -335,37 +336,23 @@ router.get('/all-minimal', async (req, res) => {
         const selectFields = 'id, job_name, organization, qualification_required, allows_final_year_students, minimum_age, maximum_age, job_category, state, states, application_start_date, application_end_date, vacancies, official_application_link, last_verified_at, created_at';
 
         const allRows = [];
-        const { getPool } = require('../db');
-        const pool = getPool();
-        const isRest = !pool;
+        const limit = 1000;
+        let offset = 0;
 
-        if (isRest) {
-            // Sequential cursor pagination — guarantees every page is fetched reliably without triggering rate limits
-            const limit = 1000;
-            let offset = 0;
-            while (true) {
-                try {
-                    const result = await db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${offset}`);
-                    const rows = result.rows || [];
-                    if (rows.length === 0) break;
-                    allRows.push(...rows);
-                    if (rows.length < limit) break; // last page detected
-                    offset += limit;
-                } catch (err) {
-                    console.warn(`[all-minimal sequential page fail at offset ${offset}]:`, err.message);
-                    break; // stop on error to avoid infinite loop
-                }
-            }
-        } else {
-            // Direct PG connection — can fetch in larger batches
-            const limit = 5000;
-            let offset = 0;
-            for (let page = 0; page < 5; page++) {
+        // Fetch paginated jobs sequentially to guarantee compatibility with both:
+        //  1. PostgreSQL direct connection (no limits).
+        //  2. Supabase REST fallback client (which enforces a strict max limit of 1000 rows per query).
+        while (true) {
+            try {
                 const result = await db.execute(`SELECT ${selectFields} FROM jobs ORDER BY application_end_date DESC, id LIMIT ${limit} OFFSET ${offset}`);
                 const rows = result.rows || [];
+                if (rows.length === 0) break;
                 allRows.push(...rows);
-                if (rows.length < limit) break; // last page
+                if (rows.length < limit) break; // last page detected or capped by server-side limit
                 offset += limit;
+            } catch (err) {
+                console.warn(`[all-minimal sequential page fail at offset ${offset}]:`, err.message);
+                break; // stop on error to avoid infinite loop
             }
         }
 
@@ -645,16 +632,15 @@ router.get('/partial', auth, async (req, res) => {
 // GET /api/jobs/liked
 router.get('/liked', auth, async (req, res) => {
     try {
-        const sb = getSupabase();
+        const { getDb } = require('../db');
+        const db = getDb();
         const todayStr = getTodayIST();
-        const { data: likedRows } = await sb.from('liked_jobs')
-            .select('job_id')
-            .eq('user_id', req.user.id)
-            .order('created_at', { ascending: false });
-        if (!likedRows || likedRows.length === 0) return res.json([]);
-        const ids = likedRows.map(r => r.job_id);
-        const { data: jobs } = await sb.from('jobs').select('*').in('id', ids);
-        return res.json((jobs || []).map(job => withStatus(job, todayStr)));
+        const result = await db.execute({
+            sql: `SELECT j.* FROM liked_jobs l JOIN jobs j ON l.job_id = j.id WHERE l.user_id = ? ORDER BY l.created_at DESC`,
+            args: [req.user.id]
+        });
+        const jobs = result.rows || [];
+        return res.json(jobs.map(job => withStatus(job, todayStr)));
     } catch (err) {
         console.error('GET /api/jobs/liked error:', err);
         return res.status(500).json({ error: 'Failed to fetch liked jobs', details: err.message });
@@ -750,6 +736,20 @@ router.post('/:id/like', auth, async (req, res) => {
         const { error } = await sb.from('liked_jobs')
             .upsert({ id: id, user_id: userId, job_id: jobId }, { onConflict: 'user_id,job_id', ignoreDuplicates: true });
         if (error && error.code !== '23505') throw error;
+
+        // Invalidate recommendation cache in DB
+        await sb.from('ai_recommendation_cache')
+            .delete()
+            .like('key', `reco:${userId}:%`);
+
+        // Invalidate memory cache in backend service
+        try {
+            const { invalidateRecommendationsCache } = require('../services/gemini_recommender');
+            invalidateRecommendationsCache(userId);
+        } catch (e) {
+            console.error('Failed to invalidate recommendations memory cache:', e);
+        }
+
         return res.json({ liked: true });
     } catch (err) {
         console.error('Like error (mapped to Saved):', err.message);
@@ -761,7 +761,22 @@ router.post('/:id/like', auth, async (req, res) => {
 router.delete('/:id/like', auth, async (req, res) => {
     try {
         const sb = getSupabase();
-        await sb.from('liked_jobs').delete().eq('user_id', req.user.id).eq('job_id', req.params.id);
+        const userId = req.user.id;
+        await sb.from('liked_jobs').delete().eq('user_id', userId).eq('job_id', req.params.id);
+
+        // Invalidate recommendation cache in DB
+        await sb.from('ai_recommendation_cache')
+            .delete()
+            .like('key', `reco:${userId}:%`);
+
+        // Invalidate memory cache in backend service
+        try {
+            const { invalidateRecommendationsCache } = require('../services/gemini_recommender');
+            invalidateRecommendationsCache(userId);
+        } catch (e) {
+            console.error('Failed to invalidate recommendations memory cache:', e);
+        }
+
         return res.json({ liked: false });
     } catch (err) {
         console.error('Unlike error (mapped to Saved):', err.message);
@@ -784,6 +799,10 @@ router.get('/:id/liked-status', auth, async (req, res) => {
 // POST /api/jobs/admin — add a job
 router.post('/admin', auth, async (req, res) => {
     try {
+        if (req.user.email !== 'aayushverma246@gmail.com') {
+            return res.status(403).json({ error: 'Forbidden: Admin access only' });
+        }
+
         const {
             id, job_name, organization, qualification_required, allows_final_year_students,
             minimum_age, maximum_age, application_start_date, application_end_date,
@@ -796,6 +815,61 @@ router.post('/admin', auth, async (req, res) => {
 
         const db = getDb();
         const jobId = id || generateId();
+
+        const tempJob = {
+            id: jobId,
+            job_name,
+            organization,
+            qualification_required: qualification_required || 'Graduation',
+            allows_final_year_students: allows_final_year_students ? 1 : 0,
+            minimum_age: minimum_age || 18,
+            maximum_age: maximum_age || 30,
+            application_start_date,
+            application_end_date,
+            salary_min: salary_min || 0,
+            salary_max: salary_max || 0,
+            job_category: job_category || 'SSC',
+            official_application_link: official_application_link || '',
+            state: req.body.state || 'All India',
+            states: req.body.states || []
+        };
+
+        const audit = validateJob(tempJob);
+        if (!audit.valid) {
+            return res.status(400).json({ error: `Validation failed: ${audit.errors.join('; ')}` });
+        }
+
+        // Search for placeholder values
+        const exactPlaceholders = [
+            'placeholder', 'dummy', 'lorem', 'lorem ipsum', 'mock', 'test', 
+            'sample', 'tba', 'tbd', 'to be announced', 'to be decided', 'n/a', 'na', 'null'
+        ];
+        const strictFields = ['job_name', 'organization', 'official_application_link'];
+        const strictPatterns = [
+            /\bplaceholder\b/i,
+            /\blorem\b/i,
+            /\bdummy\b/i,
+            /\bmock\b/i,
+            /test-(?:job|org|user|exam)/i,
+            /^test$/i,
+            /^sample$/i
+        ];
+
+        for (const [key, value] of Object.entries(tempJob)) {
+            if (typeof value === 'string' && key !== 'id') {
+                const clean = value.trim().toLowerCase();
+                if (exactPlaceholders.includes(clean)) {
+                    return res.status(400).json({ error: `Forbidden: Field '${key}' contains exact placeholder text: "${value}"` });
+                }
+                if (strictFields.includes(key)) {
+                    for (const re of strictPatterns) {
+                        if (re.test(clean)) {
+                            return res.status(400).json({ error: `Forbidden: Strict field '${key}' contains placeholder match: "${value}"` });
+                        }
+                    }
+                }
+            }
+        }
         await db.execute({
             sql: `INSERT INTO jobs (
                 id, job_name, organization, qualification_required, allows_final_year_students,

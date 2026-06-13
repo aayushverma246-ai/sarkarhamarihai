@@ -4,6 +4,8 @@ import { api, getCachedUser, invalidateCache } from '../api';
 import Navbar from '../components/Navbar';
 import GovLoader from '../components/GovLoader';
 import { useLanguage } from '../i18n/LanguageContext';
+import { translateDynamicData } from '../utils/translateHelper';
+
 
 export default function NotificationsPage() {
   const navigate = useNavigate();
@@ -102,7 +104,7 @@ export default function NotificationsPage() {
 
   const getLocalizedMessage = (n: any) => {
     const message: string = n.message;
-    const examNameInfo = n[`exam_name_${language}`] || n.job_name;
+    const examNameInfo = n[`exam_name_${language}`] || translateDynamicData(n.job_name, language, 'job_name');
 
     // Check if the DB message is English. E.g "Applications for [Exam] are now LIVE!"
     if (message.includes('are now LIVE!')) {

@@ -12,6 +12,8 @@ import JobCard from '../components/JobCard';
 import { useLanguage } from '../i18n/LanguageContext';
 import RecommendationsWidget from '../components/RecommendationsWidget';
 import GovLoader from '../components/GovLoader';
+import { translateDynamicData } from '../utils/translateHelper';
+
 import { LayoutDashboard, Sparkles, Search, XCircle, ChevronDown } from 'lucide-react';
 
 import { CANONICAL_STATES, CANONICAL_CATEGORIES } from '../data/states';
@@ -69,7 +71,6 @@ export default function DashboardPage() {
   // Progressive rendering state
   const INITIAL_BATCH = 30;
   const [visibleCount, setVisibleCount] = useState(INITIAL_BATCH);
-  const sentinelRef = useRef<HTMLDivElement>(null);
   const prevTabRef = useRef<TabKey>(getInitialTab());
 
   const [selectedState, setSelectedState] = useState<string>('All India');
@@ -465,23 +466,26 @@ export default function DashboardPage() {
   const visibleJobs = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
   const hasMore = visibleCount < filtered.length;
 
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const sentinelRef = useCallback((node: HTMLDivElement | null) => {
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+    if (node && hasMore) {
+      observerRef.current = new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting) {
+          setVisibleCount(prev => Math.min(prev + INITIAL_BATCH, filtered.length));
+        }
+      }, { rootMargin: '300px' });
+      observerRef.current.observe(node);
+    }
+  }, [hasMore, filtered.length]);
+
   // STRICT RULE OVERRIDE: Reset visible count flush guaranteeing UI updates inherently via array purge
   useEffect(() => {
     setVisibleCount(INITIAL_BATCH);
   }, [activeTab, search, selectedState, category]);
-
-  // IntersectionObserver to load more cards on scroll
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el || !hasMore) return;
-    const io = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) {
-        setVisibleCount(prev => Math.min(prev + INITIAL_BATCH, filtered.length));
-      }
-    }, { rootMargin: '400px' });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [hasMore, filtered.length]);
 
   const likedSet = useMemo(() => new Set(likedJobs.map(j => j.id)), [likedJobs]);
   const appliedSet = useMemo(() => new Set(appliedJobs.map(j => j.id)), [appliedJobs]);
@@ -662,9 +666,11 @@ export default function DashboardPage() {
                   onChange={(e) => setCategory(e.target.value)}
                   className="w-full bg-[#0e0e0e]/95 border border-[#1a1a1a] rounded-xl pl-4 pr-10 py-2.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-red-900/40 focus:border-red-900/40 transition-all appearance-none cursor-pointer font-medium"
                 >
-                  <option value="All" className="bg-[#0e0e0e] text-gray-300">All Categories</option>
+                  <option value="All" className="bg-[#0e0e0e] text-gray-300">{t('dashboard.allCategories') || 'All Categories'}</option>
                   {categories.filter(cat => cat !== 'All').map(cat => (
-                    <option key={cat} value={cat} className="bg-[#0e0e0e] text-gray-300">{cat}</option>
+                    <option key={cat} value={cat} className="bg-[#0e0e0e] text-gray-300">
+                      {translateDynamicData(cat, language, 'category')}
+                    </option>
                   ))}
                 </select>
                 <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
@@ -679,9 +685,11 @@ export default function DashboardPage() {
                   onChange={(e) => setSelectedState(e.target.value)}
                   className="w-full bg-[#0e0e0e]/95 border border-[#1a1a1a] rounded-xl pl-4 pr-10 py-2.5 text-sm text-gray-300 focus:outline-none focus:ring-1 focus:ring-red-900/40 focus:border-red-900/40 transition-all appearance-none cursor-pointer font-medium"
                 >
-                  <option value="All India" className="bg-[#0e0e0e] text-gray-300">All India</option>
+                  <option value="All India" className="bg-[#0e0e0e] text-gray-300">{t('state.allIndia') || 'All India'}</option>
                   {statesDropdown.filter(s => s !== 'All India').map(s => (
-                    <option key={s} value={s} className="bg-[#0e0e0e] text-gray-300">{s}</option>
+                    <option key={s} value={s} className="bg-[#0e0e0e] text-gray-300">
+                      {translateDynamicData(s, language, 'state')}
+                    </option>
                   ))}
                 </select>
                 <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
@@ -801,6 +809,7 @@ export default function DashboardPage() {
                           <JobCard
                             key={job.id}
                             job={job}
+                            user={user}
                             staggerIndex={i}
                             isLiked={likedSet.has(job.id)}
                             onLikeToggle={(liked) => handleLikeToggle(job, liked)}

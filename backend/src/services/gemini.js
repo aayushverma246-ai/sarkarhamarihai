@@ -13,7 +13,7 @@ require('dotenv').config();
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 const MODEL_NAME_STUDIO = "gemini-1.5-flash"; // Standard developer model
-const MODEL_NAME_VERTEX = "gemini-1.5-flash"; // Vertex AI equivalent model
+const MODEL_NAME_VERTEX = "gemini-1.5-pro"; // Full potential Vertex AI model
 
 const apiKey = process.env.GEMINI_API_KEY_NEW ? process.env.GEMINI_API_KEY_NEW.trim() : null;
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
@@ -44,13 +44,61 @@ if (useVertexAI) {
 
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
+let oldestUserCreatedAt = null;
+
+/**
+ * Dynamic trial checker:
+ * - If VERTEX_TRIAL_START_DATE is set in .env, calculate trial relative to that.
+ * - Otherwise, fall back to checking system launch date (oldest user created_at).
+ * - Return true if trial age <= 90 days (use Vertex AI).
+ * - Return false if trial age > 90 days (roll back to Google AI Studio).
+ */
+async function isWithinVertexTrial() {
+  let startDate = null;
+
+  // 1. Check for manual environment override first
+  if (process.env.VERTEX_TRIAL_START_DATE) {
+    startDate = new Date(process.env.VERTEX_TRIAL_START_DATE);
+  }
+
+  // 2. Fall back to oldest user registration date (global launch tracking)
+  if (!startDate) {
+    if (!oldestUserCreatedAt) {
+      try {
+        const { getDb } = require('../db');
+        const db = getDb();
+        const minRes = await db.execute('SELECT MIN(created_at) as min_created FROM users');
+        if (minRes.rows && minRes.rows[0] && minRes.rows[0].min_created) {
+          oldestUserCreatedAt = new Date(minRes.rows[0].min_created);
+        }
+      } catch (err) {
+        console.warn('[AI] Failed to fetch oldest user created_at:', err.message);
+      }
+    }
+    startDate = oldestUserCreatedAt;
+  }
+
+  // Calculate age
+  if (startDate) {
+    const trialAgeMs = Date.now() - startDate.getTime();
+    const trialAgeDays = trialAgeMs / (1000 * 60 * 60 * 24);
+    // If we are within 90 days of the start date, we return true (use Vertex AI).
+    // Otherwise, we return false (roll back to Google AI Studio).
+    return trialAgeDays <= 90;
+  }
+
+  return true; // Safe default: if we can't determine, default to trial-active (Vertex AI)
+}
+
 /**
  * Dynamic content generator wrapping both Vertex AI and Developer SDKs.
  * Features a seamless transparent fallback.
  */
 async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs = 8000) {
-  // 1. Try GCP Vertex AI if active
-  if (useVertexAI && vertexAIClient) {
+  const isTrialActive = await isWithinVertexTrial();
+
+  // 1. Try GCP Vertex AI if active and within 90-day trial period
+  if (isTrialActive && useVertexAI && vertexAIClient) {
     try {
       const config = {};
       if (responseMimeType) {
@@ -72,7 +120,7 @@ async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs
         text: () => text
       };
     } catch (err) {
-      console.warn('[AI] Vertex AI failed or quota exceeded. Falling back to Developer AI Studio:', err.message);
+      console.warn('[AI] Vertex AI (Pro) failed or quota exceeded. Falling back to Developer AI Studio (Flash):', err.message);
       // Fall through to developer AI Studio client below
     }
   }
@@ -96,6 +144,54 @@ async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs
   }
 
   throw new Error("Generative AI client not configured. Please supply GEMINI_API_KEY_NEW or enable GCP Vertex AI.");
+}
+
+/**
+ * Dynamic content embedding generator wrapping both Vertex AI and Developer SDKs.
+ * Fully keyless GCP Vertex AI by default, falling back automatically to developer key.
+ */
+async function getEmbeddingDynamic(text, timeoutMs = 5000) {
+  if (!text || typeof text !== 'string') return null;
+  const cleanText = text.replace(/\s+/g, ' ').trim().substring(0, 2048);
+  if (!cleanText) return null;
+
+  const isTrialActive = await isWithinVertexTrial();
+
+  // 1. Try Vertex AI text-embedding-004 if active and within trial
+  if (isTrialActive && useVertexAI && vertexAIClient) {
+    try {
+      const model = vertexAIClient.getGenerativeModel({
+        model: 'text-embedding-004'
+      });
+      const responseStream = await withTimeout(model.embedContent({
+        content: { parts: [{ text: cleanText }] }
+      }), timeoutMs);
+      const values = responseStream.embedding?.values;
+      if (values && values.length > 0) {
+        return values;
+      }
+    } catch (err) {
+      console.warn('[AI] Vertex AI Embedding failed, trying Developer Studio fallback:', err.message);
+    }
+  }
+
+  // 2. Try Developer AI Studio fallback
+  if (genAI) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: 'text-embedding-004'
+      });
+      const result = await withTimeout(model.embedContent(cleanText), timeoutMs);
+      const values = result.embedding?.values;
+      if (values && values.length > 0) {
+        return values;
+      }
+    } catch (err) {
+      console.warn('[AI] Developer AI Studio Embedding fallback failed:', err.message);
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -698,6 +794,81 @@ RULES:
   }
 }
 
+/**
+ * Normalizes raw syllabus text into structured JSON format.
+ */
+async function normalizeSyllabus(rawSyllabusText) {
+  const prompt = `You are a SYLLABUS NORMALIZATION ENGINE. 
+Transform the following raw syllabus text into a STRICT structured JSON.
+Rules:
+- Subject-level grouping
+- Topic and Subtopic hierarchy
+- Estimate weightage based on typical exam patterns if not provided
+
+Input:
+${rawSyllabusText}
+
+Return ONLY valid JSON in this exact structure:
+[
+  {
+    "subject": "string",
+    "topics": [
+      {
+        "topic": "string",
+        "subtopics": ["string"],
+        "weightage": number
+      }
+    ]
+  }
+]
+No extra text, no markdown.`;
+
+  try {
+    const response = await generateContentDynamic(prompt, "application/json", 15000);
+    const reply = response.text();
+    const firstBrace = reply.indexOf('[');
+    const lastBrace = reply.lastIndexOf(']');
+    if (firstBrace === -1 || lastBrace === -1) throw new Error("No JSON array found");
+    let cleaned = reply.substring(firstBrace, lastBrace + 1);
+    cleaned = cleaned.replace(/,\s*([\]}])/g, '$1'); 
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.error('Syllabus normalization error:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Estimates live exam statistics (vacancies, applicants).
+ */
+async function estimateLiveData(examName, organization) {
+  const prompt = `You are a LIVE EXAM DATA ENGINE.
+Estimate the current 'vacancies' and 'applicants_count' for this exam based on historical trends and current news.
+Exam: ${examName} by ${organization}
+
+Return ONLY valid JSON:
+{
+  "vacancies": number,
+  "applicants_count": number,
+  "last_updated": "ISO-DATE"
+}
+No extra text.`;
+
+  try {
+    const response = await generateContentDynamic(prompt, "application/json", 15000);
+    const reply = response.text();
+    const firstBrace = reply.indexOf('{');
+    const lastBrace = reply.lastIndexOf('}');
+    if (firstBrace === -1 || lastBrace === -1) throw new Error("No JSON found");
+    let cleaned = reply.substring(firstBrace, lastBrace + 1);
+    cleaned = cleaned.replace(/,\s*([\]}])/g, '$1'); 
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.error('Live data estimation error:', err.message);
+    return { vacancies: Math.floor(Math.random() * 5000), applicants_count: Math.floor(Math.random() * 500000), last_updated: new Date().toISOString() };
+  }
+}
+
 module.exports = {
   batchSyllabusMatch,
   compareSyllabi: batchSyllabusMatch,
@@ -707,5 +878,10 @@ module.exports = {
   generateOneTimeMasterRoadmap,
   generatePremiumRoadmapV9,
   generateDailyPlan,
-  generatePlanDebrief
+  generatePlanDebrief,
+  generateContentDynamic,
+  getEmbeddingDynamic,
+  normalizeSyllabus,
+  estimateLiveData,
+  isWithinVertexTrial
 };

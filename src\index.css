@@ -1,4 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
 @import "tailwindcss";
+
+/* Nothing OS inspired utility styles */
+.font-space {
+  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif !important;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace !important;
+}
+
+.nothing-border {
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0px !important;
+}
+
+.nothing-border-red {
+  border: 1px solid #dc2626 !important;
+  border-radius: 0px !important;
+}
+
+.nothing-glow-red {
+  box-shadow: 0 0 16px rgba(220, 38, 38, 0.25) !important;
+}
+
+.nothing-glow-red-spread {
+  box-shadow: 0 0 32px 4px rgba(220, 38, 38, 0.15) !important;
+}
+
+.key-press-active:active {
+  transform: scale(0.9) !important;
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  transition: transform 0.05s ease-out !important;
+}
+
+@keyframes biometricScan {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.3;
+    border-color: rgba(220, 38, 38, 0.2);
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.9;
+    border-color: rgba(220, 38, 38, 0.8);
+    box-shadow: 0 0 24px rgba(220, 38, 38, 0.4);
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0.3;
+    border-color: rgba(220, 38, 38, 0.2);
+  }
+}
+
+.biometric-scan-pulse {
+  animation: biometricScan 2.5s ease-in-out infinite;
+}
 
 html,
 body,

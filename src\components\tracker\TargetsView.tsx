@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { api } from '../../api';
 import { Save, Target, Plus, Trash2, ChevronDown, Check } from 'lucide-react';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { translateDynamicData } from '../../utils/translateHelper';
+
 
 export default function TargetsView() {
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
     const [targets, setTargets] = useState<any[]>([]);
     const [allJobs, setAllJobs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -125,7 +127,7 @@ export default function TargetsView() {
                                         <div className="relative flex items-center">
                                             <input
                                                 type="text"
-                                                value={t(target.exam_name) || ''}
+                                                value={translateDynamicData(target.exam_name, language, 'job_name') || ''}
                                                 onChange={e => {
                                                     updateTarget(i, 'exam_name', e.target.value);
                                                     setOpenDropdownIdx(i);
@@ -148,24 +150,35 @@ export default function TargetsView() {
                                                 <div className="fixed inset-0 z-40" onClick={() => setOpenDropdownIdx(null)} />
                                                 <div className="absolute left-0 right-0 mt-2 bg-[#0e0e12] border border-[#22222d] rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto custom-scrollbar animate-fadeIn origin-top">
                                                     <div className="p-1.5 space-y-0.5">
-                                                        {allJobs.filter(job =>
-                                                            !target.exam_name || t(job.job_name).toLowerCase().includes(target.exam_name.toLowerCase()) || job.job_name.toLowerCase().includes(target.exam_name.toLowerCase())
-                                                        ).slice(0, 50).map((job, jIdx) => (
-                                                            <button
-                                                                key={jIdx}
-                                                                onClick={() => {
-                                                                    updateTarget(i, 'exam_name', job.job_name);
-                                                                    setOpenDropdownIdx(null);
-                                                                }}
-                                                                className={`w-full text-left px-4 py-3 text-sm rounded-lg transition-colors flex items-center justify-between ${target.exam_name === job.job_name ? 'bg-red-500/10 text-red-500 font-semibold' : 'text-gray-300 hover:bg-[#1a1a24] hover:text-white'}`}
-                                                            >
-                                                                <span className="truncate">{t(job.job_name)}</span>
-                                                                {target.exam_name === job.job_name && <Check className="w-4 h-4 text-red-500 flex-shrink-0" />}
-                                                            </button>
-                                                        ))}
-                                                        {allJobs.filter(job =>
-                                                            !target.exam_name || t(job.job_name).toLowerCase().includes(target.exam_name.toLowerCase()) || job.job_name.toLowerCase().includes(target.exam_name.toLowerCase())
-                                                        ).length === 0 && (
+                                                        {allJobs.filter(job => {
+                                                            const translatedName = translateDynamicData(job.job_name, language, 'job_name');
+                                                            const searchLower = target.exam_name.toLowerCase();
+                                                            return !target.exam_name ||
+                                                                translatedName.toLowerCase().includes(searchLower) ||
+                                                                job.job_name.toLowerCase().includes(searchLower);
+                                                        }).slice(0, 50).map((job, jIdx) => {
+                                                            const translatedName = translateDynamicData(job.job_name, language, 'job_name');
+                                                            return (
+                                                                <button
+                                                                    key={jIdx}
+                                                                    onClick={() => {
+                                                                        updateTarget(i, 'exam_name', job.job_name);
+                                                                        setOpenDropdownIdx(null);
+                                                                    }}
+                                                                    className={`w-full text-left px-4 py-3 text-sm rounded-lg transition-colors flex items-center justify-between ${target.exam_name === job.job_name ? 'bg-red-500/10 text-red-500 font-semibold' : 'text-gray-300 hover:bg-[#1a1a24] hover:text-white'}`}
+                                                                >
+                                                                    <span className="truncate">{translatedName}</span>
+                                                                    {target.exam_name === job.job_name && <Check className="w-4 h-4 text-red-500 flex-shrink-0" />}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                        {allJobs.filter(job => {
+                                                            const translatedName = translateDynamicData(job.job_name, language, 'job_name');
+                                                            const searchLower = target.exam_name.toLowerCase();
+                                                            return !target.exam_name ||
+                                                                translatedName.toLowerCase().includes(searchLower) ||
+                                                                job.job_name.toLowerCase().includes(searchLower);
+                                                        }).length === 0 && (
                                                             <div className="px-4 py-3 text-sm text-gray-500 italic text-center">{t('tracker.targets.noExamsFound')}</div>
                                                         )}
                                                     </div>

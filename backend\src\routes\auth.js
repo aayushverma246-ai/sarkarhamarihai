@@ -4,7 +4,86 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { getDb } = require('../db');
 const auth = require('../middleware/auth');
+const { CANONICAL_STATES } = require('../constants');
 require('dotenv').config();
+
+function validateUserProfile(data, isUpdate = false) {
+    const {
+        full_name, age, category, state,
+        qualification_type, qualification_status,
+        current_year, current_semester, expected_graduation_year
+    } = data;
+
+    // 1. Full Name Validation
+    if (!isUpdate || full_name !== undefined) {
+        if (!full_name || typeof full_name !== 'string' || full_name.trim().length < 2) {
+            return 'Full name must be at least 2 characters long.';
+        }
+    }
+
+    // 2. Age Validation
+    if (!isUpdate || age !== undefined) {
+        const parsedAge = Number(age);
+        if (isNaN(parsedAge) || parsedAge < 14 || parsedAge > 100) {
+            return 'Please enter a valid age between 14 and 100.';
+        }
+    }
+
+    // 3. Category Validation
+    if (!isUpdate || category !== undefined) {
+        const validCategories = ['General', 'OBC', 'SC', 'ST', 'EWS'];
+        if (!category || !validCategories.includes(category)) {
+            return `Category must be one of: ${validCategories.join(', ')}`;
+        }
+    }
+
+    // 4. State Validation
+    if (!isUpdate || state !== undefined) {
+        const validStates = [...CANONICAL_STATES, 'All India'];
+        if (!state || !validStates.includes(state)) {
+            return 'Please select a valid Indian State or All India.';
+        }
+    }
+
+    // 5. Qualification Type Validation
+    if (!isUpdate || qualification_type !== undefined) {
+        const validQualifications = ['Class 10', 'Class 12', 'Diploma', 'Graduation', 'Post Graduation', 'PhD'];
+        if (!qualification_type || !validQualifications.includes(qualification_type)) {
+            return 'Please select a valid qualification level.';
+        }
+    }
+
+    // 6. Qualification Status Validation
+    if (!isUpdate || qualification_status !== undefined) {
+        const validStatuses = ['Completed', 'Pursuing'];
+        if (!qualification_status || !validStatuses.includes(qualification_status)) {
+            return 'Qualification status must be either Completed or Pursuing.';
+        }
+    }
+
+    // 7. Educational Numeric Values Validation
+    if (current_year !== undefined && current_year !== null && current_year !== '') {
+        const yr = Number(current_year);
+        if (isNaN(yr) || yr < 0 || yr > 10) {
+            return 'Current year must be between 0 and 10.';
+        }
+    }
+    if (current_semester !== undefined && current_semester !== null && current_semester !== '') {
+        const sem = Number(current_semester);
+        if (isNaN(sem) || sem < 0 || sem > 20) {
+            return 'Current semester must be between 0 and 20.';
+        }
+    }
+    if (expected_graduation_year !== undefined && expected_graduation_year !== null && expected_graduation_year !== '') {
+        const gradYr = Number(expected_graduation_year);
+        const thisYear = new Date().getFullYear();
+        if (isNaN(gradYr) || (gradYr !== 0 && (gradYr < thisYear - 5 || gradYr > thisYear + 10))) {
+            return 'Expected graduation year must be a valid year within range.';
+        }
+    }
+
+    return null;
+}
 
 function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -41,8 +120,9 @@ router.post('/profile-setup', auth, async (req, res) => {
             current_year, current_semester, expected_graduation_year
         } = req.body;
 
-        if (!full_name) {
-            return res.status(400).json({ error: 'Full name is required' });
+        const validationError = validateUserProfile(req.body, false);
+        if (validationError) {
+            return res.status(400).json({ error: validationError });
         }
 
         const db = getDb();
@@ -328,6 +408,11 @@ router.put('/me', auth, async (req, res) => {
         const db = getDb();
         const existingRow = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [req.user.id] })).rows[0];
         if (!existingRow) return res.status(404).json({ error: 'User not found' });
+
+        const validationError = validateUserProfile(req.body, true);
+        if (validationError) {
+            return res.status(400).json({ error: validationError });
+        }
 
         await db.execute({
             sql: `UPDATE users SET

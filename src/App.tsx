@@ -18,16 +18,32 @@ const NotificationsPage = React.lazy(() => import('./pages/NotificationsPage'));
 const AdminPage = React.lazy(() => import('./pages/AdminPage'));
 const JobDetailsPage = React.lazy(() => import('./pages/JobDetailsPage'));
 const TrackerPage = React.lazy(() => import('./pages/TrackerPage'));
+const ProfileSetupPage = React.lazy(() => import('./pages/ProfileSetupPage'));
 const VerifierDashboard = React.lazy(() => import('./pages/VerifierDashboard'));
-
-// Keep LandingPage only for web (lazy-loaded, never imported in mobile builds if unused)
 const LandingPage = React.lazy(() => import('./pages/LandingPage'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // Check for cached user — set by both Supabase auth and guest login flows
   const user = getCachedUser();
+  const location = useLocation();
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+  // Redirect to profile setup page if profile is incomplete (age === 0),
+  // but prevent infinite redirect loop by checking if we are already on it.
+  if (user.age === 0 && !user.email?.startsWith('guest@') && location.pathname !== '/profile-setup') {
+    return <Navigate to="/profile-setup" replace />;
+  }
+  return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const user = getCachedUser();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  if (user.email !== 'aayushverma246@gmail.com') {
+    return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
 }
@@ -46,6 +62,7 @@ function SuspenseFallback() {
 function RootRedirect() {
   const user = getCachedUser();
   if (user) {
+    // If the user's profile is incomplete, let RootRedirect also pass them to dashboard where ProtectedRoute will redirect them.
     return <Navigate to="/dashboard" replace />;
   }
   if (Capacitor.isNativePlatform()) {
@@ -109,10 +126,11 @@ export default function App() {
           <Route path="/privacy" element={<PrivacyPage />} />
           {/* Keep landing page accessible via direct URL for web */}
           <Route path="/landing" element={<LandingPage />} />
+          <Route path="/profile-setup" element={<ProtectedRoute><ProfileSetupPage /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
-          <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+          <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
           <Route path="/jobs/:id" element={<ProtectedRoute><JobDetailsPage /></ProtectedRoute>} />
           <Route path="/tracker" element={<ProtectedRoute><TrackerPage /></ProtectedRoute>} />
           <Route path="/verifier" element={<VerifierDashboard />} />

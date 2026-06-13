@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
-const { estimateLiveData } = require('../services/lyzr');
+const { estimateLiveData } = require('../services/gemini');
 
 // GET /api/exam/live-stats?id=...
 // or GET /api/exam/live-stats/:id

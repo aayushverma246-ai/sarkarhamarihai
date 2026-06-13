@@ -369,6 +369,62 @@ registerRule('referential_state', {
   },
 });
 
+// 7. PLACEHOLDER / MOCK CHECK RULES
+registerRule('no_placeholder_data', {
+  category: 'completeness',
+  severity: 'critical',
+  validate: (record) => {
+    const fieldsToScan = ['job_name', 'organization', 'qualification_required', 'syllabus', 'selection_process', 'official_application_link'];
+    
+    const exactPlaceholders = [
+        'placeholder', 'dummy', 'lorem', 'lorem ipsum', 'mock', 'test', 
+        'sample', 'tba', 'tbd', 'to be announced', 'to be decided', 'n/a', 'na', 'null'
+    ];
+
+    const strictFields = ['job_name', 'organization', 'official_application_link'];
+    const strictPatterns = [
+        /\bplaceholder\b/i,
+        /\blorem\b/i,
+        /\bdummy\b/i,
+        /\bmock\b/i,
+        /test-(?:job|org|user|exam)/i,
+        /^test$/i,
+        /^sample$/i
+    ];
+
+    for (const field of fieldsToScan) {
+      const val = record[field];
+      if (val && typeof val === 'string') {
+        const clean = val.trim().toLowerCase();
+        
+        // Exact match check
+        if (exactPlaceholders.includes(clean)) {
+          return {
+            valid: false,
+            field,
+            message: `Field '${field}' contains exact forbidden placeholder/mock value: "${val}"`,
+          };
+        }
+
+        // Substring pattern check for strict identifier fields
+        if (strictFields.includes(field)) {
+          for (const pattern of strictPatterns) {
+            if (pattern.test(clean)) {
+              return {
+                valid: false,
+                field,
+                message: `Strict field '${field}' contains placeholder match: "${val}" (matched ${pattern})`,
+              };
+            }
+          }
+        }
+      }
+    }
+    return { valid: true };
+  },
+});
+
+
 // ── Validation Runner ─────────────────────────────────────────────────────────
 
 /**

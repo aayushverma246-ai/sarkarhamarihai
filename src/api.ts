@@ -51,6 +51,10 @@ export function clearToken(): void {
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem('sarkar_liked');
     localStorage.removeItem('sarkar_notifs');
+    localStorage.removeItem('sarkar_jobs_minimal');
+    localStorage.removeItem('sarkar_liked_jobs');
+    localStorage.removeItem('sarkar_applied_jobs');
+    localStorage.removeItem('sarkar_reminded_jobs');
 }
 
 export function getCachedUser(): any | null {

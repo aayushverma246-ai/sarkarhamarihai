@@ -18,6 +18,7 @@
 const express = require('express');
 const router = express.Router();
 const { getDb } = require('../db');
+const { generateFingerprint } = require('../engines/deduplicator');
 const {
   CANONICAL_CATEGORIES,
   CANONICAL_STATES,
@@ -114,8 +115,8 @@ router.get('/run', async (req, res) => {
         }
       }
 
-      // 3b. Duplicate detection
-      const dedupKey = `${(job.job_name || '').toLowerCase().trim()}|${(job.organization || '').toLowerCase().trim()}|${job.application_start_date}|${job.application_end_date}`;
+      // 3b. Duplicate detection using normalized fingerprint
+      const dedupKey = generateFingerprint(job);
       if (seen.has(dedupKey)) {
         duplicateIds.push(job.id);
         continue;

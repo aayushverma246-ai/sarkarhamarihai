@@ -11,6 +11,7 @@
         "migrate-schema": "node src/migrate-schema.js"
     },
     "dependencies": {
+        "@google-cloud/translate": "^9.4.1",
         "@google-cloud/vertexai": "^1.9.0",
         "@google/generative-ai": "^0.24.1",
         "axios": "^1.14.0",

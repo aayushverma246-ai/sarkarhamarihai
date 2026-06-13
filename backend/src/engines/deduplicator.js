@@ -9,6 +9,63 @@
 const crypto = require('crypto');
 
 /**
+ * Normalize an organization name for consistent fingerprinting.
+ */
+function normalizeOrg(org) {
+  if (!org) return '';
+  let o = org.toLowerCase().trim();
+  
+  // Strip common words/suffixes
+  o = o.replace(/\bpublic\s+service\s+commission\b/g, 'psc');
+  o = o.replace(/\bstate\s+government\b/g, 'government');
+  
+  // Mapping of common long names to abbreviation
+  if (o.includes('union psc') || o.includes('union public') || o === 'upsc') return 'upsc';
+  if (o.includes('staff selection') || o === 'ssc') return 'ssc';
+  if (o.includes('national testing') || o === 'nta') return 'nta';
+  if (o.includes('railway recruitment') || o === 'rrb') return 'rrb';
+  if (o.includes('state bank of india') || o === 'sbi') return 'sbi';
+  if (o.includes('reserve bank of india') || o === 'rbi') return 'rbi';
+  if (o.includes('intelligence bureau') || o === 'ib') return 'ib';
+  if (o.includes('central reserve police') || o === 'crpf') return 'crpf';
+  if (o.includes('border security force') || o === 'bsf') return 'bsf';
+  if (o.includes('central industrial security') || o === 'cisf') return 'cisf';
+  if (o.includes('indo-tibetan border') || o.includes('indotibetan border') || o === 'itbp') return 'itbp';
+  if (o.includes('sashastra seema') || o === 'ssb') return 'ssb';
+  
+  // State PSC mappings
+  if (o.includes('andhra pradesh psc') || o === 'appsc') return 'appsc';
+  if (o.includes('arunachal pradesh psc')) return 'appsc';
+  if (o.includes('assam psc') || o === 'apsc') return 'apsc';
+  if (o.includes('bihar psc') || o === 'bpsc') return 'bpsc';
+  if (o.includes('chhattisgarh psc') || o === 'cgpsc') return 'cgpsc';
+  if (o.includes('delhi subordinate') || o === 'dsssb') return 'dsssb';
+  if (o.includes('gujarat psc') || o === 'gpsc') return 'gpsc';
+  if (o.includes('harrison psc') || o === 'hpsc') return 'hpsc'; // Wait, let's keep hpsc mapping standard
+  if (o.includes('haryana psc') || o === 'hpsc') return 'hpsc';
+  if (o.includes('himachal pradesh psc') || o === 'hppsc') return 'hppsc';
+  if (o.includes('jharkhand psc') || o === 'jpsc') return 'jpsc';
+  if (o.includes('karnataka psc') || o === 'kpsc') return 'kpsc';
+  if (o.includes('kerala psc') || o === 'kpsc') return 'kpsc';
+  if (o.includes('madhya pradesh psc') || o === 'mppsc') return 'mppsc';
+  if (o.includes('maharashtra psc') || o === 'mpsc') return 'mpsc';
+  if (o.includes('nagaland psc') || o === 'npsc') return 'npsc';
+  if (o.includes('odisha psc') || o === 'opsc') return 'opsc';
+  if (o.includes('punjab psc') || o === 'ppsc') return 'ppsc';
+  if (o.includes('rajasthan psc') || o === 'rpsc') return 'rpsc';
+  if (o.includes('sikkim psc') || o === 'spsc') return 'spsc';
+  if (o.includes('tamil nadu psc') || o === 'tnpsc') return 'tnpsc';
+  if (o.includes('telangana psc') || o === 'tspsc' || o === 'tgpsc') return 'tspsc';
+  if (o.includes('tripura psc') || o === 'tpsc') return 'tpsc';
+  if (o.includes('uttar pradesh psc') || o === 'uppsc') return 'uppsc';
+  if (o.includes('uttarakhand psc') || o === 'ukpsc') return 'ukpsc';
+  if (o.includes('west bengal psc') || o === 'wbpsc') return 'wbpsc';
+  if (o.includes('jammu & kashmir psc') || o.includes('jammu and kashmir psc') || o === 'jkpsc') return 'jkpsc';
+  
+  return o.replace(/[^a-z0-9]/g, '');
+}
+
+/**
  * Normalize a string for fingerprinting (lowercase, strip special chars, collapse spaces)
  */
 function normalize(str) {
@@ -25,7 +82,7 @@ function normalize(str) {
  */
 function generateFingerprint(exam) {
   const name = normalize(exam.job_name || exam.exam_name || '');
-  const org = normalize(exam.organization || '');
+  const org = normalizeOrg(exam.organization || '');
   const year = (exam.job_name || '').match(/20\d{2}/)?.[0] || new Date().getFullYear().toString();
   
   const raw = `${name}|${org}|${year}`;

@@ -277,14 +277,41 @@ export default function SignupPage() {
           <button
             onClick={async () => {
               setLoading(true);
-              const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
-              const redirectUrl = isNative
-                ? 'https://sarkarhamarihai.vercel.app/auth/callback?platform=mobile'
-                : window.location.origin + '/auth/callback';
-              await supabase.auth.signInWithOAuth({
-                provider: 'google',
-                options: { redirectTo: redirectUrl }
-              });
+              setError('');
+              try {
+                const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
+                const redirectUrl = isNative
+                  ? 'https://sarkarhamarihai.vercel.app/auth/callback?platform=mobile'
+                  : window.location.origin + '/auth/callback';
+                
+                if (isNative) {
+                  const { data, error } = await supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: {
+                      redirectTo: redirectUrl,
+                      skipBrowserRedirect: true
+                    }
+                  });
+                  if (error) throw error;
+                  if (data?.url) {
+                    const { Browser } = await import('@capacitor/browser');
+                    await Browser.open({ url: data.url, presentationStyle: 'popover' });
+                  } else {
+                    throw new Error('Google authentication failure.');
+                  }
+                } else {
+                  const { error } = await supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: { redirectTo: redirectUrl }
+                  });
+                  if (error) throw error;
+                }
+              } catch (err: any) {
+                console.error('Google signup error:', err);
+                setError(err.message || 'Google authentication failed.');
+              } finally {
+                setLoading(false);
+              }
             }}
             disabled={loading}
             className="w-full py-3.5 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-gray-200 font-medium text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-3 mb-3 active:scale-[0.98] rounded-xl shadow-sm"

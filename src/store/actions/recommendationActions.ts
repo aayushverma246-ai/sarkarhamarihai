@@ -58,8 +58,31 @@ export const fetchRecommendationsAction = (
             }
         });
     } catch (err: any) {
-        const errMsg = err.message || 'Failed to match syllabus recommendations';
-        dispatch({ type: types.FETCH_RECS_FAIL, payload: errMsg });
-        throw err;
+        let cachedData = null;
+        try {
+            const cachedText = localStorage.getItem('ai_recs_cache');
+            if (cachedText) {
+                cachedData = JSON.parse(cachedText);
+            }
+        } catch (cacheErr) {
+            console.warn('Failed to parse cached recommendations:', cacheErr);
+        }
+
+        if (cachedData && cachedData.length > 0) {
+            console.log('AI Recommender offline/failed. Loaded verified recommendations from local cache.');
+            dispatch({
+                type: types.FETCH_RECS_SUCCESS,
+                payload: {
+                    recs: cachedData,
+                    page: pageNum,
+                    hasMore: false,
+                    isPage1,
+                }
+            });
+        } else {
+            const errMsg = err.message || 'Failed to match syllabus recommendations';
+            dispatch({ type: types.FETCH_RECS_FAIL, payload: errMsg });
+            throw err;
+        }
     }
 };

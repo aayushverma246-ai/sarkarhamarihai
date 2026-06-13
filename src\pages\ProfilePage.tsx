@@ -3,10 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { api, getCachedUser, setCachedUser, clearToken } from '../api';
 import Navbar from '../components/Navbar';
 import { indianStates } from '../data/states';
+import { useLanguage } from '../i18n/LanguageContext';
+import { translateDynamicData } from '../utils/translateHelper';
+
 
 export default function ProfilePage() {
   const navigate = useNavigate();
   const cached = getCachedUser();
+  const { language } = useLanguage();
   const [user, setUser] = useState<any>(cached);
 
   const [loading, setLoading] = useState(true);
@@ -143,7 +147,7 @@ export default function ProfilePage() {
                   <div>
                     <label className="block text-sm text-gray-400 mb-1.5">State</label>
                     <select value={form.state} onChange={e => update('state', e.target.value)} className={inputClass}>
-                    {indianStates.map((s) => <option key={s}>{s}</option>)}
+                    {indianStates.map((s) => <option key={s} value={s}>{translateDynamicData(s, language, 'state')}</option>)}
                     </select>
                   </div>
                   {user?.email && (
@@ -164,7 +168,7 @@ export default function ProfilePage() {
                     <div>
                       <label className="block text-sm text-gray-400 mb-1.5">Qualification</label>
                       <select value={form.qualification_type} onChange={e => update('qualification_type', e.target.value)} className={inputClass}>
-                        {['Class 10', 'Class 12', 'Graduation', 'Post Graduation', 'PhD'].map(q => <option key={q}>{q}</option>)}
+                        {['Class 10', 'Class 12', 'Graduation', 'Post Graduation', 'PhD'].map(q => <option key={q} value={q}>{translateDynamicData(q, language, 'qualification')}</option>)}
                       </select>
                     </div>
                     <div>

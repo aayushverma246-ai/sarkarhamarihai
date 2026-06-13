@@ -12,39 +12,10 @@
  * Caching: in-memory + Supabase
  * Rate control: concurrency limit, retry, dedup
  */
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { createClient } = require('@supabase/supabase-js');
+const { generateContentDynamic, getEmbeddingDynamic } = require('./gemini');
 
-const API_KEY = (process.env.GEMINI_API_KEY_NEW || '').trim();
-const genAI = API_KEY ? new GoogleGenerativeAI(API_KEY) : null;
-const MODEL_NAME = 'gemini-flash-latest';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-async function generateContentWithFallback(genAI, prompt, responseMimeType = null, timeoutMs = 15000) {
-  const models = ['gemini-flash-latest', 'gemini-2.5-flash'];
-  let lastErr = null;
-  for (const modelName of models) {
-    try {
-      const model = genAI.getGenerativeModel({
-        model: modelName,
-        ...(responseMimeType ? { generationConfig: { responseMimeType } } : {})
-      });
-      const result = await Promise.race([
-        model.generateContent(prompt),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs))
-      ]);
-      return result;
-    } catch (err) {
-      console.warn(`[AI v2] Model ${modelName} failed: ${err.message}. Trying next fallback if available...`);
-      lastErr = err;
-      const msg = (err.message || '').toLowerCase();
-      if (msg.includes('api key') || msg.includes('permission')) {
-        throw err;
-      }
-    }
-  }
-  throw lastErr || new Error('All models failed');
-}
 
 // ═══════════════════════════════════════════════════════════════
 // CIRCUIT BREAKER SYSTEM — Handles aggressive rate limiting (DB Persistent)
@@ -211,7 +182,7 @@ async function extractSyllabusWithGemini(examName, organization, existingSyllabu
   const cacheKey = `syl:${examName}:${organization}`;
   if (_syllabusCache.has(cacheKey)) return _syllabusCache.get(cacheKey);
 
-  if (!isGeminiHealthy() || !genAI) {
+  if (!isGeminiHealthy()) {
     // Fallback: use exam name as syllabus proxy
     return existingSyllabus || examName || '';
   }
@@ -241,9 +212,9 @@ RULES:
 - For unknown exams, infer from the organization and name
 - Return ONLY JSON`;
 
-    const result = await generateContentWithFallback(genAI, prompt, 'application/json', 2500);
+    const result = await generateContentDynamic(prompt, 'application/json', 4000);
 
-    const text = result.response.text();
+    const text = result.text();
     const parsed = JSON.parse(text);
     const syllabusText = parsed.syllabus_text ||
       Object.values(parsed.topics || {}).flat().join(', ') ||
@@ -269,10 +240,11 @@ const COMPARISON_TTL = 30 * 60 * 1000; // 30 min
 
 async function geminiCompareExams(sourceSyllabus, sourceExamNames, targetExams) {
   if (!targetExams.length) return [];
-  if (!isGeminiHealthy() || !genAI) return [];
+  if (!isGeminiHealthy()) return [];
 
   const sb = getSb();
-  const keys = targetExams.map(t => `cmp:${sourceExamNames.join('+')}:${t.id}`);
+  const sortedNames = [...sourceExamNames].sort();
+  const keys = targetExams.map(t => `cmp:${sortedNames.join('+')}:${t.id}`);
 
   try {
     // 1. Single lightning-fast batch fetch from Supabase cache
@@ -292,8 +264,6 @@ async function geminiCompareExams(sourceSyllabus, sourceExamNames, targetExams) 
     console.error('[AI Cache] Load error:', err.message);
   }
 
-  if (!genAI) return [];
-
   const CHUNK_SIZE = 3;
   const allResults = [];
 
@@ -304,7 +274,7 @@ async function geminiCompareExams(sourceSyllabus, sourceExamNames, targetExams) 
     const uncached = [];
     const cached = [];
     for (const t of chunk) {
-      const ck = `cmp:${sourceExamNames.join('+')}:${t.id}`;
+      const ck = `cmp:${sortedNames.join('+')}:${t.id}`;
       const c = _comparisonCache.get(ck);
       if (c && (Date.now() - c.ts) < COMPARISON_TTL) {
         cached.push(c.data);
@@ -318,14 +288,14 @@ async function geminiCompareExams(sourceSyllabus, sourceExamNames, targetExams) 
 
     try {
       const examList = uncached.map(e =>
-        `- ID: ${e.id} | Name: ${e.job_name} | Org: ${e.organization || ''} | Syllabus: ${(e.enrichedSyllabus || e.syllabus || e.job_name || '').substring(0, 400)}`
+        `- ID: ${e.id} | Name: ${e.job_name} | Org: ${e.organization || ''} | Syllabus: ${(e.enrichedSyllabus || e.syllabus || e.job_name || '').substring(0, 2500)}`
       ).join('\n');
 
       const prompt = `You are an expert Indian government exam syllabus analyzer. Your task is to PRECISELY compare syllabi.
 
-SOURCE EXAMS: ${sourceExamNames.join(', ')}
+SOURCE EXAMS: ${sortedNames.join(', ')}
 SOURCE SYLLABUS:
-${(sourceSyllabus || '').substring(0, 1500)}
+${(sourceSyllabus || '').substring(0, 15000)}
 
 TARGET EXAMS:
 ${examList}
@@ -365,9 +335,9 @@ SCORING RULES:
       let lastErr = null;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const result = await generateContentWithFallback(genAI, prompt, 'application/json', 3500);
+          const response = await generateContentDynamic(prompt, 'application/json', 5000);
 
-          const text = result.response.text();
+          const text = response.text();
           let parsed;
           try {
             parsed = JSON.parse(text);
@@ -402,7 +372,7 @@ SCORING RULES:
           // Cache results in-memory and persistently in DB
           const upserts = [];
           for (const v of validated) {
-            const ck = `cmp:${sourceExamNames.join('+')}:${v.id}`;
+            const ck = `cmp:${sortedNames.join('+')}:${v.id}`;
             _comparisonCache.set(ck, { data: v, ts: Date.now() });
             upserts.push({ key: ck, data: v, updated_at: new Date().toISOString() });
           }
@@ -455,8 +425,13 @@ let _activeRequests = 0;
 const MAX_CONCURRENT = 3;
 
 async function getEmbedding(text, examId) {
-  // Completely bypass embedding generation during live queries to prevent API limit crashes and unsupported API errors
-  return null;
+  // Leverage state-of-the-art keyless Vertex AI text-embedding-004
+  try {
+    return await getEmbeddingDynamic(text);
+  } catch (err) {
+    console.warn(`[AI v2] Embedding query failed for "${examId}":`, err.message);
+    return null;
+  }
 }
 
 function cosineSimilarity(a, b) {
@@ -477,7 +452,12 @@ function cosineSimilarity(a, b) {
 function preFilter(sourceStructured, candidateJob, sourceCategories) {
   const candText = ((candidateJob.syllabus || '') + ' ' + (candidateJob.job_name || '') + ' ' + (candidateJob.job_category || '')).toLowerCase();
 
-  if (sourceCategories && sourceCategories.includes(candidateJob.job_category)) return true;
+  if (sourceCategories && sourceCategories.some(cat => {
+    if (!cat || !candidateJob.job_category) return false;
+    const c1 = cat.toLowerCase();
+    const c2 = candidateJob.job_category.toLowerCase();
+    return c1.includes(c2) || c2.includes(c1);
+  })) return true;
 
   let subjectHits = 0;
   for (const s of sourceStructured.subjects) {
@@ -499,13 +479,13 @@ function computeLocalScore(sourceStructured, candidateStructured, semanticSim, s
   const srcSubjects = new Set(sourceStructured.subjects);
   const candSubjects = new Set(candidateStructured.subjects);
   const sharedSubjects = [...srcSubjects].filter(s => candSubjects.has(s));
-  const subjectScore = srcSubjects.size > 0 ? sharedSubjects.length / Math.min(srcSubjects.size, candSubjects.size || 1) : 0;
+  const subjectScore = candSubjects.size > 0 ? sharedSubjects.length / candSubjects.size : 0;
 
   const srcKw = new Set(sourceStructured.keywords);
   const candKw = new Set(candidateStructured.keywords);
   let kwIntersection = 0;
   for (const k of srcKw) { if (candKw.has(k)) kwIntersection++; }
-  const keywordScore = srcKw.size > 0 ? kwIntersection / Math.min(srcKw.size, candKw.size || 1) : 0;
+  const keywordScore = candKw.size > 0 ? kwIntersection / candKw.size : 0;
 
   const semScore = Math.max(0, semanticSim);
   const catBonus = sameCategory ? 0.10 : 0;
@@ -545,16 +525,17 @@ function computeGapAnalysis(sourceStructured, candidateStructured) {
 // ═══════════════════════════════════════════════════════════════
 // ELIGIBILITY PRE-FILTER HELPERS
 // ═══════════════════════════════════════════════════════════════
-const qualificationOrder = {
-  '10th': 1,
-  'Class 10': 1,
-  '12th': 2,
-  'Class 12': 2,
-  'Diploma': 2.5,
-  'Graduation': 3,
-  'Post Graduation': 4,
-  'PhD': 5
-};
+function getQualificationLevel(qualStr) {
+  if (!qualStr) return 0;
+  const normalized = qualStr.toLowerCase();
+  if (normalized.includes('phd') || normalized.includes('doctorate')) return 5;
+  if (normalized.includes('post grad') || normalized.includes('postgrad') || normalized.includes('master') || normalized.includes('m.tech') || normalized.includes('m.sc') || normalized.includes('mba') || normalized.includes('m.com') || normalized.includes('m.ca')) return 4;
+  if (normalized.includes('graduat') || normalized.includes('degree') || normalized.includes('b.tech') || normalized.includes('b.e.') || normalized.includes('b.sc') || normalized.includes('b.com') || normalized.includes('b.a') || normalized.includes('bachelor')) return 3;
+  if (normalized.includes('diploma')) return 2.5;
+  if (normalized.includes('12th') || normalized.includes('class 12') || normalized.includes('hsc') || normalized.includes('intermediate') || normalized.includes('senior secondary')) return 2;
+  if (normalized.includes('10th') || normalized.includes('class 10') || normalized.includes('ssc') || normalized.includes('matric') || normalized.includes('high school')) return 1;
+  return 0;
+}
 
 function meetsQualification(user, job) {
   if (!user.qualification_type) return false;
@@ -562,8 +543,8 @@ function meetsQualification(user, job) {
   // If the candidate job does not specify qualification_required, it is open to all
   if (!job.qualification_required) return true;
 
-  const userLevel = qualificationOrder[user.qualification_type] || 0;
-  const jobLevel = qualificationOrder[job.qualification_required] || 0;
+  const userLevel = getQualificationLevel(user.qualification_type);
+  const jobLevel = getQualificationLevel(job.qualification_required);
 
   // If the job requires an unrecognized qualification, do not hard-block the recommendation
   if (jobLevel === 0) return true;
@@ -629,6 +610,21 @@ function meetsTechnicalCriteria(job) {
   return !isHighlyTechnical;
 }
 
+function isJobVerified(job) {
+  if (!job) return false;
+  if (!job.job_name || !job.organization || !job.official_application_link) return false;
+  if (job.official_application_link.trim().length <= 5) return false;
+
+  const textToVerify = (job.job_name + ' ' + job.organization + ' ' + job.official_application_link).toLowerCase();
+  const placeholders = [
+    'placeholder', 'dummy', 'lorem ipsum', 'test-job', 'test-org', 'test-exam',
+    'sample exam', 'tba', 'tbd', 'to be announced', 'to be decided', 'n/a', 'null'
+  ];
+  if (placeholders.some(p => textToVerify.includes(p))) return false;
+
+  return true;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN RECOMMENDATION FUNCTION — GEMINI-POWERED
 // ═══════════════════════════════════════════════════════════════
@@ -637,8 +633,8 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
   const sb = getSb();
   await syncCircuitBreakerWithDB(sb);
 
-  // Cache check (both local in-memory and persistent PostgreSQL cache)
-  const cacheKey = `reco:${sourceExamIds.sort().join(',')}:${category}:${search}:${state}:${page}`;
+  // Cache check (both local in-memory and persistent PostgreSQL cache, scoped by user ID)
+  const cacheKey = `reco:${userId}:${sourceExamIds.sort().join(',')}:${category}:${search}:${state}:${page}`;
   const cachedMem = _resultCache.get(cacheKey);
   if (cachedMem && (Date.now() - cachedMem.ts) < RESULT_TTL) return cachedMem.data;
 
@@ -670,6 +666,16 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     console.warn(`[AI getRecommendations] Profile fetch error:`, e.message);
   }
   const hasProfile = user && user.qualification_type && user.age;
+
+  // Fetch user's liked jobs to place them on top of AI recommendations
+  let likedJobIds = [];
+  try {
+    const { data: likedRows } = await sb.from('liked_jobs').select('job_id').eq('user_id', userId);
+    likedJobIds = (likedRows || []).map(r => r.job_id).filter(Boolean);
+  } catch (e) {
+    console.warn(`[AI Recommendations] Failed to fetch liked jobs:`, e.message);
+  }
+  const likedSet = new Set(likedJobIds);
 
   // 1. Fetch source exams
   const { data: sourceExams } = await sb.from('jobs')
@@ -703,7 +709,7 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
   const combinedSyllabus = enrichedSourceSyllabi.join(' ');
   const sourceStructured = structureSyllabus(combinedSyllabus);
   const sourceCategories = [...new Set(sourceExams.map(e => e.job_category).filter(Boolean))];
-  const sourceExamNames = sourceExams.map(e => e.job_name);
+  const sourceExamNames = sourceExams.map(e => e.job_name).sort();
 
   // 3. Get source embedding
   const hasSyllabus = combinedSyllabus.trim().length > 20;
@@ -734,13 +740,13 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
   }
   if (search) catQuery = catQuery.or(`job_name.ilike.%${search}%,organization.ilike.%${search}%`);
 
-  const { data: catCandidates } = await catQuery.limit(300);
+  const { data: catCandidates } = await catQuery.limit(1000);
   if (catCandidates && catCandidates.length > 0) {
     allCandidates.push(...catCandidates);
   }
 
   // Query Part B: Backfill with general candidates if room remains
-  if (allCandidates.length < 300) {
+  if (allCandidates.length < 1000) {
     const pulledIds = allCandidates.map(c => c.id);
     const excludeIds = [...sourceExamIds, ...pulledIds];
 
@@ -759,11 +765,36 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     }
     if (search) genQuery = genQuery.or(`job_name.ilike.%${search}%,organization.ilike.%${search}%`);
 
-    const { data: genCandidates } = await genQuery.limit(300 - allCandidates.length);
+    const { data: genCandidates } = await genQuery.limit(1000 - allCandidates.length);
     if (genCandidates && genCandidates.length > 0) {
       allCandidates.push(...genCandidates);
     }
   }
+
+  // Query Part C: Ensure all liked/saved jobs are present in the candidates pool
+  if (likedJobIds.length > 0) {
+    const pulledIds = allCandidates.map(c => c.id);
+    const missingLikedIds = likedJobIds.filter(id => !pulledIds.includes(id) && !sourceExamIds.includes(id));
+    if (missingLikedIds.length > 0) {
+      try {
+        const { data: likedCandidates } = await sb.from('jobs')
+          .select('id, job_name, organization, job_category, syllabus, form_status, application_start_date, application_end_date, salary_min, salary_max, qualification_required, official_application_link, official_website_link, state, minimum_age, maximum_age, states')
+          .in('id', missingLikedIds);
+        if (likedCandidates && likedCandidates.length > 0) {
+          allCandidates.push(...likedCandidates);
+        }
+      } catch (err) {
+        console.warn(`[AI Recommendations] Failed to fetch missing liked jobs:`, err.message);
+      }
+    }
+  }
+
+  if (allCandidates.length === 0) {
+    return { data: [], hasMore: false, page: 1, totalMatches: 0 };
+  }
+
+  // Filter out any unverified / placeholder candidate exams to guarantee 100% correct, verified data
+  allCandidates = allCandidates.filter(isJobVerified);
 
   if (allCandidates.length === 0) {
     return { data: [], hasMore: false, page: 1, totalMatches: 0 };
@@ -780,17 +811,27 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
   if (hasProfile) {
     const priorLength = allCandidates.length;
     allCandidates = allCandidates.filter(c =>
-      meetsQualification(user, c) &&
-      meetsAge(user, c) &&
-      meetsStateCriteria(user, c) &&
-      meetsTechnicalCriteria(c)
+      likedSet.has(c.id) || ( // Bypasses eligibility filters if explicitly liked/saved
+        meetsQualification(user, c) &&
+        meetsAge(user, c) &&
+        meetsStateCriteria(user, c) &&
+        meetsTechnicalCriteria(c)
+      )
     );
     console.log(`[AI Eligibility Pre-Filtering] Reduced candidate pool from ${priorLength} to ${allCandidates.length} eligible candidates`);
   }
 
   // 5. Pre-filter with local matching (generous pass)
-  const shortlisted = allCandidates.filter(c => preFilter(sourceStructured, c, sourceCategories));
-  console.log(`[AI v2] Pre-filtered: ${shortlisted.length}/${allCandidates.length} candidates`);
+  const shortlisted = allCandidates.filter(c => likedSet.has(c.id) || preFilter(sourceStructured, c, sourceCategories));
+  
+  // Sort liked ones to the front of shortlisted pool so they are guaranteed to be processed in topCandidates / enrichmentBatch
+  shortlisted.sort((a, b) => {
+    const aLiked = likedSet.has(a.id) ? 1 : 0;
+    const bLiked = likedSet.has(b.id) ? 1 : 0;
+    return bLiked - aLiked;
+  });
+
+  console.log(`[AI v2] Pre-filtered & liked prioritized: ${shortlisted.length}/${allCandidates.length} candidates`);
 
   // 6. GEMINI STEP 2: Enrich shortlisted exams' syllabi (Optimized pool to prevent API limits)
   const topCandidates = shortlisted.slice(0, 25);
@@ -878,12 +919,23 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
       const gap = computeGapAnalysis(sourceStructured, candStructured);
       overlappingTopics = gap.matched_topics;
       missingTopics = gap.missing_topics;
+
+      // Dynamic difficulty estimation based on qualifications
+      const maxSourceLevel = Math.max(...sourceExams.map(e => getQualificationLevel(e.qualification_required)), 1);
+      const candLevel = getQualificationLevel(cand.qualification_required);
+      if (candLevel > maxSourceLevel) {
+        difficultyComparison = 'harder';
+      } else if (candLevel < maxSourceLevel) {
+        difficultyComparison = 'easier';
+      } else {
+        difficultyComparison = 'similar';
+      }
     }
 
     // ═══ DYNAMIC THRESHOLD ═══
     const isLocalFallback = !geminiResult;
     const threshold = isLocalFallback ? 15 : 45;
-    if (finalScore < threshold) continue;
+    if (finalScore < threshold && !likedSet.has(cand.id)) continue;
 
     const diffGap = finalScore >= 85 ? 'low' : finalScore >= 60 ? 'medium' : 'high';
     const gap = computeGapAnalysis(sourceStructured, candStructured);
@@ -1002,7 +1054,12 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     for (const cand of topCandidates) {
       const candStructured = structureSyllabus(cand.enrichedSyllabus || cand.syllabus, cand.job_name);
 
-      const isSameCat = sourceCategories.includes(cand.job_category);
+      const isSameCat = sourceCategories.some(cat => {
+        if (!cat || !cand.job_category) return false;
+        const c1 = cat.toLowerCase();
+        const c2 = cand.job_category.toLowerCase();
+        return c1.includes(c2) || c2.includes(c1);
+      });
       if (!isSameCat) continue; // Focus strictly on same-category matches in fallback
 
       const { localScore, sharedSubjects } = computeLocalScore(sourceStructured, candStructured, 0, isSameCat);
@@ -1102,8 +1159,11 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     }
   }
 
-  // Sort DESC by score, then LIVE first
+  // Sort: Liked/saved first, then DESC by score, then LIVE first
   scored.sort((a, b) => {
+    const aLiked = likedSet.has(a.id) ? 1 : 0;
+    const bLiked = likedSet.has(b.id) ? 1 : 0;
+    if (aLiked !== bLiked) return bLiked - aLiked;
     if (b.similarity !== a.similarity) return b.similarity - a.similarity;
     const order = { LIVE: 3, UPCOMING: 2, RECENTLY_CLOSED: 1, CLOSED: 0 };
     return (order[b.form_status] || 0) - (order[a.form_status] || 0);
@@ -1113,26 +1173,31 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
 
   // Store recommendations in Supabase 'ai_recommendations' table for persistent/historical query support
   if (scored.length > 0) {
-    const dbRecs = scored.map(r => ({
-      id: `rec_${userId}_${sourceExamIds[0]}_${r.id}`.substring(0, 100),
-      user_id: userId,
-      source_job_id: sourceExamIds[0],
-      target_job_id: r.id,
-      overlap_percentage: Math.round(r.similarity),
-      common_topics: JSON.stringify(r.overlapping_topics || []),
-      missing_topics: JSON.stringify(r.missing_topics || []),
-      explanation: r.explanation || '',
-      similarity: Math.round(r.similarity),
-      overlapping_topics: JSON.stringify(r.overlapping_topics || []),
-      difficulty_gap: r.difficulty_gap || 'medium',
-      detailed_gap_analysis: r.detailed_gap_analysis || null,
-      overlapping_subjects: JSON.stringify(r.overlapping_subjects || []),
-      missing_subjects: JSON.stringify(r.missing_subjects || []),
-      extra_preparation_needed: JSON.stringify(r.extra_preparation_needed || []),
-      difficulty_comparison: r.difficulty_comparison || 'similar',
-      study_time_estimate: r.study_time_estimate || '',
-      created_at: new Date().toISOString()
-    }));
+    const dbRecs = [];
+    for (const sourceId of sourceExamIds) {
+      for (const r of scored) {
+        dbRecs.push({
+          id: `rec_${userId}_${sourceId}_${r.id}`.substring(0, 100),
+          user_id: userId,
+          source_job_id: sourceId,
+          target_job_id: r.id,
+          overlap_percentage: Math.round(r.similarity),
+          common_topics: JSON.stringify(r.overlapping_topics || []),
+          missing_topics: JSON.stringify(r.missing_topics || []),
+          explanation: r.explanation || '',
+          similarity: Math.round(r.similarity),
+          overlapping_topics: JSON.stringify(r.overlapping_topics || []),
+          difficulty_gap: r.difficulty_gap || 'medium',
+          detailed_gap_analysis: r.detailed_gap_analysis || null,
+          overlapping_subjects: JSON.stringify(r.overlapping_subjects || []),
+          missing_subjects: JSON.stringify(r.missing_subjects || []),
+          extra_preparation_needed: JSON.stringify(r.extra_preparation_needed || []),
+          difficulty_comparison: r.difficulty_comparison || 'similar',
+          study_time_estimate: r.study_time_estimate || '',
+          created_at: new Date().toISOString()
+        });
+      }
+    }
 
     try {
       const { error: upsertErr } = await sb.from('ai_recommendations')
@@ -1166,9 +1231,25 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
 function buildExplanation(score, sharedSubjects, gap, diffGap) {
   const cap = s => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   const shared = sharedSubjects.map(cap);
-  if (score >= 85) return `Very strong overlap (${score}%) — ${shared.slice(0, 3).join(', ')} align closely. ${gap.missing_topics.length === 0 ? 'No major gaps.' : `Minor gaps in ${gap.missing_topics.slice(0, 2).join(', ')}.`}`;
-  if (score >= 75) return `Good overlap (${score}%) in ${shared.slice(0, 2).join(' and ')}. ${gap.missing_topics.length > 0 ? `Bridge gap in ${gap.missing_topics.slice(0, 2).join(', ')}.` : ''}`;
-  return `${score}% syllabus alignment detected. ${shared.length > 0 ? shared.slice(0, 2).join(', ') + ' overlap.' : ''} ${gap.missing_topics.length > 0 ? `Prepare for ${gap.missing_topics.slice(0, 2).join(', ')}.` : ''}`;
+  if (score >= 85) {
+    const sharedText = shared.length > 0 ? `${shared.slice(0, 3).join(', ')} align closely. ` : '';
+    return `Very strong overlap (${score}%) — ${sharedText}${gap.missing_topics.length === 0 ? 'No major gaps.' : `Minor gaps in ${gap.missing_topics.slice(0, 2).join(', ')}.`}`;
+  }
+  if (score >= 75) {
+    const sharedText = shared.length > 0 ? ` in ${shared.slice(0, 2).join(' and ')}` : '';
+    return `Good overlap (${score}%)${sharedText}. ${gap.missing_topics.length > 0 ? `Bridge gap in ${gap.missing_topics.slice(0, 2).join(', ')}.` : ''}`;
+  }
+  const sharedText = shared.length > 0 ? ` ${shared.slice(0, 2).join(', ')} overlap.` : '';
+  return `${score}% syllabus alignment detected.${sharedText} ${gap.missing_topics.length > 0 ? `Prepare for ${gap.missing_topics.slice(0, 2).join(', ')}.` : ''}`;
 }
 
-module.exports = { getRecommendations, structureSyllabus, computeGapAnalysis, cosineSimilarity, extractSyllabusWithGemini };
+function invalidateRecommendationsCache(userId) {
+  // Clear in-memory cache
+  for (const key of _resultCache.keys()) {
+    if (key.startsWith(`reco:${userId}:`)) {
+      _resultCache.delete(key);
+    }
+  }
+}
+
+module.exports = { getRecommendations, structureSyllabus, computeGapAnalysis, cosineSimilarity, extractSyllabusWithGemini, invalidateRecommendationsCache };

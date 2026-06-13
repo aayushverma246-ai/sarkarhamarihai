@@ -30,7 +30,12 @@ async function authMiddleware(req, res, next) {
     const supabaseJwtSecret = process.env.SUPABASE_JWT_SECRET;
     if (supabaseJwtSecret) {
         try {
-            const decoded = jwt.verify(token, supabaseJwtSecret);
+            let decoded;
+            try {
+                decoded = jwt.verify(token, Buffer.from(supabaseJwtSecret, 'base64'));
+            } catch (_) {
+                decoded = jwt.verify(token, supabaseJwtSecret);
+            }
             supabaseId = decoded.sub;
             email = decoded.email || '';
         } catch (_) {

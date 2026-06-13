@@ -90,6 +90,12 @@ async function initCapacitor() {
                   const result = await api.ensureProfile();
                   if (result?.user) {
                     setCachedUser(result.user);
+                    try {
+                      const { Browser } = await import('@capacitor/browser');
+                      await Browser.close();
+                    } catch (browserErr) {
+                      console.error('Error closing in-app browser:', browserErr);
+                    }
                     window.location.href = '/dashboard';
                   }
                 }
