@@ -16,29 +16,43 @@ export default function AuthCallbackPage() {
         async function handleAuthCallback() {
             const hash = window.location.hash;
             const search = window.location.search;
-            const ua = navigator.userAgent || navigator.vendor || (window as any).opera;
-            const isMobileBrowser = /android|iphone|ipad|ipod/i.test(ua);
 
             const hasTokens = (hash && hash.includes('access_token')) || (search && search.includes('access_token'));
             const isMobilePlatform = window.location.href.includes('platform=mobile');
-            if (isMobileBrowser && isMobilePlatform && hasTokens) {
+
+            if (isMobilePlatform && hasTokens) {
                 const tokenPart = hash || search;
-                
-                // On Android, programmatic redirect to custom schemes is blocked by Chrome.
-                // We use Android Intent URLs to force Chrome to launch the app package.
-                const isAndroid = /android/i.test(ua);
-                let deepLinkUrl = 'com.sarkarhamarihai.app://auth/callback' + tokenPart;
-                if (isAndroid) {
-                    const cleanParams = tokenPart.startsWith('#') || tokenPart.startsWith('?') ? tokenPart.substring(1) : tokenPart;
-                    deepLinkUrl = `intent://auth/callback?${cleanParams}#Intent;scheme=com.sarkarhamarihai.app;package=com.sarkarhamarihai.app;end`;
-                }
+                const deepLinkUrl = 'com.sarkarhamarihai.app://auth/callback' + tokenPart;
 
                 if (mounted) {
                     setIsMobileRedirect(true);
                     setAppUrl(deepLinkUrl);
                     setError('Redirecting to the SarkarHamariHai App...');
                 }
+
+                // 1. Direct location change
                 window.location.href = deepLinkUrl;
+
+                // 2. Fallback: replace location after a small tick
+                setTimeout(() => {
+                    window.location.replace(deepLinkUrl);
+                }, 50);
+
+                // 3. Fallback: hidden iframe injection (classic robust scheme launch)
+                try {
+                    const iframe = document.createElement('iframe');
+                    iframe.style.display = 'none';
+                    iframe.src = deepLinkUrl;
+                    document.body.appendChild(iframe);
+                    setTimeout(() => {
+                        if (document.body.contains(iframe)) {
+                            document.body.removeChild(iframe);
+                        }
+                    }, 1000);
+                } catch (e) {
+                    console.error('Redirection iframe error:', e);
+                }
+
                 return;
             }
 
