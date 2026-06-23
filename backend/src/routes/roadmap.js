@@ -14,9 +14,75 @@ const examSyllabusMap = {
     'Police': ['General Knowledge', 'Reasoning', 'Numerical Ability', 'Current Affairs']
 };
 
+function containsPlaceholder(text) {
+    if (!text) return true;
+    const lower = text.toLowerCase();
+    const placeholders = [
+        'placeholder', 'dummy', 'lorem', 'lorem ipsum', 'mock', 'test-exam',
+        'sample exam', 'tba', 'tbd', 'to be announced', 'to be decided', 'n/a', 'na', 'null'
+    ];
+    return placeholders.some(p => lower.includes(p));
+}
+
+const examResourcesMap = {
+    'UPSC': [
+        { type: "Book", name: "M. Laxmikanth - Indian Polity", purpose: "Indian Polity & Constitution" },
+        { type: "Book", name: "Spectrum - Modern India (Rajiv Ahir)", purpose: "History of India & National Movement" },
+        { type: "Book", name: "GC Leong - Certificate Physical and Human Geography", purpose: "Geography (World & India)" },
+        { type: "Book", name: "Ramesh Singh - Indian Economy", purpose: "Economy" },
+        { type: "Book", name: "Science & Technology - Ravi P. Agrahari", purpose: "General Science & Tech" },
+        { type: "Platform", name: "Testbook / InsightsIAS Mock Series", purpose: "Simulated Testing & PYQs" },
+        { type: "Resource", name: "The Hindu / Indian Express Newspaper", purpose: "Current Affairs & Editorial Analysis" }
+    ],
+    'SSC': [
+        { type: "Book", name: "R.S. Aggarwal - Quantitative Aptitude", purpose: "Quantitative Aptitude" },
+        { type: "Book", name: "R.S. Aggarwal - Verbal & Non-Verbal Reasoning", purpose: "General Intelligence & Reasoning" },
+        { type: "Book", name: "S.P. Bakshi - Objective General English", purpose: "English Comprehension" },
+        { type: "Book", name: "Lucent's General Knowledge", purpose: "General Awareness & Static GK" },
+        { type: "Platform", name: "Testbook Mock Test Series", purpose: "Simulated Testing & Speed Improvement" },
+        { type: "Resource", name: "Kiran Chapterwise Solved PYQs", purpose: "Practice of Past Exams" }
+    ],
+    'Banking': [
+        { type: "Book", name: "M.K. Pandey - Analytical Reasoning", purpose: "Reasoning Ability" },
+        { type: "Book", name: "Fast Track Objective Arithmetic - Rajesh Verma", purpose: "Quantitative Aptitude" },
+        { type: "Book", name: "Wren & Martin - High School English Grammar", purpose: "English Language" },
+        { type: "Book", name: "Pratiyogita Darpan / BankersAdda Capsule", purpose: "Banking, Economy & Financial Awareness" },
+        { type: "Platform", name: "Adda247 / Testbook Mock Test Series", purpose: "Simulated Mock Tests" },
+        { type: "Resource", name: "Oliveboard / PracticeMock Tests", purpose: "Advanced Level Sectional Practice" }
+    ],
+    'Railways': [
+        { type: "Book", name: "Fast Track Objective Arithmetic - Rajesh Verma", purpose: "Mathematics" },
+        { type: "Book", name: "Verbal & Non-Verbal Reasoning - Kiran Publication", purpose: "General Intelligence & Reasoning" },
+        { type: "Book", name: "Lucent's General Science", purpose: "General Science Concepts" },
+        { type: "Book", name: "Speedy Current Affairs & GK", purpose: "General Awareness" },
+        { type: "Platform", name: "Testbook Online Mock Test Series", purpose: "Simulated Testing" }
+    ],
+    'State PSCs': [
+        { type: "Book", name: "M. Laxmikanth - Indian Polity", purpose: "Polity & Constitution" },
+        { type: "Book", name: "State Board Textbooks (Class VI to XII)", purpose: "State History, Geography & Culture" },
+        { type: "Book", name: "Lucent's General Knowledge", purpose: "General Studies & Mental Ability" },
+        { type: "Platform", name: "Testbook / State PSC Specific Mock Series", purpose: "Simulated Testing" },
+        { type: "Resource", name: "Regional Newspaper & State Budget Reports", purpose: "State Current Affairs & Schemes" }
+    ],
+    'Defence': [
+        { type: "Book", name: "Pathfinder NDA/CDS - Arihant Publications", purpose: "Mathematics & Core Subjects" },
+        { type: "Book", name: "S.P. Bakshi - Objective General English", purpose: "English Language" },
+        { type: "Book", name: "Lucent's General Science & GK", purpose: "General Knowledge & Science" },
+        { type: "Platform", name: "Testbook Defence Mock Series", purpose: "Simulated Testing" }
+    ],
+    'Police': [
+        { type: "Book", name: "Kiran Publication Police SI/Constable Guide", purpose: "Numerical & Reasoning Ability" },
+        { type: "Book", name: "Lucent's General Knowledge", purpose: "General Knowledge & Science" },
+        { type: "Book", name: "Speedy Current Affairs", purpose: "Current Affairs & Static Awareness" },
+        { type: "Platform", name: "Testbook Police Exam Mock Series", purpose: "Simulated Testing" }
+    ]
+};
+
 function generateDeterministicRoadmap(user, job) {
     const defaultSyllabus = examSyllabusMap[job.job_category] || examSyllabusMap['SSC'];
-    const keywords = job.syllabus?.length > 10 ? 
+    const isSyllabusValid = job.syllabus && job.syllabus.trim().length > 10 && !containsPlaceholder(job.syllabus);
+    
+    const keywords = isSyllabusValid ? 
         job.syllabus.split(/[,\n]/).map(k => k.trim()).filter(k => k.length > 3) : 
         defaultSyllabus;
 
@@ -36,6 +102,52 @@ function generateDeterministicRoadmap(user, job) {
         ? `Balancing ${job.job_category} prep with college studies requires strict time management. Dedicate ${studyHours}h/day.`
         : `Full-time prep advantage: Utilize ${studyHours}h/day systematically with 60% focus on ${p1[0] || 'core subjects'}.`;
 
+    const categoryMilestones = {
+        'UPSC': {
+            m1: "Complete basic UPSC NCERT books (Class 6-12) & Polity basics",
+            m2: "Achieve 65%+ in Sectional GS Mocks & master Modern History",
+            m3: "Attempt at least 15 Full-Length UPSC GS & CSAT Mocks",
+            m4: "Revise 12 months Current Affairs & do final Mock drill"
+        },
+        'SSC': {
+            m1: "Master basic Arithmetic concepts & English grammar rules",
+            m2: "Score 70%+ in SSC Sectional tests & memorize static GK facts",
+            m3: "Complete 20 Full-Length SSC Mocks with 80%+ accuracy",
+            m4: "Revise last 6 months current affairs & formula sheets"
+        },
+        'Banking': {
+            m1: "Understand all basic reasoning puzzle types & arithmetic shortcuts",
+            m2: "Solve sectional mock tests under strict timing constraints",
+            m3: "Attempt 25 banking mocks & analyze speed bottlenecks",
+            m4: "Revise general banking awareness capsules & static financial terms"
+        },
+        'Railways': {
+            m1: "Learn core general science concepts & fast arithmetic calculation",
+            m2: "Achieve consistently 70%+ score in general intelligence practice sets",
+            m3: "Complete 15 full-length Railway simulated mocks",
+            m4: "Polish current affairs & attempt past 5 years official papers"
+        },
+        'State PSCs': {
+            m1: "Acquire basic state history, culture, and geographic concepts",
+            m2: "Score 60%+ in sectional mocks covering state administrative policies",
+            m3: "Complete 10 state PSC state-specific GK mock modules",
+            m4: "Review latest state budget, economic surveys, and welfare schemes"
+        },
+        'Defence': {
+            m1: "Revise core mathematics syllabus & build daily physical conditioning",
+            m2: "Achieve 65%+ in CDS/NDA sectional mock questionnaires",
+            m3: "Complete 12 full-length simulated defence paper tests",
+            m4: "Revise current events & brush up english grammar templates"
+        },
+        'Police': {
+            m1: "Learn basic logical reasoning & solve general arithmetic formulas",
+            m2: "Achieve 70%+ in SI/Constable local mock tests",
+            m3: "Complete 15 full SI/Constable mock papers under exam conditions",
+            m4: "Review local law guidelines, states GK, and recent current affairs"
+        }
+    };
+    const milestones = categoryMilestones[job.job_category] || categoryMilestones['SSC'];
+
     return {
         overview: {
             exam_name: job.job_name,
@@ -53,10 +165,10 @@ function generateDeterministicRoadmap(user, job) {
             { subject: p4[0] || "Current Affairs", topics: p4, weightage: "Medium (15%)", priority_order: 4 }
         ],
         phase_plan: [
-            { phase_name: "Phase 1: Foundation Building", duration: "Day 1 - Day 30", focus: "Concept clarity without timing pressure", daily_targets: p1.slice(0, 3).map(i => "Master " + i), milestone: "Complete NCERTs / Basic Textbooks" },
-            { phase_name: "Phase 2: Core Mastery", duration: "Day 31 - Day 60", focus: "Sectional practice and short notes", daily_targets: p2.slice(0, 3).map(i => "Practice " + i), milestone: "Consistently scoring 60%+ in sectionals" },
-            { phase_name: "Phase 3: Speed & Accuracy", duration: "Day 61 - Day 90", focus: "Full length mocks and time limits", daily_targets: p3.slice(0, 3).map(i => "Revise " + i), milestone: "Attempt 2 full mocks per week" },
-            { phase_name: "Phase 4: Final Polish", duration: "Day 91 - Day 120", focus: "Current affairs and weak areas", daily_targets: ["Daily Current Affairs", "1 Mock Test Daily"], milestone: "Exam Readiness Peak" }
+            { phase_name: "Phase 1: Foundation Building", duration: "Day 1 - Day 30", focus: "Concept clarity without timing pressure", daily_targets: p1.slice(0, 3).map(i => "Master " + i), milestone: milestones.m1 },
+            { phase_name: "Phase 2: Core Mastery", duration: "Day 31 - Day 60", focus: "Sectional practice and short notes", daily_targets: p2.slice(0, 3).map(i => "Practice " + i), milestone: milestones.m2 },
+            { phase_name: "Phase 3: Speed & Accuracy", duration: "Day 61 - Day 90", focus: "Full length mocks and time limits", daily_targets: p3.slice(0, 3).map(i => "Revise " + i), milestone: milestones.m3 },
+            { phase_name: "Phase 4: Final Polish", duration: "Day 91 - Day 120", focus: "Current affairs and weak areas", daily_targets: ["Daily Current Affairs", "1 Mock Test Daily"], milestone: milestones.m4 }
         ],
         daily_strategy: {
             morning: { duration: `${Math.ceil(studyHours * 0.4)} hours`, activities: ["Fresh mind concept studying: " + (p1[0] || "Core Subject"), "Note-making"] },
@@ -68,11 +180,7 @@ function generateDeterministicRoadmap(user, job) {
             saturday: "Attempt 1 Previous Year Paper (PYP) in strict exam conditions",
             sunday: "Consolidated revision of the week + Error book maintenance"
         },
-        resources: [
-            { type: "Book", name: `Standard ${job.job_category} Reference Books`, purpose: "Concept Building" },
-            { type: "Platform", name: "Textbook / Gradeup Mock Series", purpose: "Simulated Testing" },
-            { type: "Resource", name: "The Hindu / Indian Express", purpose: "Current Affairs" }
-        ],
+        resources: examResourcesMap[job.job_category] || examResourcesMap['SSC'],
         revision_plan: {
             method: "Active Recall + 1/3/7/28 Spaced Repetition",
             cycles: ["Cycle 1: Immediate weekend", "Cycle 2: End of month", "Cycle 3: Pre-exam mega sweep"],
@@ -82,7 +190,7 @@ function generateDeterministicRoadmap(user, job) {
             start_after: "Syllabus 50% completion",
             frequency: "1/week (Phase 2) -> 2/week (Phase 3) -> Daily (Phase 4)",
             analysis_method: "Post-test error log: categorize mistakes as Conceptual, Silly, or Unattempted",
-            recommended_sources: ["Official Previous Year Papers", "Reputed Mock Series"]
+            recommended_sources: ["Official Previous Year Papers", "Testbook Mock Series"]
         },
         weak_area_plan: {
             identification_method: "Identify topics scoring <50% in three consecutive mock tests",
@@ -160,8 +268,27 @@ router.post('/:id/roadmap', auth, async (req, res) => {
             });
         }
 
-        // Generate High-Quality Structured Deterministic Roadmap synchronously
-        const finalData = generateDeterministicRoadmap(userRow, jobRow);
+        // Fetch target exams for personalization (e.g. from user's liked jobs)
+        let targets = [];
+        try {
+            const likedJobsRes = await db.execute({
+                sql: 'SELECT j.job_name FROM liked_jobs l JOIN jobs j ON l.job_id = j.id WHERE l.user_id = ?',
+                args: [userId]
+            });
+            targets = (likedJobsRes.rows || []).map(r => r.job_name);
+        } catch (err) {
+            // Ignore failure fetching targets
+        }
+
+        // Generate High-Quality Structured Premium AI Roadmap using Gemini
+        const { generatePremiumRoadmapV9 } = require('../services/gemini');
+        let finalData;
+        try {
+            finalData = await generatePremiumRoadmapV9(userRow, jobRow, jobRow.syllabus || jobRow.job_name || '', targets);
+        } catch (err) {
+            console.warn(`[AI Roadmap] Generation failed, falling back to deterministic: ${err.message}`);
+            finalData = generateDeterministicRoadmap(userRow, jobRow);
+        }
 
         const responseData = { id: uuidv4(), job_id: jobId, roadmap_content: finalData, is_ready: true, is_permanent: true };
 

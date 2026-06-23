@@ -82,7 +82,7 @@ app.get('/api/fix-categories', async (req, res) => {
 
         const allRules = {
             1: [
-                ['%upsc%', 'UPSC'], ['%civil services%', 'UPSC'], ['%ias%', 'UPSC'], ['%ips%', 'UPSC'],
+                ['%upsc%', 'UPSC'], ['%ias%', 'UPSC'], ['%ips%', 'UPSC'],
                 ['%ssc %', 'SSC'], ['%staff selection%', 'SSC'], ['%selection post%', 'SSC'],
                 ['%railway%', 'Railway'], ['%rrb%', 'Railway'], ['%loco pilot%', 'Railway'], ['%track maintainer%', 'Railway'],
                 ['%bank%', 'Banking'], ['%ibps%', 'Banking'], ['%rbi %', 'Banking'], ['%nabard%', 'Banking'],

@@ -109,20 +109,22 @@ TARGET STRUCTURE (STRICT JSON ONLY):
   "application_end_date": "YYYY-MM-DD (or null if not found)",
   "salary_min": number (monthly salary, or null if not explicitly found),
   "salary_max": number (monthly salary, or null if not explicitly found),
-  "selection_process": "Clear bullet points explaining recruitment stages (e.g. Stage 1 -> Prelims, Stage 2 -> Mains, Stage 3 -> Interview)",
+  "selection_process": "Clear bullet points explaining recruitment stages (or null if not found)",
   "official_application_link": "Direct registration URL (or fall back to the landing page if not found)"
 }
 
 RULES:
 - Be 100% accurate based ONLY on the provided text.
+- If application dates are not explicitly present in the provided text, you MUST return null. Do NOT estimate, guess, or assume dates.
 - If dates are not in YYYY-MM-DD, convert them to standard ISO format (e.g. 15 June 2026 -> 2026-06-15).
 - For payscales, ONLY extract monthly salary if explicitly mentioned in the text (e.g. ₹56,100 to ₹1,77,500). Extract minimum monthly basic pay as salary_min and maximum as salary_max. 
 - If no payscale/salary range is explicitly defined in the text, extract null or 0 for salary_min and salary_max. Never estimate, guess, or use fallback values.
+- If the selection process is not explicitly found in the text, return null or an empty string. Do NOT invent, assume, or generate generic stages or mock templates.
 - Return strictly raw JSON. NO formatting tags or characters outside the JSON.`;
     } else {
         // AI augmented fallback matching prompt
         prompt = `You are an expert Indian Government recruitment verification system.
-We could not access the official URL directly. Use your deep knowledge base and current search patterns to retrieve the exact official notification details for "${jobName}" recruitment conducted by "${organization}" for the current 2026 academic/fiscal cycle.
+We could not access the official URL directly. Use your deep knowledge base to retrieve the exact official notification details for "${jobName}" recruitment conducted by "${organization}" for the current 2026 academic/fiscal cycle.
 
 TARGET STRUCTURE (STRICT JSON ONLY):
 {
@@ -130,14 +132,15 @@ TARGET STRUCTURE (STRICT JSON ONLY):
   "application_end_date": "YYYY-MM-DD",
   "salary_min": number (original monthly basic pay if officially known, or null),
   "salary_max": number (original maximum monthly payscale if officially known, or null),
-  "selection_process": "Clear multi-stage breakdown of exams/interviews for this specific post",
+  "selection_process": "Clear multi-stage breakdown of exams/interviews for this specific post (or null if not known)",
   "official_application_link": "Standard official portal URL for this organization (e.g. upsc.gov.in or similar)"
 }
 
 RULES:
 - Provide high-fidelity dates matching the active recruitment cycles for this exam post in 2026.
-- If the exact 2026 dates are unknown, estimate highly logical dates based on the traditional month of occurrence.
+- If the exact 2026 dates are unknown, you MUST return null for both application_start_date and application_end_date. Do NOT estimate, guess, assume, or provide highly logical dates. Any dates returned must be 100% authentic and verified. Under no circumstances should you generate arbitrary dates like "2026-07-01" to "2026-07-31" or generic placeholders.
 - For payscales, ONLY extract if the official basic pay range is known for this specific post. If the payscale is not officially defined or not known, set salary_min and salary_max to null or 0. Never guess, assume, or provide mock placeholders.
+- If the selection process is not officially known for this exact post, set it to null or empty string. Do NOT generate standard templates or placeholders like 'Prelims -> Mains -> Interview'.
 - Keep selection process highly granular specific to this type of organization.
 - Return strictly raw JSON.`;
     }

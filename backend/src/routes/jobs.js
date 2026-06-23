@@ -3,6 +3,7 @@ const router = express.Router();
 const { getDb, ensureVercelUser, getSupabase } = require('../db');
 const auth = require('../middleware/auth');
 const { CANONICAL_CATEGORIES, CANONICAL_STATES, normalizeCategory, normalizeState, validateJob } = require('../constants');
+const { isJobVerified } = require('../services/gemini_recommender');
 
 // ── Server-side in-memory cache for heavy endpoints ────────────────────────────
 const _serverCache = {};
@@ -201,9 +202,16 @@ function getQualificationLevel(qualStr) {
 
 function meetsQualification(user, job) {
     if (!user.qualification_type) return false;
+
+    // If the candidate job does not specify qualification_required, it is open to all
+    if (!job.qualification_required || job.qualification_required.trim().toLowerCase() === 'none') return true;
+
     const userLevel = getQualificationLevel(user.qualification_type);
     const jobLevel = getQualificationLevel(job.qualification_required);
-    if (userLevel === 0 || jobLevel === 0) return false;
+
+    // If the job requires an unrecognized qualification, do not hard-block
+    if (jobLevel === 0) return true;
+    if (userLevel === 0) return false;
 
     if (user.qualification_status === 'Completed') {
         // Completed users are eligible for jobs at or below their qualification level
@@ -214,12 +222,13 @@ function meetsQualification(user, job) {
         // Pursuing users have COMPLETED the level below, so they match lower-level jobs
         if (userLevel > jobLevel) return true;
 
-        // For same-level jobs, only eligible if job allows final year AND user is in final year
-        if (userLevel === jobLevel && job.allows_final_year_students) {
+        // Allow pursuing matching degree by default to keep recommendations helpful
+        if (userLevel === jobLevel) {
+            if (!job.allows_final_year_students) return true; // lenient default
             const currentYearStr = getTodayIST().substring(0, 4);
             const currentYear = parseInt(currentYearStr);
             const expectedGradYear = parseInt(user.expected_graduation_year);
-            if (expectedGradYear > 0 && expectedGradYear === currentYear) {
+            if (!expectedGradYear || expectedGradYear === currentYear || expectedGradYear === currentYear + 1) {
                 return true;
             }
         }
@@ -263,8 +272,14 @@ function meetsTechnicalCriteria(job) {
 }
 
 function meetsAge(user, job) {
-    if (!user.age || user.age === 0) return false;
-    return Number(user.age) >= Number(job.minimum_age) && Number(user.age) <= Number(job.maximum_age);
+    // If user has not specified their age, do not hard-block recommendations
+    if (!user.age || user.age === 0) return true;
+
+    const minAge = job.minimum_age ? Number(job.minimum_age) : 0;
+    const maxAge = job.maximum_age ? Number(job.maximum_age) : 100;
+    const userAge = Number(user.age);
+
+    return userAge >= minAge && userAge <= maxAge;
 }
 
 // GET /api/jobs/categories — returns canonical categories merged with DB data
@@ -546,6 +561,8 @@ router.get('/eligible', auth, async (req, res) => {
         let broadlyEligible = [];
 
         for (const j of jobs) {
+            if (!isJobVerified(j)) continue; // Strictly filter out unverified/placeholder exams
+
             if (hasCompleteProfile) {
                 if (meetsQualification(user, j) && meetsAge(user, j) && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j)) {
                     allEligible.push(j);
@@ -607,6 +624,8 @@ router.get('/partial', auth, async (req, res) => {
         let fallbackJobs = [];
 
         for (const j of jobs) {
+            if (!isJobVerified(j)) continue; // Strictly filter out unverified/placeholder exams
+
             if (hasCompleteProfile) {
                 // Partial means they meet qualification OR age, but NOT both.
                 const isPartial = (meetsQualification(user, j) || meetsAge(user, j)) && !(meetsQualification(user, j) && meetsAge(user, j)) && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j);
@@ -741,11 +760,14 @@ router.post('/:id/like', auth, async (req, res) => {
         await sb.from('ai_recommendation_cache')
             .delete()
             .like('key', `reco:${userId}:%`);
+        await sb.from('ai_recommendation_cache')
+            .delete()
+            .like('key', `reco_full:${userId}:%`);
 
         // Invalidate memory cache in backend service
         try {
             const { invalidateRecommendationsCache } = require('../services/gemini_recommender');
-            invalidateRecommendationsCache(userId);
+            await invalidateRecommendationsCache(userId);
         } catch (e) {
             console.error('Failed to invalidate recommendations memory cache:', e);
         }
@@ -768,11 +790,14 @@ router.delete('/:id/like', auth, async (req, res) => {
         await sb.from('ai_recommendation_cache')
             .delete()
             .like('key', `reco:${userId}:%`);
+        await sb.from('ai_recommendation_cache')
+            .delete()
+            .like('key', `reco_full:${userId}:%`);
 
         // Invalidate memory cache in backend service
         try {
             const { invalidateRecommendationsCache } = require('../services/gemini_recommender');
-            invalidateRecommendationsCache(userId);
+            await invalidateRecommendationsCache(userId);
         } catch (e) {
             console.error('Failed to invalidate recommendations memory cache:', e);
         }

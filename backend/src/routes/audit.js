@@ -137,14 +137,7 @@ router.get('/run', async (req, res) => {
         }
       }
 
-      // 3e. Selection process fill
-      if (!job.selection_process || job.selection_process.trim().length < 10) {
-        const cat = normalizedCat || job.job_category;
-        const template = SELECTION_PROCESS_TEMPLATES[cat];
-        if (template) {
-          selectionToFix.push({ id: job.id, category: cat });
-        }
-      }
+      // 3e. Selection process fill disabled to maintain 100% genuine data integrity (no generic placeholders)
     }
 
     // ── Step 4: Apply fixes ────────────────────────────────────────────
@@ -207,24 +200,7 @@ router.get('/run', async (req, res) => {
       console.log(`[Audit] Normalized ${report.statesNormalized} states`);
     }
 
-    // 4e. Fill selection processes
-    for (const fix of selectionToFix) {
-      const template = SELECTION_PROCESS_TEMPLATES[fix.category];
-      if (template) {
-        try {
-          await db.execute({
-            sql: "UPDATE jobs SET selection_process = ? WHERE id = ? AND (selection_process IS NULL OR selection_process = '')",
-            args: [template, fix.id]
-          });
-          report.selectionProcessFilled++;
-        } catch (e) {
-          report.errors.push(`Failed to fill selection process for ${fix.id}: ${e.message}`);
-        }
-      }
-    }
-    if (report.selectionProcessFilled > 0) {
-      console.log(`[Audit] Filled ${report.selectionProcessFilled} selection processes`);
-    }
+    // 4e. Fill selection processes phase disabled to avoid generic template placeholders
 
     // ── Step 5: Compute final stats ────────────────────────────────────
     const finalCount = await db.execute('SELECT COUNT(*) as cnt FROM jobs');
@@ -343,7 +319,7 @@ router.get('/scrape-job', async (req, res) => {
       }
 
       updateFields.push("discovery_source = 'deep_scraped'");
-      updateFields.push("last_synced_at = ?");
+      updateFields.push("last_verified_at = ?");
       updateArgs.push(new Date().toISOString());
 
       const finalStart = scraped.application_start_date || job.application_start_date;

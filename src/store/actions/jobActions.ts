@@ -162,7 +162,7 @@ export const fetchAllJobsAction = () => async (dispatch: any) => {
                 }),
                 api.getLikedJobs().catch(() => cachedLiked),
                 api.getAppliedJobs().catch(() => cachedApplied),
-                api.getRemindedJobs().catch(() => reminded),
+                api.getRemindedJobs().catch(() => cachedReminded),
             ]);
 
             const resolvedUser = (me && me.full_name) ? me : (cachedUser || { full_name: 'Guest', age: 0 });

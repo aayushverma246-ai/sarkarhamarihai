@@ -343,12 +343,32 @@ export default function RecommendationsWidget({ externalSearch = '', externalCat
         loadingMore,
         refreshing,
         page,
-        hasMore
+        hasMore,
+        error
     } = useAppSelector(selectRecsState);
 
     const recs = useMemo(() => {
-        return rawRecs;
-    }, [rawRecs]);
+        if (!rawRecs || rawRecs.length === 0) return [];
+        const likedIds = new Set((likedJobs || []).map((j: any) => j.id));
+        const sorted = [...rawRecs];
+        sorted.sort((a, b) => {
+            const aLiked = likedIds.has(a.id) ? 1 : 0;
+            const bLiked = likedIds.has(b.id) ? 1 : 0;
+            if (aLiked !== bLiked) return bLiked - aLiked;
+
+            const aVal = a.similarity !== undefined && a.similarity !== null ? a.similarity : a.overlap_score;
+            const bVal = b.similarity !== undefined && b.similarity !== null ? b.similarity : b.overlap_score;
+            const aSim = typeof aVal === 'number' ? aVal : parseFloat(String(aVal)) || 0;
+            const bSim = typeof bVal === 'number' ? bVal : parseFloat(String(bVal)) || 0;
+            if (bSim !== aSim) return bSim - aSim;
+
+            const order: Record<string, number> = { LIVE: 3, UPCOMING: 2, RECENTLY_CLOSED: 1, CLOSED: 0 };
+            const aStatus = order[a.form_status] || 0;
+            const bStatus = order[b.form_status] || 0;
+            return bStatus - aStatus;
+        });
+        return sorted;
+    }, [rawRecs, likedJobs]);
 
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('All');
@@ -603,7 +623,17 @@ export default function RecommendationsWidget({ externalSearch = '', externalCat
             )}
 
             {/* Content */}
-            {showSkeleton && recs.length === 0 ? (
+            {error && recs.length === 0 ? (
+                <div className="text-center py-14 bg-[#0c0c0c] light-card border border-red-500/25 light-border rounded-2xl animate-fadeIn">
+                    <AlertTriangle size={32} className="mx-auto text-red-500 mb-3 animate-pulse" />
+                    <h3 className="text-sm font-bold text-gray-400 mb-1.5">{t('recs.errorTitle') || "Failed to Load Recommendations"}</h3>
+                    <p className="text-gray-600 text-xs max-w-sm mx-auto mb-5 px-4">{error}</p>
+                    <button onClick={() => loadData(1)} 
+                        className="px-5 py-2.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-95">
+                        {t('recs.retryBtn') || "Retry Match Engine"}
+                    </button>
+                </div>
+            ) : showSkeleton && recs.length === 0 ? (
                 <div className="space-y-4 animate-fadeIn">
                     <AIProcessLoader />
                 </div>
@@ -622,9 +652,18 @@ export default function RecommendationsWidget({ externalSearch = '', externalCat
                             onNavigate={handleNavigation}
                             onOpenDetails={setSelectedJob} />
                     ))}
-                    {hasMore && (
+                    {error && recs.length > 0 && (
+                        <div className="p-4 bg-red-950/15 border border-red-800/20 rounded-xl text-center flex flex-col items-center gap-2 max-w-md mx-auto">
+                            <p className="text-xs text-red-400 font-semibold">{error}</p>
+                            <button onClick={() => loadData(Number(page) + 1)} disabled={loadingMore}
+                                className="px-5 py-2 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white text-[10px] font-bold uppercase tracking-wider rounded-xl transition-all active:scale-95">
+                                {loadingMore ? (t('recs.loading') || 'Loading...') : (t('recs.retryBtn') || 'Retry')}
+                            </button>
+                        </div>
+                    )}
+                    {hasMore && !error && (
                         <div className="flex justify-center pt-2 pb-4">
-                            <button onClick={() => loadData(page + 1)} disabled={loadingMore}
+                            <button onClick={() => loadData(Number(page) + 1)} disabled={loadingMore}
                                 className="px-6 py-3 rounded-xl bg-white/[0.04] hover:bg-red-600 text-white font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all duration-300 border border-white/[0.06] hover:border-red-500 disabled:opacity-50 light-bg-subtle light-text light-border hover:text-white hover:border-red-600">
                                 {loadingMore ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
                                 {loadingMore ? (t('recs.loading') || 'Loading...') : (t('recs.loadMore') || 'Load More')}

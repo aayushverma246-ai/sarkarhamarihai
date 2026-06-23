@@ -19,7 +19,7 @@ const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 // ─── Category rules (order matters — first match wins) ───────────────────────
 const RULES = [
-  { pattern: /upsc|civil services|ias |ips |ifs |lbsnaa/i, cat: 'UPSC' },
+  { pattern: /\bupsc\b|\bias\b|\bips\b|\bifs\b|\blbsnaa\b/i, cat: 'UPSC' },
   { pattern: /\bssc\b|staff selection commission|selection post|chsl|cgl |mts |gd constable/i, cat: 'SSC' },
   { pattern: /railway|rrb\b|rrc\b|loco pilot|railway clerk|tier i|tier ii/i, cat: 'Railways' },
   { pattern: /\bbank\b|ibps|rbi\b|nabard|sbi\b|pnb\b|bob\b|canara|po exam|clerk exam|financial services/i, cat: 'Banking' },
@@ -35,7 +35,7 @@ const RULES = [
   { pattern: /jee\b|neet|gate\b|cuet|clat|nift|cat\b|mat\b|admission|entrance exam|competitive exam entrant/i, cat: 'Entrance Exams' },
   { pattern: /scholarship|fellowship|stipend/i, cat: 'Scholarships' },
   { pattern: /apprentice/i, cat: 'Apprenticeships' },
-  { pattern: /\bpsc\b|state public service|state common|subordinate service|state level|rajkiya/i, cat: 'State PSC' },
+  { pattern: /\bpsc\b|state public service|state common|subordinate service|state level|rajkiya/i, cat: 'State PSCs' },
   { pattern: /forest|wildlife|environment|ecology/i, cat: 'Forest & Environment' },
   { pattern: /research|scientist|csir|drdo|isro|dae\b|icar|scientific officer/i, cat: 'Research & Science' },
   { pattern: /port\b|shipping|dredging|shipyard|maritime/i, cat: 'Shipping & Ports' },

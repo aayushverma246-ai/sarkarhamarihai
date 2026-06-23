@@ -9,40 +9,93 @@ export const fetchRecommendationsAction = (
     search = '',
     category = '',
     state = ''
-) => async (dispatch: any) => {
-    const isPage1 = pageNum === 1;
+) => async (dispatch: any, getState: any) => {
+    const pageNumber = Number(pageNum) || 1;
+    const isPage1 = pageNumber === 1;
+
+    const recsState = getState().recs;
+    const currentPage = recsState ? recsState.page : 1;
+
+    // Check if we already have the merged list loaded on the client side for page > 1
+    if (pageNumber > 1 && pageNumber <= currentPage) {
+        dispatch({
+            type: types.FETCH_RECS_START,
+            payload: { isPage1: false }
+        });
+        // Simulate short delay for premium micro-interaction feel
+        await new Promise(r => setTimeout(r, 100));
+        dispatch({
+            type: types.FETCH_RECS_SUCCESS,
+            payload: {
+                allMergedRecs: recsState.allMergedRecs,
+                isPage1: false,
+                hasMore: recsState.hasMore,
+                page: pageNumber,
+            }
+        });
+        return;
+    }
+
     dispatch({
         type: types.FETCH_RECS_START,
         payload: { isPage1 }
     });
 
     try {
-        let res: any = null;
-        let attempts = 0;
+        const categoryFilter = category === 'All' ? '' : category;
+        const stateFilter = (state === 'All' || state === 'All India' || state === 'all') ? '' : state;
 
-        // Clean retry loop for maximum robustness (Gemini API network resiliency)
-        while (!res && attempts < 3) {
-            try {
-                res = await api.aiMatch(combinedExams, pageNum, search, category === 'All' ? '' : category, state);
-            } catch (e) {
-                attempts++;
-                if (attempts >= 3) break;
-                await new Promise(r => setTimeout(r, 2000 * attempts));
+        // Perform a single backend query for the requested page
+        const response = await api.aiMatch(combinedExams, pageNumber, search, categoryFilter, stateFilter);
+
+        // Merge with existing list if pageNumber > 1
+        const existingRecs = isPage1 ? [] : (recsState && recsState.allMergedRecs ? recsState.allMergedRecs : []);
+        const newRecs = response && Array.isArray(response.data) ? response.data : [];
+
+        // Merge and deduplicate results
+        const seen = new Set(existingRecs.map((r: any) => r.id));
+        const mergedList = [...existingRecs];
+        for (const r of newRecs) {
+            if (r && r.id && !seen.has(r.id)) {
+                seen.add(r.id);
+                mergedList.push({
+                    ...r,
+                    explanation: r.explanation || "Syllabus overlap match."
+                });
             }
         }
 
-        if (!res) {
-            throw new Error('Failed to fetch recommendations after 3 attempts');
-        }
+        const likedJobs = getState().jobs.likedJobs || [];
+        const likedIds = new Set(likedJobs.map((j: any) => j.id));
 
-        const newData = (res.data || []).map((r: any) => ({
-            ...r,
-            explanation: r.explanation || "Syllabus overlap match."
-        }));
+        // Sort: Liked first, then DESC by similarity, then LIVE first
+        mergedList.sort((a, b) => {
+            const aLiked = likedIds.has(a.id) ? 1 : 0;
+            const bLiked = likedIds.has(b.id) ? 1 : 0;
+            if (aLiked !== bLiked) return bLiked - aLiked;
+
+            const aVal = a.similarity !== undefined && a.similarity !== null ? a.similarity : a.overlap_score;
+            const bVal = b.similarity !== undefined && b.similarity !== null ? b.similarity : b.overlap_score;
+            const aSim = typeof aVal === 'number' ? aVal : parseFloat(String(aVal)) || 0;
+            const bSim = typeof bVal === 'number' ? bVal : parseFloat(String(bVal)) || 0;
+            if (bSim !== aSim) return bSim - aSim;
+
+            const order: Record<string, number> = { LIVE: 3, UPCOMING: 2, RECENTLY_CLOSED: 1, CLOSED: 0 };
+            const aStatus = order[a.form_status] || 0;
+            const bStatus = order[b.form_status] || 0;
+            return bStatus - aStatus;
+        });
+
+        // Filter out recommendations with less than 70% overlap (backend should have filtered it, but keeping for safety)
+        const filteredList = mergedList.filter(r => {
+            const val = r.similarity !== undefined && r.similarity !== null ? r.similarity : r.overlap_score;
+            const score = typeof val === 'number' ? val : parseFloat(String(val)) || 0;
+            return score >= 70;
+        });
 
         if (isPage1) {
             try {
-                localStorage.setItem('ai_recs_cache', JSON.stringify(newData.slice(0, 8)));
+                localStorage.setItem('ai_recs_cache', JSON.stringify(filteredList.slice(0, 8)));
             } catch (err) {
                 console.warn('Failed to cache AI recs in localStorage:', err);
             }
@@ -51,10 +104,10 @@ export const fetchRecommendationsAction = (
         dispatch({
             type: types.FETCH_RECS_SUCCESS,
             payload: {
-                recs: newData,
-                page: res.page || pageNum,
-                hasMore: res.hasMore || false,
-                isPage1,
+                allMergedRecs: filteredList,
+                isPage1: isPage1,
+                hasMore: response?.hasMore ?? (newRecs.length === 10),
+                page: pageNumber,
             }
         });
     } catch (err: any) {
@@ -68,15 +121,20 @@ export const fetchRecommendationsAction = (
             console.warn('Failed to parse cached recommendations:', cacheErr);
         }
 
-        if (cachedData && cachedData.length > 0) {
+        if (cachedData && cachedData.length > 0 && isPage1) {
             console.log('AI Recommender offline/failed. Loaded verified recommendations from local cache.');
+            const filteredCache = cachedData.filter((r: any) => {
+                const val = r.similarity !== undefined && r.similarity !== null ? r.similarity : r.overlap_score;
+                const score = typeof val === 'number' ? val : parseFloat(String(val)) || 0;
+                return score >= 70;
+            });
             dispatch({
                 type: types.FETCH_RECS_SUCCESS,
                 payload: {
-                    recs: cachedData,
-                    page: pageNum,
+                    allMergedRecs: filteredCache,
+                    isPage1: true,
                     hasMore: false,
-                    isPage1,
+                    page: 1,
                 }
             });
         } else {

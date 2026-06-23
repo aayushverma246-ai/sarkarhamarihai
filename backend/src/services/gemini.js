@@ -54,40 +54,8 @@ let oldestUserCreatedAt = null;
  * - Return false if trial age > 90 days (roll back to Google AI Studio).
  */
 async function isWithinVertexTrial() {
-  let startDate = null;
-
-  // 1. Check for manual environment override first
-  if (process.env.VERTEX_TRIAL_START_DATE) {
-    startDate = new Date(process.env.VERTEX_TRIAL_START_DATE);
-  }
-
-  // 2. Fall back to oldest user registration date (global launch tracking)
-  if (!startDate) {
-    if (!oldestUserCreatedAt) {
-      try {
-        const { getDb } = require('../db');
-        const db = getDb();
-        const minRes = await db.execute('SELECT MIN(created_at) as min_created FROM users');
-        if (minRes.rows && minRes.rows[0] && minRes.rows[0].min_created) {
-          oldestUserCreatedAt = new Date(minRes.rows[0].min_created);
-        }
-      } catch (err) {
-        console.warn('[AI] Failed to fetch oldest user created_at:', err.message);
-      }
-    }
-    startDate = oldestUserCreatedAt;
-  }
-
-  // Calculate age
-  if (startDate) {
-    const trialAgeMs = Date.now() - startDate.getTime();
-    const trialAgeDays = trialAgeMs / (1000 * 60 * 60 * 24);
-    // If we are within 90 days of the start date, we return true (use Vertex AI).
-    // Otherwise, we return false (roll back to Google AI Studio).
-    return trialAgeDays <= 90;
-  }
-
-  return true; // Safe default: if we can't determine, default to trial-active (Vertex AI)
+  // Bypassed to utilize full Vertex AI potential
+  return true;
 }
 
 /**
@@ -132,8 +100,9 @@ async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs
       config.responseMimeType = responseMimeType;
     }
 
+    const activeStudioModel = isTrialActive ? "gemini-1.5-pro" : MODEL_NAME_STUDIO;
     const model = genAI.getGenerativeModel({
-      model: MODEL_NAME_STUDIO,
+      model: activeStudioModel,
       generationConfig: config
     });
 
@@ -383,11 +352,20 @@ function generateAILikeResponse(sourceSyllabus, targets) {
       ? missingClusters.map(capitalize).concat([...new Set(missingWords)].slice(0, 5))
       : [...new Set(missingWords)].slice(0, 10);
 
-    const explanations = [
-      `Strong syllabus overlap of ${similarity}% — ${sharedClusters.length > 0 ? sharedClusters.map(capitalize).join(', ') + ' sections align well' : overlapping.length + ' common topics found'}.`,
-      `${similarity}% content match detected. ${missing.length > 0 ? 'Additional preparation needed in ' + missing.slice(0, 2).join(' and ') + '.' : 'Minimal gaps identified.'}`,
-      `Syllabus analysis shows ${similarity}% compatibility. ${overlapping.length} shared topics provide a strong foundation.`
-    ];
+    const capOverlapping = overlapping.slice(0, 3).map(s => typeof s === 'string' ? capitalize(s) : s);
+    const capMissing = missing.slice(0, 2).map(s => typeof s === 'string' ? capitalize(s) : s);
+
+    let explanation = '';
+    if (similarity >= 85) {
+      const sharedText = capOverlapping.length > 0 ? `${capOverlapping.join(', ')} align closely. ` : '';
+      explanation = `Very strong syllabus overlap of ${similarity}% — ${sharedText}${capMissing.length === 0 ? 'No major preparation gaps detected.' : `Minor gaps exist in ${capMissing.join(', ')}.`}`;
+    } else if (similarity >= 70) {
+      const sharedText = capOverlapping.length > 0 ? ` in ${capOverlapping.slice(0, 2).join(' and ')}` : '';
+      explanation = `High syllabus compatibility of ${similarity}%${sharedText}. Focus on studying ${capMissing.join(' and ')} to bridge the remaining gaps.`;
+    } else {
+      const sharedText = capOverlapping.length > 0 ? ` on ${capOverlapping.slice(0, 2).join(', ')}` : '';
+      explanation = `Moderate syllabus match of ${similarity}%${sharedText}. Additional preparation is required for subjects like ${capMissing.join(', ')}.`;
+    }
 
     return {
       id: target.id,
@@ -395,7 +373,7 @@ function generateAILikeResponse(sourceSyllabus, targets) {
       overlapping_topics: overlapping.slice(0, 10),
       missing_topics: missing.slice(0, 10),
       difficulty_gap: similarity >= 85 ? 'low' : similarity >= 70 ? 'medium' : 'high',
-      explanation: explanations[Math.floor(Math.random() * explanations.length)]
+      explanation
     };
   });
 }
@@ -634,7 +612,8 @@ STRICT OUTPUT FORMAT (JSON ONLY):
 }
 
 RULES:
-- Every section MUST be filled — no empty arrays or placeholders.
+- Every section MUST be filled — no empty arrays, generic text, or mock placeholders.
+- Any reference books, platforms, websites, or YouTube channels recommended MUST be real, authentic, widely-known, and specific to the Indian government exam category (e.g., M. Laxmikanth for Indian Polity, R.S. Aggarwal for Quantitative Aptitude, Testbook for Mock Tests, The Hindu for Current Affairs). Never return placeholders like 'Standard reference books', 'Book A', 'XYZ Website', or generic/dummy titles.
 - 100% personalized to this user's age, qualification, available hours.
 - Use SPECIFIC topics from the syllabus, NOT generic advice.
 - Bullet-heavy. NO paragraphs. Clean and minimal.

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
-const { getRecommendations } = require('../services/gemini_recommender');
+const { getRecommendations, isJobVerified } = require('../services/gemini_recommender');
 const { getSupabase } = require('../db');
 
 function getSb() {
@@ -31,6 +31,9 @@ router.post('/recommendations', auth, async (req, res) => {
     const userId = req.user.id;
     const sb = getSb();
 
+    const cleanCategory = (category === 'All' || category === 'all') ? '' : category;
+    const cleanState = (state === 'All' || state === 'All India' || state === 'all') ? '' : state;
+
     // Get source exam IDs from applied
     let sourceIds = (appliedExams || []).map(e => e.id).filter(Boolean);
 
@@ -47,11 +50,13 @@ router.post('/recommendations', auth, async (req, res) => {
         .select('id, job_name, organization, job_category, form_status, application_start_date, application_end_date, salary_min, salary_max, qualification_required, official_application_link, official_website_link')
         .in('form_status', ['LIVE', 'UPCOMING'])
         .order('application_end_date', { ascending: false })
-        .limit(30);
+        .limit(100);
+
+      const verifiedPopular = (popular || []).filter(isJobVerified);
 
       const PAGE_SIZE = 10;
-      const start = (page - 1) * PAGE_SIZE;
-      const data = (popular || []).slice(start, start + PAGE_SIZE).map(job => ({
+      const startIdx = (page - 1) * PAGE_SIZE;
+      const data = verifiedPopular.slice(startIdx, startIdx + PAGE_SIZE).map(job => ({
         ...job,
         similarity: 0,
         overlap_score: 0,
@@ -62,11 +67,11 @@ router.post('/recommendations', auth, async (req, res) => {
         gap_analysis: { matched_topics: [], missing_topics: [], extra_topics: [] },
       }));
 
-      return res.json({ data, hasMore: (popular || []).length > start + PAGE_SIZE, page, totalMatches: (popular || []).length });
+      return res.json({ data, hasMore: verifiedPopular.length > startIdx + PAGE_SIZE, page, totalMatches: verifiedPopular.length });
     }
 
     // Use Gemini recommendation engine
-    const result = await getRecommendations(sourceIds, userId, { page, search, category, state });
+    const result = await getRecommendations(sourceIds, userId, { page, search, category: cleanCategory, state: cleanState });
     return res.json(result);
   } catch (err) {
     console.error('[AI Route] Error:', err.message);

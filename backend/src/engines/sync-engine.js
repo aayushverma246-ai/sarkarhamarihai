@@ -239,26 +239,38 @@ class SyncEngine {
         if (records.length === 0) break;
 
         for (const record of records) {
-          // Recompute checksum
-          const freshChecksum = computeChecksum(record);
-          const storedChecksum = record.sync_checksum || '';
+          // Verify record using the validator rules or form_status check
+          let needsUpdate = false;
+          if (record.application_start_date && record.application_end_date) {
+            const { computeFormStatus } = require('./validator');
+            const correct = computeFormStatus(record.application_start_date, record.application_end_date);
+            if (correct !== record.form_status) {
+              needsUpdate = true;
+              if (!this.dryRun) {
+                try {
+                  await this.db.execute({
+                    sql: `UPDATE ${this.table} SET form_status = ?, last_verified_at = ? WHERE id = ?`,
+                    args: [correct, new Date().toISOString(), record.id],
+                  });
+                  totalFixed++;
+                } catch (err) {
+                  // Non-fatal
+                }
+              }
+            }
+          }
 
-          if (freshChecksum !== storedChecksum && !this.dryRun) {
-            // Update the stored checksum
+          if (!needsUpdate && !this.dryRun) {
             try {
               await this.db.execute({
-                sql: `UPDATE ${this.table} SET sync_checksum = ?, last_synced_at = datetime('now') WHERE id = ?`,
-                args: [freshChecksum, record.id],
+                sql: `UPDATE ${this.table} SET last_verified_at = ? WHERE id = ?`,
+                args: [new Date().toISOString(), record.id],
               });
-              totalFixed++;
             } catch (err) {
               // Non-fatal
             }
           }
 
-          if (freshChecksum !== storedChecksum) {
-            totalMismatches++;
-          }
           totalVerified++;
         }
 
@@ -344,17 +356,16 @@ class SyncEngine {
   async _applyInserts(records) {
     for (const record of records) {
       try {
-        const checksum = computeChecksum(record);
         const fields = Object.keys(record);
         const values = Object.values(record);
         const placeholders = fields.map(() => '?').join(',');
 
         // Add sync metadata
-        fields.push('sync_checksum', 'sync_version', 'last_synced_at');
-        values.push(checksum, 1, new Date().toISOString());
+        fields.push('last_verified_at');
+        values.push(new Date().toISOString());
 
         await this.db.execute({
-          sql: `INSERT OR IGNORE INTO ${this.table} (${fields.join(',')}) VALUES (${fields.map(() => '?').join(',')})`,
+          sql: `INSERT INTO ${this.table} (${fields.join(',')}) VALUES (${fields.map(() => '?').join(',')}) ON CONFLICT (id) DO NOTHING`,
           args: values,
         });
         this.stats.inserted++;
@@ -390,8 +401,8 @@ class SyncEngine {
         }
 
         // Add sync metadata
-        setClauses.push('sync_checksum = ?', 'sync_version = ?', "last_synced_at = datetime('now')");
-        setArgs.push(update.newChecksum, update.newVersion);
+        setClauses.push('last_verified_at = ?');
+        setArgs.push(new Date().toISOString());
 
         // Add WHERE clause
         setArgs.push(update.id);

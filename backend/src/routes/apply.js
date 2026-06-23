@@ -146,11 +146,14 @@ router.post('/toggle', auth, async (req, res) => {
         await sb.from('ai_recommendation_cache')
             .delete()
             .like('key', `reco:${req.user.id}:%`);
+        await sb.from('ai_recommendation_cache')
+            .delete()
+            .like('key', `reco_full:${req.user.id}:%`);
 
         // Invalidate memory cache in backend service
         try {
             const { invalidateRecommendationsCache } = require('../services/gemini_recommender');
-            invalidateRecommendationsCache(req.user.id);
+            await invalidateRecommendationsCache(req.user.id);
         } catch (e) {
             console.error('Failed to invalidate recommendations memory cache:', e);
         }
@@ -237,11 +240,14 @@ router.delete('/applied-exam', auth, async (req, res) => {
         await sb.from('ai_recommendation_cache')
             .delete()
             .like('key', `reco:${req.user.id}:%`);
+        await sb.from('ai_recommendation_cache')
+            .delete()
+            .like('key', `reco_full:${req.user.id}:%`);
 
         // Invalidate memory cache in backend service
         try {
             const { invalidateRecommendationsCache } = require('../services/gemini_recommender');
-            invalidateRecommendationsCache(req.user.id);
+            await invalidateRecommendationsCache(req.user.id);
         } catch (e) {
             console.error('Failed to invalidate recommendations memory cache:', e);
         }

@@ -264,7 +264,7 @@ async function geminiCompareExams(sourceSyllabus, sourceExamNames, targetExams) 
     console.error('[AI Cache] Load error:', err.message);
   }
 
-  const CHUNK_SIZE = 3;
+  const CHUNK_SIZE = 5;
   const allResults = [];
 
   for (let start = 0; start < targetExams.length; start += CHUNK_SIZE) {
@@ -335,7 +335,7 @@ SCORING RULES:
       let lastErr = null;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const response = await generateContentDynamic(prompt, 'application/json', 5000);
+          const response = await generateContentDynamic(prompt, 'application/json', 25000);
 
           const text = response.text();
           let parsed;
@@ -657,6 +657,49 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     // Ignore and proceed to recompute
   }
 
+  // Check the full scored cache (reco_full) to load other pages instantly
+  const fullCacheKey = `reco_full:${userId}:${sourceExamIds.sort().join(',')}:${category}:${search}:${state}`;
+  let fullScoredList = null;
+  const cachedFullMem = _resultCache.get(fullCacheKey);
+  if (cachedFullMem && (Date.now() - cachedFullMem.ts) < RESULT_TTL) {
+    fullScoredList = cachedFullMem.data;
+  } else {
+    try {
+      const { data: cachedRow } = await sb
+        .from('ai_recommendation_cache')
+        .select('data, created_at')
+        .eq('key', fullCacheKey)
+        .single();
+
+      if (cachedRow) {
+        const age = Date.now() - new Date(cachedRow.created_at).getTime();
+        if (age < RESULT_TTL) {
+          console.log(`[AI Cache] Full cache hit: ${fullCacheKey}`);
+          fullScoredList = cachedRow.data;
+          _resultCache.set(fullCacheKey, { data: fullScoredList, ts: Date.now() });
+        }
+      }
+    } catch (err) {
+      // Ignore
+    }
+  }
+
+  if (fullScoredList) {
+    const PAGE_SIZE = 10;
+    const startIdx = (page - 1) * PAGE_SIZE;
+    const pageData = fullScoredList.slice(startIdx, startIdx + PAGE_SIZE);
+    const result = { data: pageData, hasMore: fullScoredList.length > startIdx + PAGE_SIZE, page, totalMatches: fullScoredList.length };
+
+    _resultCache.set(cacheKey, { data: result, ts: Date.now() });
+    try {
+      await sb.from('ai_recommendation_cache')
+        .upsert({ key: cacheKey, data: result, updated_at: new Date().toISOString() });
+    } catch (err) {
+      // Ignore
+    }
+    return result;
+  }
+
   // Fetch user profile from Supabase
   let user = null;
   try {
@@ -694,19 +737,8 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     }
   }
 
-  // 2b. GEMINI STEP 1: Extract/enrich syllabus for source exams
-  console.log(`[AI v2] Extracting syllabus for ${sourceExams.length} source exam(s)...`);
-  const enrichedSourceSyllabi = [];
-  for (const e of sourceExams) {
-    try {
-      const enriched = await extractSyllabusWithGemini(e.job_name, e.organization, e.syllabus);
-      enrichedSourceSyllabi.push(enriched);
-    } catch (err) {
-      console.warn(`[AI v2] Syllabus extraction failed for "${e.job_name}", falling back to plain syllabus in DB:`, err.message);
-      enrichedSourceSyllabi.push(e.syllabus || '');
-    }
-  }
-  const combinedSyllabus = enrichedSourceSyllabi.join(' ');
+  // 2b. Use database/blueprint source syllabi directly to optimize hot path latency
+  const combinedSyllabus = sourceExams.map(e => e.syllabus || '').join(' ');
   const sourceStructured = structureSyllabus(combinedSyllabus);
   const sourceCategories = [...new Set(sourceExams.map(e => e.job_category).filter(Boolean))];
   const sourceExamNames = sourceExams.map(e => e.job_name).sort();
@@ -784,7 +816,7 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
           allCandidates.push(...likedCandidates);
         }
       } catch (err) {
-        console.warn(`[AI Recommendations] Failed to fetch missing liked jobs:`, err.message);
+        console.warn(`[AI Recommendations] Failed to fetch liked jobs:`, err.message);
       }
     }
   }
@@ -823,38 +855,44 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
 
   // 5. Pre-filter with local matching (generous pass)
   const shortlisted = allCandidates.filter(c => likedSet.has(c.id) || preFilter(sourceStructured, c, sourceCategories));
-  
-  // Sort liked ones to the front of shortlisted pool so they are guaranteed to be processed in topCandidates / enrichmentBatch
-  shortlisted.sort((a, b) => {
-    const aLiked = likedSet.has(a.id) ? 1 : 0;
-    const bLiked = likedSet.has(b.id) ? 1 : 0;
-    return bLiked - aLiked;
-  });
 
-  console.log(`[AI v2] Pre-filtered & liked prioritized: ${shortlisted.length}/${allCandidates.length} candidates`);
-
-  // 6. GEMINI STEP 2: Enrich shortlisted exams' syllabi (Optimized pool to prevent API limits)
-  const topCandidates = shortlisted.slice(0, 25);
-  const enrichmentBatch = topCandidates.slice(0, 15); // Enrich top 15 with Gemini
-
-  for (const cand of enrichmentBatch) {
-    if (!isGeminiHealthy()) {
-      cand.enrichedSyllabus = cand.syllabus;
-      continue;
-    }
-    try {
-      cand.enrichedSyllabus = await extractSyllabusWithGemini(cand.job_name, cand.organization, cand.syllabus);
-    } catch (err) {
-      console.warn(`[AI v2] Candidate syllabus enrichment failed for "${cand.job_name}":`, err.message);
-      cand.enrichedSyllabus = cand.syllabus;
-    }
+  // Compute initial fast local score for ALL shortlisted candidates
+  const candidatesWithLocalScore = [];
+  for (const cand of shortlisted) {
+    cand.enrichedSyllabus = cand.syllabus;
+    const candStructured = structureSyllabus(cand.enrichedSyllabus || cand.syllabus, cand.job_name);
+    const isSameCat = sourceCategories.includes(cand.job_category);
+    // Use semantic similarity = 0 for initial fast local score calculation
+    const { localScore, sharedSubjects } = computeLocalScore(sourceStructured, candStructured, 0, isSameCat);
+    candidatesWithLocalScore.push({
+      cand,
+      candStructured,
+      localScore,
+      sharedSubjects,
+      isSameCat
+    });
   }
 
-  // 7. GEMINI STEP 3: Batch compare ALL shortlisted exams using Gemini
+  // Sort candidates by localScore DESC
+  candidatesWithLocalScore.sort((a, b) => {
+    const aLiked = likedSet.has(a.cand.id) ? 1 : 0;
+    const bLiked = likedSet.has(b.cand.id) ? 1 : 0;
+    if (aLiked !== bLiked) return bLiked - aLiked;
+    return b.localScore - a.localScore;
+  });
+
+  // Now, take the top candidates (e.g. top 15) to perform deep semantic (embedding) and Gemini comparisons
+  const topCandidatesSubset = candidatesWithLocalScore.slice(0, 15);
+  const remainingCandidatesSubset = candidatesWithLocalScore.slice(15);
+
+  // 7. GEMINI STEP 3: Batch compare top 10 candidates using Gemini
   let geminiResults = [];
   try {
-    console.log(`[AI v2] Running Gemini comparison on ${topCandidates.length} candidates...`);
-    geminiResults = await geminiCompareExams(combinedSyllabus, sourceExamNames, topCandidates);
+    const geminiCompareCandidates = topCandidatesSubset.slice(0, 10).map(item => item.cand);
+    if (geminiCompareCandidates.length > 0) {
+      console.log(`[AI v2] Running Gemini comparison on ${geminiCompareCandidates.length} top candidates...`);
+      geminiResults = await geminiCompareExams(combinedSyllabus, sourceExamNames, geminiCompareCandidates);
+    }
   } catch (err) {
     console.warn(`[AI v2] Gemini batch comparison failed, falling back to local scoring metrics:`, err.message);
   }
@@ -865,14 +903,15 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     geminiMap.set(r.id, r);
   }
 
-  // 8. Score ALL candidates (hybrid: local + Gemini)
+  // 8. Score ALL candidates (hybrid: local + Gemini + embeddings)
   const scored = [];
 
-  for (const cand of topCandidates) {
-    const candStructured = structureSyllabus(cand.enrichedSyllabus || cand.syllabus, cand.job_name);
+  // Score top candidates (hybrid: local + embeddings + Gemini)
+  for (const item of topCandidatesSubset) {
+    const { cand, candStructured, isSameCat } = item;
     const geminiResult = geminiMap.get(cand.id);
 
-    // Semantic similarity via embeddings
+    // Semantic similarity via embeddings (only for top candidates)
     let semSim = 0;
     const candSyllabusText = cand.enrichedSyllabus || cand.syllabus || '';
     if (sourceEmbedding && candSyllabusText.length > 20) {
@@ -887,10 +926,8 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
       }
     }
 
-    const isSameCat = sourceCategories.includes(cand.job_category);
     const { localScore, subjectScore, keywordScore, semanticScore, sharedSubjects } = computeLocalScore(sourceStructured, candStructured, semSim, isSameCat);
 
-    // HYBRID SCORE: Gemini AI (50%) + Local analysis (50%)
     let finalScore;
     let geminiExplanation = '';
     let overlappingTopics = [];
@@ -902,7 +939,6 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     let studyTimeEstimate = '';
 
     if (geminiResult && geminiResult.overlap_percentage > 0) {
-      // Use the BEST of Gemini and local scores — never let bad Gemini data drag down a good local score
       const geminiScore = geminiResult.overlap_percentage;
       finalScore = Math.max(geminiScore, localScore);
       geminiExplanation = geminiResult.explanation || '';
@@ -914,13 +950,11 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
       difficultyComparison = geminiResult.difficulty_comparison || 'similar';
       studyTimeEstimate = geminiResult.study_time_estimate || '';
     } else {
-      // Fallback: local-only scoring
       finalScore = localScore;
       const gap = computeGapAnalysis(sourceStructured, candStructured);
       overlappingTopics = gap.matched_topics;
       missingTopics = gap.missing_topics;
 
-      // Dynamic difficulty estimation based on qualifications
       const maxSourceLevel = Math.max(...sourceExams.map(e => getQualificationLevel(e.qualification_required)), 1);
       const candLevel = getQualificationLevel(cand.qualification_required);
       if (candLevel > maxSourceLevel) {
@@ -932,17 +966,14 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
       }
     }
 
-    // ═══ DYNAMIC THRESHOLD ═══
-    const isLocalFallback = !geminiResult;
-    const threshold = isLocalFallback ? 15 : 45;
-    if (finalScore < threshold && !likedSet.has(cand.id)) continue;
+    // STRICT FILTER FOR OVERLAP >= 70%
+    if (finalScore < 70) continue;
 
     const diffGap = finalScore >= 85 ? 'low' : finalScore >= 60 ? 'medium' : 'high';
     const gap = computeGapAnalysis(sourceStructured, candStructured);
-
-    // Use Gemini topics if available, fall back to local
     const finalOverlapping = overlappingTopics.length > 0 ? overlappingTopics : gap.matched_topics;
     const finalMissing = missingTopics.length > 0 ? missingTopics : gap.missing_topics;
+    const finalStudyTimeEstimate = studyTimeEstimate || (finalScore >= 85 ? '1-2 weeks additional' : finalScore >= 75 ? '3-4 weeks additional' : '6-8 weeks additional');
 
     scored.push({
       id: cand.id,
@@ -968,7 +999,7 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
       extra_preparation_needed: extraPrep.length > 0 ? extraPrep : finalMissing.slice(0, 5),
       difficulty_gap: diffGap,
       difficulty_comparison: difficultyComparison,
-      study_time_estimate: studyTimeEstimate || (finalScore >= 85 ? '1-2 weeks additional' : finalScore >= 75 ? '3-4 weeks additional' : '6-8 weeks additional'),
+      study_time_estimate: finalStudyTimeEstimate,
       gap_analysis: {
         matched_topics: finalOverlapping,
         missing_topics: finalMissing,
@@ -985,7 +1016,6 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
           }))
           : (overlappingSubjects.length > 0 ? overlappingSubjects : sharedSubjects).map((s, idx) => {
             const cap = typeof s === 'string' ? s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : s;
-            // Deterministic per-subject score based on subject index offset from final score
             const offsetMap = [0, -5, 3, -8, 5, -3, 7, -2, 4, -6];
             const offset = offsetMap[idx % offsetMap.length];
             const subPct = Math.min(100, Math.max(30, finalScore + offset));
@@ -1008,7 +1038,7 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
         preparation_roadmap: (extraPrep.length > 0 ? extraPrep : finalMissing).length > 0
           ? (extraPrep.length > 0 ? extraPrep : finalMissing).slice(0, 5).map(t => ({
               task: `Study ${t} comprehensively`,
-              effort_estimation: studyTimeEstimate || (finalScore >= 85 ? '1-2 weeks' : finalScore >= 75 ? '2-4 weeks' : '4-6 weeks'),
+              effort_estimation: finalStudyTimeEstimate,
             }))
           : [
               {
@@ -1039,7 +1069,7 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
               : 'Minimal risk — strong syllabus alignment.',
         },
         difficulty_comparison: difficultyComparison,
-        study_time_estimate: studyTimeEstimate,
+        study_time_estimate: finalStudyTimeEstimate,
       },
       actions: {
         explore: `/jobs/${cand.id}`,
@@ -1048,122 +1078,132 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     });
   }
 
-  // ═══ CATEGORY-BASED FALLBACK PASS FOR SPARSE MATCHES ═══
-  if (scored.length === 0 && topCandidates.length > 0) {
-    console.log(`[AI v2 Fallback] 0 matches found at high threshold. Applying category-based fallback pass...`);
-    for (const cand of topCandidates) {
-      const candStructured = structureSyllabus(cand.enrichedSyllabus || cand.syllabus, cand.job_name);
+  // Score remaining candidates (local-only scoring, no embedding call)
+  for (const item of remainingCandidatesSubset) {
+    const { cand, candStructured, localScore, sharedSubjects } = item;
 
-      const isSameCat = sourceCategories.some(cat => {
-        if (!cat || !cand.job_category) return false;
-        const c1 = cat.toLowerCase();
-        const c2 = cand.job_category.toLowerCase();
-        return c1.includes(c2) || c2.includes(c1);
-      });
-      if (!isSameCat) continue; // Focus strictly on same-category matches in fallback
+    // STRICT FILTER FOR OVERLAP >= 70%
+    if (localScore < 70) continue;
 
-      const { localScore, sharedSubjects } = computeLocalScore(sourceStructured, candStructured, 0, isSameCat);
+    const gap = computeGapAnalysis(sourceStructured, candStructured);
+    const diffGap = localScore >= 85 ? 'low' : localScore >= 60 ? 'medium' : 'high';
+    const finalStudyTimeEstimate = localScore >= 85 ? '1-2 weeks additional' : localScore >= 75 ? '3-4 weeks additional' : '6-8 weeks additional';
 
-      // Let's use a relaxed 35% threshold for the category fallback
-      const fallbackScore = Math.max(35, localScore);
-
-      const gap = computeGapAnalysis(sourceStructured, candStructured);
-      const diffGap = fallbackScore >= 85 ? 'low' : fallbackScore >= 60 ? 'medium' : 'high';
-
-      scored.push({
-        id: cand.id,
-        job_name: cand.job_name,
-        organization: cand.organization,
-        job_category: cand.job_category,
-        form_status: cand.form_status,
-        application_start_date: cand.application_start_date,
-        application_end_date: cand.application_end_date,
-        salary_min: cand.salary_min,
-        salary_max: cand.salary_max,
-        qualification_required: cand.qualification_required,
-        official_application_link: cand.official_application_link,
-        official_website_link: cand.official_website_link,
-        state: cand.state,
-        similarity: fallbackScore,
-        overlap_score: fallbackScore,
-        explanation: `Category Fallback: Matches on similar exam structure sharing key subjects (like ${sharedSubjects.join(', ')}) expected in a ${cand.job_category} career path.`,
-        overlapping_topics: gap.matched_topics,
-        missing_topics: gap.missing_topics,
-        overlapping_subjects: sharedSubjects.map(s => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')),
-        missing_subjects: [],
-        extra_preparation_needed: gap.missing_topics.slice(0, 5),
-        difficulty_gap: diffGap,
-        difficulty_comparison: 'similar',
-        study_time_estimate: fallbackScore >= 60 ? '2-4 weeks additional' : '4-6 weeks additional',
-        gap_analysis: {
-          matched_topics: gap.matched_topics,
-          missing_topics: gap.missing_topics,
-          extra_topics: gap.extra_topics,
-        },
-        detailed_gap_analysis: {
-          source_exams: sourceExamNames,
-          gemini_powered: false,
-          subject_wise_analysis: sharedSubjects.map((s, idx) => {
-            const cap = typeof s === 'string' ? s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : s;
-            return { subject: cap, overlap_percentage: fallbackScore, gap_percentage: 100 - fallbackScore };
-          }),
-          topic_subtopic_analysis: {
-            common_topics: gap.matched_topics,
-            missing_topics: gap.missing_topics,
-            partial_overlaps: gap.extra_topics.slice(0, 5),
-          },
-          gap_metrics: {
-            total_overlap_percentage: fallbackScore,
-            critical_subject_gaps: gap.missing_topics.slice(0, 3),
-          },
-          priority_classification: {
-            high: gap.missing_topics.length > 0 ? gap.missing_topics.slice(0, 3) : ['None (Syllabus Covered)'],
-            medium: gap.missing_topics.length > 3 ? gap.missing_topics.slice(3, 6) : ['None (Syllabus Covered)'],
-            low: gap.extra_topics.length > 0 ? gap.extra_topics.slice(0, 3) : ['None'],
-          },
-          preparation_roadmap: gap.missing_topics.length > 0
-            ? gap.missing_topics.slice(0, 5).map(t => ({
-                task: `Study ${t} comprehensively`,
-                effort_estimation: '3-4 weeks',
-              }))
-            : [
-                {
-                  task: `Practice full-length mock tests for ${cand.job_name} to maintain peak speed and accuracy`,
-                  effort_estimation: '1-2 weeks'
-                },
-                {
-                  task: `Conduct daily quick revisions of common subjects: ${sharedSubjects.map(s => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')).slice(0, 3).join(', ')}`,
-                  effort_estimation: '1 week'
-                },
-                {
-                  task: `Solve previous years' question papers of ${cand.job_name} to align with specific pattern nuances`,
-                  effort_estimation: '1 week'
-                },
-                {
-                  task: `Stay updated with current affairs and general awareness revisions`,
-                  effort_estimation: 'Daily / Ongoing'
-                }
-              ],
-          risk_analysis: {
-            critical_missing_areas: gap.missing_topics.length > 0 ? gap.missing_topics.slice(0, 3) : ['None (100% Syllabus Covered)'],
-            exam_risk_factors: 'Category balance - some preparation required in new areas.',
-          },
-          difficulty_comparison: 'similar',
-          study_time_estimate: '4-6 weeks',
-        },
-        actions: {
-          explore: `/jobs/${cand.id}`,
-          apply: cand.official_application_link || cand.official_website_link || '',
-        },
-      });
+    const maxSourceLevel = Math.max(...sourceExams.map(e => getQualificationLevel(e.qualification_required)), 1);
+    const candLevel = getQualificationLevel(cand.qualification_required);
+    let difficultyComparison = 'similar';
+    if (candLevel > maxSourceLevel) {
+      difficultyComparison = 'harder';
+    } else if (candLevel < maxSourceLevel) {
+      difficultyComparison = 'easier';
     }
+
+    scored.push({
+      id: cand.id,
+      job_name: cand.job_name,
+      organization: cand.organization,
+      job_category: cand.job_category,
+      form_status: cand.form_status,
+      application_start_date: cand.application_start_date,
+      application_end_date: cand.application_end_date,
+      salary_min: cand.salary_min,
+      salary_max: cand.salary_max,
+      qualification_required: cand.qualification_required,
+      official_application_link: cand.official_application_link,
+      official_website_link: cand.official_website_link,
+      state: cand.state,
+      similarity: localScore,
+      overlap_score: localScore,
+      explanation: buildExplanation(localScore, sharedSubjects, gap, diffGap),
+      overlapping_topics: gap.matched_topics,
+      missing_topics: gap.missing_topics,
+      overlapping_subjects: sharedSubjects.map(s => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')),
+      missing_subjects: [],
+      extra_preparation_needed: gap.missing_topics.slice(0, 5),
+      difficulty_gap: diffGap,
+      difficulty_comparison: difficultyComparison,
+      study_time_estimate: finalStudyTimeEstimate,
+      gap_analysis: {
+        matched_topics: gap.matched_topics,
+        missing_topics: gap.missing_topics,
+        extra_topics: gap.extra_topics,
+      },
+      detailed_gap_analysis: {
+        source_exams: sourceExamNames,
+        gemini_powered: false,
+        subject_wise_analysis: sharedSubjects.map((s, idx) => {
+          const cap = typeof s === 'string' ? s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : s;
+          const offsetMap = [0, -5, 3, -8, 5, -3, 7, -2, 4, -6];
+          const offset = offsetMap[idx % offsetMap.length];
+          const subPct = Math.min(100, Math.max(30, localScore + offset));
+          return { subject: cap, overlap_percentage: subPct, gap_percentage: 100 - subPct };
+        }),
+        topic_subtopic_analysis: {
+          common_topics: gap.matched_topics,
+          missing_topics: gap.missing_topics,
+          partial_overlaps: gap.extra_topics.slice(0, 5),
+        },
+        gap_metrics: {
+          total_overlap_percentage: localScore,
+          critical_subject_gaps: gap.missing_topics.slice(0, 3),
+        },
+        priority_classification: {
+          high: gap.missing_topics.length > 0 ? gap.missing_topics.slice(0, 3) : ['None (Syllabus Covered)'],
+          medium: gap.missing_topics.length > 3 ? gap.missing_topics.slice(3, 6) : ['None (Syllabus Covered)'],
+          low: gap.extra_topics.length > 0 ? gap.extra_topics.slice(0, 3) : ['None'],
+        },
+        preparation_roadmap: gap.missing_topics.length > 0
+          ? gap.missing_topics.slice(0, 5).map(t => ({
+              task: `Study ${t} comprehensively`,
+              effort_estimation: finalStudyTimeEstimate,
+            }))
+          : [
+              {
+                task: `Practice full-length mock tests for ${cand.job_name} to maintain peak speed and accuracy`,
+                effort_estimation: '1-2 weeks'
+              },
+              {
+                task: `Conduct daily quick revisions of common subjects: ${sharedSubjects.map(s => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')).slice(0, 3).join(', ')}`,
+                effort_estimation: '1 week'
+              },
+              {
+                task: `Solve previous years' question papers of ${cand.job_name} to align with specific pattern nuances`,
+                effort_estimation: '1 week'
+              },
+              {
+                task: `Stay updated with current affairs and general awareness revisions`,
+                effort_estimation: 'Daily / Ongoing'
+              }
+            ],
+        risk_analysis: {
+          critical_missing_areas: gap.missing_topics.slice(0, 3),
+          exam_risk_factors: gap.missing_topics.length > 5
+            ? 'Significant preparation needed in new subjects.'
+            : gap.missing_topics.length > 2
+              ? 'Moderate preparation needed for a few topics.'
+              : 'Minimal risk — strong syllabus alignment.',
+        },
+        difficulty_comparison: difficultyComparison,
+        study_time_estimate: finalStudyTimeEstimate,
+      },
+      actions: {
+        explore: `/jobs/${cand.id}`,
+        apply: cand.official_application_link || cand.official_website_link || '',
+      },
+    });
   }
 
-  // Sort: Liked/saved first, then DESC by score, then LIVE first
+  // Sort: Liked/saved first, then 2026 exams first (priority for this year), then DESC by score, then LIVE first
   scored.sort((a, b) => {
     const aLiked = likedSet.has(a.id) ? 1 : 0;
     const bLiked = likedSet.has(b.id) ? 1 : 0;
     if (aLiked !== bLiked) return bLiked - aLiked;
+
+    // Prioritize 2026 exams for the current year
+    const aIs2026 = (a.job_name || '').includes('2026') || (a.application_start_date && a.application_start_date.startsWith('2026')) ? 1 : 0;
+    const bIs2026 = (b.job_name || '').includes('2026') || (b.application_start_date && b.application_start_date.startsWith('2026')) ? 1 : 0;
+    if (aIs2026 !== bIs2026) return bIs2026 - aIs2026;
+
     if (b.similarity !== a.similarity) return b.similarity - a.similarity;
     const order = { LIVE: 3, UPCOMING: 2, RECENTLY_CLOSED: 1, CLOSED: 0 };
     return (order[b.form_status] || 0) - (order[a.form_status] || 0);
@@ -1171,11 +1211,14 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
 
   console.log(`[AI v2] Found ${scored.length} exams with ≥70% overlap`);
 
+  // Cap the persistent scored list to the top 50 most relevant matching exams to prevent database cache bloat
+  const limitedScored = scored.slice(0, 50);
+
   // Store recommendations in Supabase 'ai_recommendations' table for persistent/historical query support
-  if (scored.length > 0) {
+  if (limitedScored.length > 0) {
     const dbRecs = [];
     for (const sourceId of sourceExamIds) {
-      for (const r of scored) {
+      for (const r of limitedScored) {
         dbRecs.push({
           id: `rec_${userId}_${sourceId}_${r.id}`.substring(0, 100),
           user_id: userId,
@@ -1212,11 +1255,20 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     }
   }
 
+  // Store the full list in database cache (so other pages can load instantly)
+  try {
+    await sb.from('ai_recommendation_cache')
+      .upsert({ key: fullCacheKey, data: limitedScored, updated_at: new Date().toISOString() });
+    _resultCache.set(fullCacheKey, { data: limitedScored, ts: Date.now() });
+  } catch (err) {
+    console.error(`[AI Cache] Failed to store full persistent cache in Supabase:`, err.message);
+  }
+
   // Paginate
   const PAGE_SIZE = 10;
   const startIdx = (page - 1) * PAGE_SIZE;
-  const pageData = scored.slice(startIdx, startIdx + PAGE_SIZE);
-  const result = { data: pageData, hasMore: scored.length > startIdx + PAGE_SIZE, page, totalMatches: scored.length };
+  const pageData = limitedScored.slice(startIdx, startIdx + PAGE_SIZE);
+  const result = { data: pageData, hasMore: limitedScored.length > startIdx + PAGE_SIZE, page, totalMatches: limitedScored.length };
 
   _resultCache.set(cacheKey, { data: result, ts: Date.now() });
   try {
@@ -1243,13 +1295,33 @@ function buildExplanation(score, sharedSubjects, gap, diffGap) {
   return `${score}% syllabus alignment detected.${sharedText} ${gap.missing_topics.length > 0 ? `Prepare for ${gap.missing_topics.slice(0, 2).join(', ')}.` : ''}`;
 }
 
-function invalidateRecommendationsCache(userId) {
+async function invalidateRecommendationsCache(userId) {
   // Clear in-memory cache
   for (const key of _resultCache.keys()) {
-    if (key.startsWith(`reco:${userId}:`)) {
+    if (key.startsWith(`reco:${userId}:`) || key.startsWith(`reco_full:${userId}:`)) {
       _resultCache.delete(key);
     }
   }
+
+  // Clear database cache in Supabase
+  try {
+    const sb = getSb();
+    const { error: err1 } = await sb.from('ai_recommendation_cache')
+      .delete()
+      .like('key', `reco:${userId}:%`);
+      
+    const { error: err2 } = await sb.from('ai_recommendation_cache')
+      .delete()
+      .like('key', `reco_full:${userId}:%`);
+
+    if (err1 || err2) {
+      console.warn(`[AI Cache Invalidation] Supabase error for ${userId}:`, err1?.message, err2?.message);
+    } else {
+      console.log(`[AI Cache Invalidation] Successfully cleared DB cache for user ${userId}`);
+    }
+  } catch (err) {
+    console.error(`[AI Cache Invalidation] Failed to clear DB cache:`, err.message);
+  }
 }
 
-module.exports = { getRecommendations, structureSyllabus, computeGapAnalysis, cosineSimilarity, extractSyllabusWithGemini, invalidateRecommendationsCache };
+module.exports = { getRecommendations, structureSyllabus, computeGapAnalysis, cosineSimilarity, extractSyllabusWithGemini, invalidateRecommendationsCache, isJobVerified };

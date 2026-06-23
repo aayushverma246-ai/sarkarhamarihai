@@ -69,18 +69,9 @@ class VerificationEngine {
         }
       }
 
-      // Phase 4: Checksums
-      for (const rec of allRecords) {
-        if (!this.hasTimeBudget()) break;
-        const cs = computeChecksum(rec);
-        if (cs !== rec.sync_checksum) {
-          try { await this.db.execute({ sql: "UPDATE jobs SET sync_checksum = ?, discovery_source = 'deep_scraped', last_synced_at = CURRENT_TIMESTAMP WHERE id = ?", args: [cs, rec.id] }); report.checksumUpdates++; } catch (e) { /* non-fatal */ }
-        }
-      }
-
       report.durationMs = this.elapsed();
       report.success = true;
-      await logOperation({ runId: this.runId, operation: 'full_cycle', source: 'primary_db', totalRecords: report.totalRecords, verified: report.validRecords, mismatches: report.mismatchCount, synced: report.statusUpdates + report.checksumUpdates, errors: report.errors.length, durationMs: report.durationMs, details: report.phases }, this.db);
+      await logOperation({ runId: this.runId, operation: 'full_cycle', source: 'primary_db', totalRecords: report.totalRecords, verified: report.validRecords, mismatches: report.mismatchCount, synced: report.statusUpdates, errors: report.errors.length, durationMs: report.durationMs, details: report.phases }, this.db);
       console.log(`[Verifier] Full: ${report.totalRecords} records, ${report.validRecords} valid, ${report.mismatchCount} mismatches (${report.durationMs}ms)`);
       return report;
     } catch (err) {
@@ -96,7 +87,7 @@ class VerificationEngine {
     this.runId = `vi_${Date.now().toString(36)}`;
     const report = { runId: this.runId, type: 'incremental', totalRecords: 0, verified: 0, mismatches: 0, statusUpdates: 0, errors: [] };
     try {
-      const r = await this.db.execute(`SELECT * FROM jobs ORDER BY last_synced_at ASC NULLS FIRST LIMIT ${limit}`);
+      const r = await this.db.execute(`SELECT * FROM jobs ORDER BY last_verified_at ASC NULLS FIRST LIMIT ${limit}`);
       const records = r.rows || [];
       report.totalRecords = records.length;
 
@@ -108,8 +99,7 @@ class VerificationEngine {
           const correct = computeFormStatus(rec.application_start_date, rec.application_end_date);
           if (correct !== rec.form_status) { await this.db.execute({ sql: "UPDATE jobs SET form_status = ? WHERE id = ?", args: [correct, rec.id] }); report.statusUpdates++; }
         }
-        const cs = computeChecksum(rec);
-        await this.db.execute({ sql: "UPDATE jobs SET sync_checksum = ?, discovery_source = 'deep_scraped', last_synced_at = CURRENT_TIMESTAMP WHERE id = ?", args: [cs, rec.id] });
+        await this.db.execute({ sql: "UPDATE jobs SET last_verified_at = ? WHERE id = ?", args: [new Date().toISOString(), rec.id] });
         report.verified++;
       }
       report.durationMs = this.elapsed(); report.success = true;
@@ -150,7 +140,7 @@ class VerificationEngine {
       const r = await this.db.execute(`
         SELECT id, job_name, organization, official_application_link, application_start_date, application_end_date, salary_min, salary_max, selection_process
         FROM jobs 
-        ORDER BY last_synced_at ASC NULLS FIRST 
+        ORDER BY last_verified_at ASC NULLS FIRST 
         LIMIT ${limit}
       `);
 
@@ -210,7 +200,7 @@ class VerificationEngine {
 
             // Update checksum, status and stamp
             updateFields.push("discovery_source = 'deep_scraped'");
-            updateFields.push("last_synced_at = ?");
+            updateFields.push("last_verified_at = ?");
             updateArgs.push(new Date().toISOString());
 
             // Recompute active form state if dates were updated
@@ -230,7 +220,7 @@ class VerificationEngine {
             } else {
               // Just mark synced
               await this.db.execute({
-                sql: `UPDATE jobs SET discovery_source = 'deep_scraped', last_synced_at = ? WHERE id = ?`,
+                sql: `UPDATE jobs SET discovery_source = 'deep_scraped', last_verified_at = ? WHERE id = ?`,
                 args: [new Date().toISOString(), rec.id]
               });
             }

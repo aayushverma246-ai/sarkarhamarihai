@@ -2,6 +2,7 @@ import * as types from '../actionTypes';
 
 export interface RecommendationsState {
     recs: any[];
+    allMergedRecs: any[];
     loading: boolean;
     loadingMore: boolean;
     refreshing: boolean;
@@ -12,6 +13,7 @@ export interface RecommendationsState {
 
 const initialState: RecommendationsState = {
     recs: [],
+    allMergedRecs: [],
     loading: false,
     loadingMore: false,
     refreshing: false,
@@ -33,15 +35,21 @@ export default function recommendationsReducer(state = initialState, action: any
             };
         }
         case types.FETCH_RECS_SUCCESS: {
-            const { recs, page, hasMore, isPage1 } = action.payload;
+            const { allMergedRecs, isPage1, hasMore, page: payloadPage } = action.payload;
+            const updatedMerged = allMergedRecs || state.allMergedRecs;
+            const page = payloadPage !== undefined ? payloadPage : (isPage1 ? 1 : state.page + 1);
+            const PAGE_SIZE = 10;
+            const visibleRecs = updatedMerged.slice(0, page * PAGE_SIZE);
+            const calculatedHasMore = hasMore !== undefined ? hasMore : (updatedMerged.length > page * PAGE_SIZE);
             return {
                 ...state,
                 loading: false,
                 loadingMore: false,
                 refreshing: false,
-                recs: isPage1 ? recs : [...state.recs, ...recs],
+                allMergedRecs: updatedMerged,
+                recs: visibleRecs,
                 page,
-                hasMore,
+                hasMore: calculatedHasMore,
                 error: null,
             };
         }

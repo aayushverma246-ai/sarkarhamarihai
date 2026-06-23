@@ -9,7 +9,7 @@ async function seedSyllabus() {
         await db.execute(`DROP TABLE IF EXISTS exam_syllabus`);
         await db.execute(`
             CREATE TABLE IF NOT EXISTS exam_syllabus (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 name_pattern TEXT UNIQUE NOT NULL,
                 subjects TEXT NOT NULL,
                 topics TEXT NOT NULL

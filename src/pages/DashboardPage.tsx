@@ -77,6 +77,9 @@ export default function DashboardPage() {
 
   // Unified setter with guaranteed zero-lag paint
   const setActiveTab = useCallback((tab: TabKey) => {
+    setViewMode('exams');
+    localStorage.setItem('dashboard_view_mode', 'exams');
+
     if (tab === prevTabRef.current) return;
 
     // 1. IMMEDIATELY update the visual UI and hide old content.
@@ -577,7 +580,7 @@ export default function DashboardPage() {
             )}
 
             {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-5">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-5">
               <button
                 onClick={() => setActiveTab('all')}
                 className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'all' ? 'border-[#252525] ring-1 ring-[#252525]' : 'border-[#141414] hover:border-[#252525]'}`}
@@ -624,14 +627,14 @@ export default function DashboardPage() {
               </button>
               <button
                 onClick={() => setActiveTab('applied')}
-                className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'applied' ? 'border-purple-900/40 ring-1 ring-purple-900/20' : 'border-[#141414] hover:border-[#1e1e1e]'}`}
+                className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'applied' ? 'border-purple-900/40 ring-1 ring-purple-900/20' : 'border-[#141414] hover:border-[#252525]'}`}
               >
                 <p className="text-[9px] text-purple-700 uppercase tracking-wide">{t('stats.applied')}</p>
                 <p className="text-xl font-bold text-purple-400 mt-0.5">{appliedJobs.length}</p>
               </button>
               <button
                 onClick={() => setActiveTab('reminded')}
-                className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'reminded' ? 'border-amber-900/40 ring-1 ring-amber-900/20' : 'border-[#141414] hover:border-[#1e1e1e]'}`}
+                className={`bg-[#0e0e0e] rounded-lg border p-3 text-left transition-colors ${activeTab === 'reminded' ? 'border-amber-900/40 ring-1 ring-amber-900/20' : 'border-[#141414] hover:border-[#252525]'}`}
               >
                 <p className="text-[9px] text-amber-700 uppercase tracking-wide">Reminders</p>
                 <p className="text-xl font-bold text-amber-400 mt-0.5">{remindedJobs.length}</p>
@@ -730,21 +733,21 @@ export default function DashboardPage() {
                       <button
                         key={tab.key}
                         onClick={() => setActiveTab(tab.key)}
-                        className={`flex items-center gap-1.5 px-4 py-3 text-sm border-b-2 transition-all duration-150 whitespace-nowrap ${visualTab === tab.key
+                        className={`flex items-center gap-1.5 px-4 py-3 text-sm border-b-2 transition-all duration-150 whitespace-nowrap group ${visualTab === tab.key
                           ? 'border-red-700 text-red-400 font-medium'
                           : 'border-transparent text-gray-600 hover:text-gray-400'
                           }`}
                       >
                         {tab.key === 'liked' ? (
                           <span className="flex items-center gap-1">
-                            <svg className={`w-3.5 h-3.5 ${likedJobs.length > 0 ? 'text-red-400' : 'text-gray-600'}`} viewBox="0 0 24 24" fill="currentColor">
+                            <svg className={`w-3.5 h-3.5 ${likedJobs.length > 0 ? 'text-red-400' : 'text-gray-600 group-hover:text-gray-400'}`} viewBox="0 0 24 24" fill="currentColor">
                               <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                             </svg>
                             {tab.label}
                           </span>
                         ) : tab.key === 'reminded' ? (
                           <span className="flex items-center gap-1">
-                            <svg className={`w-3.5 h-3.5 ${remindedJobs.length > 0 ? 'text-amber-400' : 'text-gray-600'}`} viewBox="0 0 24 24" fill="currentColor">
+                            <svg className={`w-3.5 h-3.5 ${remindedJobs.length > 0 ? 'text-amber-400' : 'text-gray-600 group-hover:text-gray-400'}`} viewBox="0 0 24 24" fill="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                             </svg>
                             {tab.label}
@@ -752,7 +755,11 @@ export default function DashboardPage() {
                         ) : (
                           <span>{tab.label}</span>
                         )}
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${visualTab === tab.key ? 'bg-red-900/30 text-red-400' : 'bg-[#111] text-gray-700'}`}>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                          visualTab === tab.key 
+                            ? 'bg-red-900/30 text-red-400' 
+                            : 'bg-white/5 text-gray-400 group-hover:text-gray-300'
+                        }`}>
                           {tab.count}
                         </span>
                         {tab.dot === 'orange' && (
@@ -794,12 +801,18 @@ export default function DashboardPage() {
                         {activeTab === 'liked' ? '♥️' : activeTab === 'applied' ? '✅' : activeTab === 'reminded' ? '🔔' : '🔍'}
                       </div>
                       <h3 className="text-lg font-bold text-gray-200">
-                        {activeTab === 'liked' ? t('empty.saved') : activeTab === 'applied' ? t('empty.applied') : activeTab === 'reminded' ? 'No Reminders' : t('empty.noMatch')}
+                        {activeTab === 'liked' ? t('empty.saved') : activeTab === 'applied' ? t('empty.applied') : activeTab === 'reminded' ? t('empty.reminded') : t('empty.noMatch')}
                       </h3>
                       <p className="text-gray-500 mt-2 text-sm max-w-sm mx-auto leading-relaxed">
                         {activeTab === 'eligible' || activeTab === 'partial' || activeTab === 'eligibleLive'
-                          ? (!hasProfile ? t('empty.profileNeeded') : t('empty.eligibleHint'))
-                          : t('empty.generalHint')}
+                          ? (!hasProfile ? t('empty.profileHint') : t('empty.eligibleHint'))
+                          : activeTab === 'liked'
+                          ? t('empty.savedHint')
+                          : activeTab === 'applied'
+                          ? t('empty.appliedHint')
+                          : activeTab === 'reminded'
+                          ? t('empty.remindedHint')
+                          : t('empty.filterHint')}
                       </p>
                     </div>
                   ) : (

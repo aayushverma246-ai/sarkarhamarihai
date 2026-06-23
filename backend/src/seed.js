@@ -105,20 +105,155 @@ function computeFormStatus(startDate, endDate) {
   return 'CLOSED';
 }
 
+const VERIFIED_UPSC_EXAMS = {
+  'civil services': {
+    id: 'c6dd639b3d748309',
+    job_name: 'UPSC Civil Services (IAS/IPS/IFS) 2026',
+    application_start_date: '2026-02-04',
+    application_end_date: '2026-02-27',
+  },
+  'capf': {
+    id: '4e9b4fa6fcdba5ca',
+    job_name: 'UPSC CAPF Assistant Commandant 2026',
+    application_start_date: '2026-02-20',
+    application_end_date: '2026-03-12',
+  },
+  'cds i': {
+    id: '561c37adabf30c77',
+    job_name: 'UPSC CDS I 2026',
+    application_start_date: '2025-12-10',
+    application_end_date: '2025-12-30',
+  },
+  'cds ii': {
+    id: 'e6a617de08806874',
+    job_name: 'UPSC CDS II 2026',
+    application_start_date: '2026-05-20',
+    application_end_date: '2026-06-09',
+  },
+  'cisf ac': {
+    id: '8cae9a2c4f3bd582',
+    job_name: 'UPSC CISF AC (LDCE) 2026',
+    application_start_date: '2025-12-03',
+    application_end_date: '2025-12-23',
+  },
+  'medical services': {
+    id: '4a422dd21dccf807',
+    job_name: 'UPSC Combined Medical Services CMS 2026',
+    application_start_date: '2026-03-11',
+    application_end_date: '2026-04-01',
+  },
+  'drug inspector': {
+    id: 'f953afb06f9b5880',
+    job_name: 'UPSC Drug Inspector 2026',
+    application_start_date: '2026-05-12',
+    application_end_date: '2026-06-04',
+  },
+  'enforcement officer': {
+    id: '99c141a19c6162f2',
+    job_name: 'UPSC Enforcement Officer/Accounts Officer 2026',
+    application_start_date: '2026-10-29',
+    application_end_date: '2026-11-28',
+  },
+  'engineering services': {
+    id: 'd7a743d2769b9897',
+    job_name: 'UPSC Engineering Services (ESE) 2026',
+    application_start_date: '2025-09-17',
+    application_end_date: '2025-10-08',
+  },
+  'epfo eo/ao': {
+    id: '3bb30e9fd1b8558f',
+    job_name: 'UPSC EPFO EO/AO 2026',
+    application_start_date: '2026-05-23',
+    application_end_date: '2026-06-22',
+  },
+  'geologist': {
+    id: 'f7a2862b01847a32',
+    job_name: 'UPSC Geologist/Geoscientist 2026',
+    application_start_date: '2025-09-04',
+    application_end_date: '2025-09-24',
+  },
+  'ies/iss': {
+    id: '4dd9f9c2cc0d1912',
+    job_name: 'UPSC IES/ISS Economics Statistics 2026',
+    application_start_date: '2026-04-15',
+    application_end_date: '2026-05-05',
+  },
+  'forest service': {
+    id: 'fa524fe74694258c',
+    job_name: 'UPSC Indian Forest Service IFoS 2026',
+    application_start_date: '2026-02-04',
+    application_end_date: '2026-02-27',
+  },
+  'nda & na i': {
+    id: '3106e9bf46d6dadc',
+    job_name: 'UPSC NDA & NA I 2026',
+    application_start_date: '2025-12-18',
+    application_end_date: '2026-01-09',
+  },
+  'nda & na ii': {
+    id: 'c93433cec69658a1',
+    job_name: 'UPSC NDA & NA II 2026',
+    application_start_date: '2026-05-20',
+    application_end_date: '2026-06-09',
+  },
+  'nda iii': {
+    id: '163368cdd871895d',
+    job_name: 'UPSC NDA III 2026',
+    application_start_date: '2026-06-06',
+    application_end_date: '2026-07-06',
+  },
+  'so/steno': {
+    id: '8882fc576e3ac7fd',
+    job_name: 'UPSC SO/Steno Grade D CSSS 2026',
+    application_start_date: '2025-09-17',
+    application_end_date: '2025-10-08',
+  },
+  'scientific officer': {
+    id: 'adb3209175e4394f',
+    job_name: 'UPSC Assistant Director Scientific Officer 2026',
+    application_start_date: '2026-05-30',
+    application_end_date: '2026-06-26',
+  },
+  'cost accounts': {
+    id: '9355acd4df005ced',
+    job_name: 'UPSC Asst Director Cost Accounts 2026',
+    application_start_date: '2026-05-17',
+    application_end_date: '2026-06-11',
+  }
+};
+
 function J(name, org, qual, fy, minA, maxA, s, e, sMin, sMax, cat, link, hi = '', syl = '', sel = '', ta = '', bn = '', state = 'All India', states = []) {
-  const hash = crypto.createHash('sha256').update(`${name}-${org}`).digest('hex').slice(0, 16);
-  const normalizedCat = normalizeCategory(cat);
-  const status = computeFormStatus(s, e);
+  let hash = crypto.createHash('sha256').update(`${name}-${org}`).digest('hex').slice(0, 16);
+  let finalName = name;
+  let finalCat = normalizeCategory(cat);
+  let finalStart = s;
+  let finalEnd = e;
+
+  if (org === 'UPSC' || name.toLowerCase().includes('upsc') || finalCat === 'UPSC') {
+    finalCat = 'UPSC';
+    const nameLower = name.toLowerCase();
+    for (const [key, details] of Object.entries(VERIFIED_UPSC_EXAMS)) {
+      if (nameLower.includes(key)) {
+        hash = details.id;
+        finalName = details.job_name;
+        finalStart = details.application_start_date;
+        finalEnd = details.application_end_date;
+        break;
+      }
+    }
+  }
+
+  const status = computeFormStatus(finalStart, finalEnd);
 
   jobs.push({
     id: hash,
-    job_name: name, organization: org,
+    job_name: finalName, organization: org,
     qualification_required: qual,
     allows_final_year_students: fy ? 1 : 0,
     minimum_age: minA, maximum_age: maxA,
-    application_start_date: s, application_end_date: e,
+    application_start_date: finalStart, application_end_date: finalEnd,
     salary_min: sMin, salary_max: sMax,
-    job_category: normalizedCat,
+    job_category: finalCat,
     official_application_link: link || 'https://india.gov.in',
     official_notification_link: link || 'https://india.gov.in',
     official_website_link: link || 'https://india.gov.in',
@@ -164,25 +299,41 @@ const TL = [
 ];
 const tl = i => TL[((i % TL.length) + TL.length) % TL.length];
 
-// ── UPSC (15) ──────────────────────────────────────────────────────────────
+// ── UPSC (19 Verified) ──────────────────────────────────────────────────────
 const upsc = [
-  ['UPSC Civil Services IAS/IPS/IFS 2026', 'UPSC', 'Graduation', 21, 32, 56100, 250000, 'UPSC', 'यूपीएससी सिविल सेवा परीक्षा (IAS/IPS/IFS) 2026', 'Preliminary: GS Paper I (History, Geography, Polity, Economics, Science, Current Affairs), GS Paper II CSAT (Maths, Reasoning, English comprehension). Main Exam: General Studies 1-4, Essay, Optional Subject.'],
-  ['UPSC Engineering Services ESE 2026', 'UPSC', 'Graduation', 21, 30, 56100, 177500, 'UPSC', 'यूपीएससी इंजीनियरिंग सेवा (ESE) 2026'],
-  ['UPSC CAPF Assistant Commandant 2026', 'UPSC', 'Graduation', 20, 25, 56100, 177500, 'Defence'],
-  ['UPSC CDS I 2026', 'UPSC', 'Graduation', 19, 25, 56100, 177500, 'Defence'],
-  ['UPSC NDA & NA I 2026', 'UPSC', 'Class 12', 16, 19, 56100, 94100, 'Defence'],
-  ['UPSC NDA & NA II 2026', 'UPSC', 'Class 12', 16, 19, 56100, 94100, 'Defence'],
-  ['UPSC CDS II 2026', 'UPSC', 'Graduation', 19, 25, 56100, 177500, 'Defence'],
-  ['UPSC Combined Medical Services CMS 2026', 'UPSC', 'Post Graduation', 21, 32, 56100, 177500, 'Healthcare'],
-  ['UPSC IES/ISS Economics Statistics 2026', 'UPSC', 'Post Graduation', 21, 30, 56100, 177500, 'UPSC'],
-  ['UPSC EPFO EO/AO 2026', 'UPSC', 'Graduation', 21, 30, 47600, 151100, 'UPSC'],
-  ['UPSC Indian Forest Service IFoS 2026', 'UPSC', 'Graduation', 21, 32, 56100, 177500, 'Forest'],
-  ['UPSC Enforcement Officer/Accounts Officer 2026', 'UPSC', 'Graduation', 21, 30, 44900, 142400, 'UPSC'],
-  ['UPSC SO/Steno Grade D CSSS 2026', 'UPSC', 'Graduation', 18, 30, 35400, 112400, 'UPSC'],
-  ['UPSC Drug Inspector 2026', 'UPSC', 'Graduation', 21, 30, 44900, 142400, 'Healthcare'],
-  ['UPSC Assistant Director Scientific Officer 2026', 'UPSC', 'Post Graduation', 21, 35, 47600, 151100, 'Research'],
+  ['UPSC Civil Services (IAS/IPS/IFS) 2026', 'UPSC', 'Graduation', 21, 32, 56100, 177500, 'UPSC', 'यूपीएससी सिविल सेवा परीक्षा (IAS/IPS/IFS) 2026', 'Preliminary: GS Paper I (History, Geography, Polity, Economics, Science, Current Affairs), GS Paper II CSAT (Maths, Reasoning, English comprehension). Main Exam: General Studies 1-4, Essay, Optional Subject.'],
+  ['UPSC CAPF Assistant Commandant 2026', 'UPSC', 'Graduation', 20, 25, 56100, 177500, 'UPSC', 'यूपीएससी सीएपीएफ सहायक कमांडेंट 2026', 'Paper I: General Ability and Intelligence. Paper II: General Studies, Essay and Comprehension.'],
+  ['UPSC CDS I 2026', 'UPSC', 'Graduation', 19, 25, 56100, 177500, 'UPSC', 'यूपीएससी सीडीएस I 2026', 'English (Vocabulary, Grammar, Comprehension), General Knowledge (Current affairs, History, Geography, Science), Elementary Mathematics (Arithmetic, Algebra, Geometry, Trigonometry).'],
+  ['UPSC CDS II 2026', 'UPSC', 'Graduation', 19, 25, 56100, 177500, 'UPSC', 'यूपीएससी सीडीएस II 2026', 'English (Vocabulary, Grammar, Comprehension), General Knowledge (Current affairs, History, Geography, Science), Elementary Mathematics (Arithmetic, Algebra, Geometry, Trigonometry).'],
+  ['UPSC CISF AC (LDCE) 2026', 'UPSC', 'Graduation', 21, 35, 56100, 177500, 'UPSC', 'यूपीएससी सीआईएसएफ एसी (एलडीसीई) 2026', 'Paper I: Section A: Professional Skills, Section B: General Ability and Intelligence. Paper II: Essay, Précis Writing and Comprehension.'],
+  ['UPSC Combined Medical Services CMS 2026', 'UPSC', 'MBBS', 21, 32, 56100, 177500, 'UPSC', 'यूपीएससी कंबाइंड मेडिकल सर्विसेज 2026', 'Paper I: Medicine, Paediatrics. Paper II: Surgery, Gynaecology & Obstetrics, Preventive & Social Medicine.'],
+  ['UPSC Drug Inspector 2026', 'UPSC', 'Graduation', 21, 30, 44900, 142400, 'UPSC', 'यूपीएससी ड्रग इंस्पेक्टर 2026', 'Pharmacy (Pharmaceutics, Pharmacology, Forensic Pharmacy, Pharmaceutical Chemistry), General Knowledge & Anatomy.'],
+  ['UPSC Enforcement Officer/Accounts Officer 2026', 'UPSC', 'Graduation', 21, 30, 47600, 151100, 'UPSC', 'यूपीएससी प्रवर्तन अधिकारी/लेखा अधिकारी 2026', 'General English, Indian Freedom Struggle, Current Events, Indian Polity & Economy, General Accounting Principles, Industrial Relations & Labour Laws, General Science, Quantitative Aptitude, Social Security.'],
+  ['UPSC Engineering Services (ESE) 2026', 'UPSC', 'Engineering Graduation', 21, 30, 56100, 177500, 'UPSC', 'यूपीएससी इंजीनियरिंग सेवा (ESE) 2026', 'Stage 1: Paper I (General Studies and Engineering Aptitude), Paper II (Civil/Mechanical/Electrical/Electronics & Telecom Engineering). Stage 2: Descriptive Paper I & II in Core Engineering Discipline.'],
+  ['UPSC EPFO EO/AO 2026', 'UPSC', 'Graduation', 21, 30, 47600, 151100, 'UPSC', 'यूपीएससी ईपीएफओ ईओ/एओ 2026', 'General English, Indian Freedom Struggle, Current Events, Indian Polity & Economy, General Accounting Principles, Industrial Relations & Labour Laws, General Science, Quantitative Aptitude, Social Security.'],
+  ['UPSC Geologist/Geoscientist 2026', 'UPSC', 'Post Graduation', 21, 32, 56100, 177500, 'UPSC', 'यूपीएससी भूवैज्ञानिक परीक्षा 2026', 'Stage 1: General Studies, Geology/Hydrogeology/Chemistry/Geophysics. Stage 2: Core advanced Descriptive Geosciences Papers.'],
+  ['UPSC IES/ISS Economics Statistics 2026', 'UPSC', 'Post Graduation', 21, 30, 56100, 177500, 'UPSC', 'यूपीएससी आईईएस/आईएसएस परीक्षा 2026', 'IES: General English, General Studies, General Economics I, II & III, Indian Economics. ISS: General English, General Studies, Statistics I, II, III & IV.'],
+  ['UPSC Indian Forest Service IFoS 2026', 'UPSC', 'Graduation', 21, 32, 56100, 177500, 'UPSC', 'यूपीएससी भारतीय वन सेवा (IFoS) 2026', 'Preliminary: Civil Services Prelims GS Paper I & II. Mains: Paper I (General English), Paper II (General Knowledge), Paper III, IV, V, VI (Selected Optional Subjects).'],
+  ['UPSC NDA & NA I 2026', 'UPSC', 'Class 12', 16, 19, 56100, 94100, 'UPSC', 'यूपीएससी एनडीए और एनए I 2026', 'Mathematics (Algebra, Trigonometry, Calculus, Statistics), General Ability Test (English Vocabulary/Grammar, Physics, Chemistry, History, Geography, General Science).'],
+  ['UPSC NDA & NA II 2026', 'UPSC', 'Class 12', 16, 19, 56100, 94100, 'UPSC', 'यूपीएससी एनडीए और एनए II 2026', 'Mathematics (Algebra, Trigonometry, Calculus, Statistics), General Ability Test (English Vocabulary/Grammar, Physics, Chemistry, History, Geography, General Science).'],
+  ['UPSC NDA III 2026', 'UPSC', 'Class 12', 16, 19, 56100, 94100, 'UPSC', 'यूपीएससी एनडीए III 2026', 'Mathematics (Algebra, Trigonometry, Calculus, Statistics), General Ability Test (English Vocabulary/Grammar, Physics, Chemistry, History, Geography, General Science).'],
+  ['UPSC SO/Steno Grade D CSSS 2026', 'UPSC', 'Graduation', 21, 50, 47600, 151100, 'UPSC', 'यूपीएससी एसओ/स्टेनो परीक्षा 2026', 'Paper I: Note writing, drafting, and office procedures. Paper II: General English and General Knowledge. Shorthand skill test.'],
+  ['UPSC Assistant Director Scientific Officer 2026', 'UPSC', 'Post Graduation', 21, 35, 47600, 151100, 'UPSC', 'यूपीएससी सहायक निदेशक वैज्ञानिक अधिकारी 2026', 'Syllabus varies by scientific field (Physics, Chemistry, Biology, Forensics etc.) as detailed in recruitment notifications.'],
+  ['UPSC Asst Director Cost Accounts 2026', 'UPSC', 'Graduation', 21, 30, 47600, 151100, 'UPSC', 'यूपीएससी सहायक निदेशक लागत लेखा 2026', 'Cost Accounting, Management Accounting, Financial Accounting, Auditing, Corporate Laws, and Taxation.']
 ];
-upsc.forEach(([n, org, q, mn, mx, s1, s2, c, hi, syl], i) => { const [s, e] = tl(i * 3); J(n, org, q, true, mn, mx, s, e, s1, s2, c, 'https://upsc.gov.in', hi, syl, SP_UPSC); });
+upsc.forEach(([n, org, q, mn, mx, s1, s2, c, hi, syl]) => {
+  const nameLower = n.toLowerCase();
+  let lookup = null;
+  for (const [key, details] of Object.entries(VERIFIED_UPSC_EXAMS)) {
+    if (nameLower.includes(key)) {
+      lookup = details;
+      break;
+    }
+  }
+  const start = lookup ? lookup.application_start_date : '2026-05-01';
+  const end = lookup ? lookup.application_end_date : '2026-05-30';
+  J(n, org, q, true, mn, mx, start, end, s1, s2, c, 'https://upsc.gov.in', hi, syl, SP_UPSC);
+});
 
 // ── SSC (9) ───────────────────────────────────────────────────────────────
 const ssc = [
@@ -1070,7 +1221,7 @@ async function seedDatabase() {
   const db = getDb();
 
   // Version-based reseed: bump this whenever seed data changes
-  const SEED_VERSION = 20;
+  const SEED_VERSION = 23;
   try { await db.execute('CREATE TABLE IF NOT EXISTS seed_meta (key TEXT PRIMARY KEY, value TEXT)'); } catch (_) { }
   let currentVersion = 0;
   try {
@@ -1262,10 +1413,10 @@ async function seedBatch(offset, limit) {
 
 async function seedFinalize() {
   const db = getDb();
-  await db.execute({ sql: "INSERT OR REPLACE INTO seed_meta (key, value) VALUES ('seed_version', ?)", args: ['20'] });
+  await db.execute({ sql: "INSERT OR REPLACE INTO seed_meta (key, value) VALUES ('seed_version', ?)", args: ['22'] });
   const count = Number((await db.execute('SELECT COUNT(*) as cnt FROM jobs')).rows[0].cnt);
-  console.log(`  [seed-finalize] Version set to 20. Total jobs in DB: ${count}`);
-  return { version: 20, totalJobs: count };
+  console.log(`  [seed-finalize] Version set to 22. Total jobs in DB: ${count}`);
+  return { version: 22, totalJobs: count };
 }
 
 module.exports = { seedDatabase, seedInit, seedBatch, seedFinalize, getJobCount: () => jobs.length, jobs };

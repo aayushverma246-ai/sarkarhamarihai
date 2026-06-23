@@ -112,6 +112,8 @@ const en: TranslationMap = {
     'empty.profileNeeded': 'Profile needed',
     'empty.profileHint': 'Add your age and education to see which jobs match your qualifications.',
     'empty.completeProfile': 'Complete Profile',
+    'empty.reminded': 'No reminders set',
+    'empty.remindedHint': 'Enable reminders on active exams to receive notifications about upcoming deadlines.',
 
     // Prep widgets
     'prep.readiness': 'Exam Readiness',
@@ -451,6 +453,8 @@ const hi: TranslationMap = {
     'empty.profileNeeded': 'प्रोफ़ाइल आवश्यक',
     'empty.profileHint': 'नौकरी मिलान देखने के लिए आयु और शिक्षा जोड़ें।',
     'empty.completeProfile': 'प्रोफ़ाइल पूरी करें',
+    'empty.reminded': 'कोई अनुस्मारक सेट नहीं है',
+    'empty.remindedHint': 'आगामी समय सीमा के बारे में सूचनाएं प्राप्त करने के लिए परीक्षाओं पर अनुस्मारक सक्रिय करें।',
     'prep.readiness': 'परीक्षा तैयारी',
     'prep.readinessScore': 'तैयारी स्कोर',
     'prep.streak': 'अध्ययन श्रृंखला',

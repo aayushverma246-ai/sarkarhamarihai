@@ -31,11 +31,11 @@ async function verify() {
         if (liveJob) {
             console.log(`Mocking liked job for LIVE notification: ${liveJob.job_name}`);
             await db.execute({
-                sql: "INSERT OR IGNORE INTO users (id, email, password_hash, full_name) VALUES (?, ?, ?, ?)",
+                sql: "INSERT INTO users (id, email, password_hash, full_name) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO NOTHING",
                 args: [testUserId, 'daily@test.com', 'hash', 'Daily Test User']
             });
             await db.execute({
-                sql: "INSERT OR IGNORE INTO liked_jobs (id, user_id, job_id) VALUES (?, ?, ?)",
+                sql: "INSERT INTO liked_jobs (id, user_id, job_id) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING",
                 args: ['like-daily-' + Date.now(), testUserId, liveJob.id]
             });
         }

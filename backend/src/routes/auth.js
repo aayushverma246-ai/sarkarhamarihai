@@ -435,6 +435,15 @@ router.put('/me', auth, async (req, res) => {
         });
 
         const user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [req.user.id] })).rows[0];
+
+        // Invalidate recommendations cache in database and memory
+        try {
+            const { invalidateRecommendationsCache } = require('../services/gemini_recommender');
+            await invalidateRecommendationsCache(req.user.id);
+        } catch (e) {
+            console.error('Failed to invalidate recommendations cache on profile update:', e);
+        }
+
         return res.json(safeUser(user));
     } catch (err) {
         console.error('Update user error:', err);

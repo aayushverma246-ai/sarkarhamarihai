@@ -24,6 +24,12 @@ export default function LoginPage() {
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [unlockSuccess, setUnlockSuccess] = useState(false);
 
+  useEffect(() => {
+    if (forcePasswordLogin) {
+      // Reserved for native credential prompt bypass
+    }
+  }, [forcePasswordLogin]);
+
   const cachedUser = getCachedUser();
   const isNative = Capacitor.isNativePlatform();
 

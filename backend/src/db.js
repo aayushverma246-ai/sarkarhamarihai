@@ -69,15 +69,35 @@ function transformSql(sql) {
   t = t.replace(/datetime\('now'\)/gi, 'NOW()');
 
   const hadIgnore = /INSERT\s+OR\s+IGNORE\s+INTO/i.test(t);
-  t = t.replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, 'INSERT INTO');
+  let ignoreTable = '';
+  t = t.replace(/INSERT\s+OR\s+IGNORE\s+INTO\s+(\w+)/gi, (_, tbl) => {
+    ignoreTable = tbl;
+    return `INSERT INTO ${tbl}`;
+  });
   if (hadIgnore && !/ON CONFLICT/i.test(t)) {
-    t = t.replace(/;?\s*$/, ' ON CONFLICT DO NOTHING');
+    if (ignoreTable === 'seed_meta') {
+      t = t.replace(/;?\s*$/, ' ON CONFLICT (key) DO NOTHING');
+    } else if (ignoreTable === 'exam_syllabus') {
+      t = t.replace(/;?\s*$/, ' ON CONFLICT (name_pattern) DO NOTHING');
+    } else {
+      t = t.replace(/;?\s*$/, ' ON CONFLICT (id) DO NOTHING');
+    }
   }
 
   const hadReplace = /INSERT\s+OR\s+REPLACE\s+INTO/i.test(t);
-  t = t.replace(/INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)/gi, 'INSERT INTO $1');
+  let replaceTable = '';
+  t = t.replace(/INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)/gi, (_, tbl) => {
+    replaceTable = tbl;
+    return `INSERT INTO ${tbl}`;
+  });
   if (hadReplace && !/ON CONFLICT/i.test(t)) {
-    t = t.replace(/;?\s*$/, ' ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id');
+    if (replaceTable === 'seed_meta') {
+      t = t.replace(/;?\s*$/, ' ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value');
+    } else if (replaceTable === 'exam_syllabus') {
+      t = t.replace(/;?\s*$/, ' ON CONFLICT (name_pattern) DO UPDATE SET subjects = EXCLUDED.subjects, topics = EXCLUDED.topics');
+    } else {
+      t = t.replace(/;?\s*$/, ' ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id');
+    }
   }
 
   t = t.replace(/AUTOINCREMENT/gi, '');
@@ -409,8 +429,15 @@ async function execute(sqlOrObj, argsParam) {
       if (err.code === '42P01') return { rows: [], rowsAffected: 0 };
 
       // Connection/Network limits (like Vercel IPv6 restrictions)
-      console.warn('[DB Pool Failed] Falling back automatically to Supabase REST SDK:', err.message);
-      _usePgPool = false; // Disable pool and fall through
+      const isNetError = !err.code ||
+                         (typeof err.code === 'string' && (err.code.startsWith('08') || ['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'EPIPE', 'ECONNRESET'].includes(err.code)));
+      if (isNetError) {
+        console.warn('[DB Pool Failed] Connection error, falling back automatically to Supabase REST SDK:', err.message);
+        _usePgPool = false; // Disable pool and fall through
+      } else {
+        // SQL/database constraint error — throw immediately to fail fast
+        throw err;
+      }
     }
   }
 
