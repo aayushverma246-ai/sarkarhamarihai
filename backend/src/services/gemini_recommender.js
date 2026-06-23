@@ -387,7 +387,10 @@ SCORING RULES:
         } catch (err) {
           lastErr = err;
           const msg = (err.message || '').toLowerCase();
-          if (msg.includes('api key') || msg.includes('permission')) throw err;
+          if (msg.includes('api key') || msg.includes('permission') || msg.includes('invalid') || msg.includes('blocked') || msg.includes('billing')) {
+            tripCircuitBreaker(60000 * 60); // trip for 1 hour
+            throw err;
+          }
           tripCircuitBreaker();
           break; // Stop attempts for this chunk
         }

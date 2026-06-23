@@ -172,7 +172,7 @@ async function callWithRetry(fn, retries = 3, delay = 2000) {
       return await fn();
     } catch (err) {
       const msg = (err.message || '').toLowerCase();
-      const isPermanent = msg.includes('api key') || msg.includes('not found') || msg.includes('permission') || msg.includes('invalid');
+      const isPermanent = msg.includes('api key') || msg.includes('not found') || msg.includes('permission') || msg.includes('invalid') || msg.includes('blocked') || msg.includes('billing');
       if (isPermanent) throw err;
 
       if (i < retries - 1) {
