@@ -86,11 +86,11 @@ export const fetchRecommendationsAction = (
             return bStatus - aStatus;
         });
 
-        // Filter out recommendations with less than 70% overlap (backend should have filtered it, but keeping for safety)
+        // Filter out recommendations with less than 50% overlap (backend should have filtered it, but keeping for safety)
         const filteredList = mergedList.filter(r => {
             const val = r.similarity !== undefined && r.similarity !== null ? r.similarity : r.overlap_score;
             const score = typeof val === 'number' ? val : parseFloat(String(val)) || 0;
-            return score >= 70;
+            return score >= 50;
         });
 
         if (isPage1) {
@@ -126,7 +126,7 @@ export const fetchRecommendationsAction = (
             const filteredCache = cachedData.filter((r: any) => {
                 const val = r.similarity !== undefined && r.similarity !== null ? r.similarity : r.overlap_score;
                 const score = typeof val === 'number' ? val : parseFloat(String(val)) || 0;
-                return score >= 70;
+                return score >= 50;
             });
             dispatch({
                 type: types.FETCH_RECS_SUCCESS,

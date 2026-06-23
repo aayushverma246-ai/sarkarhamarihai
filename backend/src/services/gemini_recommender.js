@@ -969,8 +969,8 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
       }
     }
 
-    // STRICT FILTER FOR OVERLAP >= 70%
-    if (finalScore < 70) continue;
+    // STRICT FILTER FOR OVERLAP >= 50%
+    if (finalScore < 50) continue;
 
     const diffGap = finalScore >= 85 ? 'low' : finalScore >= 60 ? 'medium' : 'high';
     const gap = computeGapAnalysis(sourceStructured, candStructured);
@@ -1085,8 +1085,8 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
   for (const item of remainingCandidatesSubset) {
     const { cand, candStructured, localScore, sharedSubjects } = item;
 
-    // STRICT FILTER FOR OVERLAP >= 70%
-    if (localScore < 70) continue;
+    // STRICT FILTER FOR OVERLAP >= 50%
+    if (localScore < 50) continue;
 
     const gap = computeGapAnalysis(sourceStructured, candStructured);
     const diffGap = localScore >= 85 ? 'low' : localScore >= 60 ? 'medium' : 'high';

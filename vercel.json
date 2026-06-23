@@ -8,7 +8,7 @@
         "SUPABASE_DB_PASSWORD": "Aayush@192005",
         "VITE_API_URL": "/api",
         "VERTEX_TRIAL_START_DATE": "2026-06-03",
-        "USE_VERTEX_AI": "false"
+        "USE_VERTEX_AI": "true"
     },
     "headers": [
         {
