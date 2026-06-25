@@ -43,3 +43,4 @@ data/
 
 .env*.local
 .vercel
+.env*
