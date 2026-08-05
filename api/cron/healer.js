@@ -4,7 +4,7 @@
  * /api/cron/healer — Scheduled Database Healing & Payscale Validation Pipeline
  */
 
-const { healAllRecords } = require('../../scripts/deterministic_healer');
+const { healAllRecords } = require('../../backend/src/engines/deterministic-healer');
 
 module.exports = async (req, res) => {
   const secret = req.query?.secret || '';

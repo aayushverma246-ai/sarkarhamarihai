@@ -111,7 +111,7 @@
             "maxDuration": 90
         },
         "api/cron/healer.js": {
-            "includeFiles": "{scripts/**}",
+            "includeFiles": "{backend/src/**,.env,backend/.env}",
             "maxDuration": 90
         }
     },

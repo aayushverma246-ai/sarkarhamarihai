@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * deterministic_healer.js — Local Data Healing Engine
+ * deterministic-healer.js — Local Data Healing Engine
  * 
  * Fixes all seeder records WITHOUT requiring Gemini API:
  * 1. Fixes broken URLs (spaces in state .gov.in links)
@@ -12,7 +12,6 @@
  * 6. Updates discovery_source to 'healed'
  */
 
-require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co';
@@ -168,24 +167,19 @@ const CATEGORY_SALARY = {
 // ── HELPER: Extract state from job name/org ─────────────────────────────────────
 function extractState(jobName, organization) {
     const text = `${jobName} ${organization}`;
-    // Sort by length descending so "Andaman & Nicobar Islands" matches before "Andaman"
     const sorted = [...INDIAN_STATES].sort((a, b) => b.length - a.length);
     for (const state of sorted) {
         if (text.includes(state)) return state;
     }
-    // Check common abbreviations
     if (/\bSSC\b/.test(text) || /\bUPSC\b/.test(text) || /\bIBPS\b/.test(text)) return 'All India';
     if (/\bRRB\b/.test(text) || /\bNTA\b/.test(text)) return 'All India';
-    return null; // can't determine
+    return null;
 }
 
 // ── HELPER: Fix broken URL ──────────────────────────────────────────────────────
-// SHIELD: Never fallback to generic state root websites — only fix formatting.
-// Cleared URLs ('') must be preserved as intentionally cleared.
 function fixUrl(url, state) {
     if (!url || url === '') return '';
     if (url.length < 5) return '';
-    // Fix URLs with spaces (e.g. "https://andhra pradesh.gov.in")
     if (url.includes(' ')) {
         return url.replace(/\s+/g, '');
     }
@@ -233,13 +227,11 @@ async function healAllRecords() {
         }
         if (!records || records.length === 0) break;
 
-        // Process batch
         const updates = [];
         for (const rec of records) {
             const patch = {};
             let changed = false;
 
-            // 1. Fix state
             const detectedState = extractState(rec.job_name, rec.organization);
             if (detectedState && rec.state !== detectedState) {
                 patch.state = detectedState;
@@ -248,7 +240,6 @@ async function healAllRecords() {
             }
             const effectiveState = patch.state || rec.state;
 
-            // 2. Fix broken URLs
             const fixedAppLink = fixUrl(rec.official_application_link, effectiveState);
             if (fixedAppLink !== rec.official_application_link) {
                 patch.official_application_link = fixedAppLink;
@@ -266,17 +257,12 @@ async function healAllRecords() {
                 changed = true;
             }
 
-            // 3. Override with org-specific website if available
             const orgSite = getOrgWebsite(rec.job_name, rec.organization);
             if (orgSite && rec.official_website_link !== orgSite) {
                 patch.official_website_link = orgSite;
                 changed = true;
             }
 
-            // 4. Fix selection process — ONLY if it is truly empty/null.
-            // SHIELD: Never overwrite an existing selection process (even if
-            // different from the category template) — it may be genuinely
-            // specific data set by our correction scripts.
             const cat = rec.job_category;
             if (cat && CATEGORY_SELECTION_PROCESS[cat]) {
                 if (!rec.selection_process || rec.selection_process.trim().length === 0) {
@@ -286,7 +272,6 @@ async function healAllRecords() {
                 }
             }
 
-            // 5. If salary range has the generic 15000-80000 placeholder, nullify it (set to 0) to feed only original ranges
             if (rec.salary_min === 15000 && rec.salary_max === 80000) {
                 patch.salary_min = 0;
                 patch.salary_max = 0;
@@ -294,21 +279,17 @@ async function healAllRecords() {
                 totalSalaryFixes++;
             }
 
-            // Mark as healed (even if no fields were updated, we must mark as healed to leave the seeder query)
             patch.discovery_source = 'healed';
             patch.last_verified_at = new Date().toISOString();
             
-            // Only update fields that actually changed (to keep updates lightweight)
             if (changed) {
                 updates.push({ id: rec.id, ...patch });
                 totalFixed++;
             } else {
-                // If nothing else changed, just update discovery_source to healed
                 updates.push({ id: rec.id, discovery_source: 'healed', last_verified_at: patch.last_verified_at });
             }
         }
 
-        // Batch update in parallel with concurrency
         console.log(`[Healer] Executing ${updates.length} updates...`);
         const CONCURRENCY = 25;
         for (let i = 0; i < updates.length; i += CONCURRENCY) {
@@ -339,21 +320,7 @@ async function healAllRecords() {
         durationSeconds: duration
     };
 
-    console.log('\n============= HEALING REPORT =============');
-    console.log(JSON.stringify(report, null, 2));
-    console.log('==========================================\n');
-
-    const fs = require('fs');
-    if (!fs.existsSync('tmp')) {
-        fs.mkdirSync('tmp', { recursive: true });
-    }
-    fs.writeFileSync('tmp/healing_report.json', JSON.stringify(report, null, 2), 'utf8');
     return report;
-}
-
-// Run if called directly
-if (require.main === module) {
-    healAllRecords().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });
 }
 
 module.exports = { healAllRecords };
