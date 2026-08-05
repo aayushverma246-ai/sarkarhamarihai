@@ -15,9 +15,9 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ztbgunartkntrqxxsdpc.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const sb = SUPABASE_KEY ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 // ── STATE EXTRACTION MAP ────────────────────────────────────────────────────────
 const INDIAN_STATES = [
@@ -203,6 +203,9 @@ function getOrgWebsite(jobName, organization) {
 
 // ── MAIN HEALER ─────────────────────────────────────────────────────────────────
 async function healAllRecords() {
+    if (!sb) {
+        throw new Error('Supabase client not initialized - SUPABASE_SERVICE_ROLE_KEY is missing from environment.');
+    }
     console.log('[Healer] Starting deterministic data healing engine...');
     const startTime = Date.now();
 

@@ -225,12 +225,22 @@ module.exports = async (req, res) => {
             return cronLogsHandler(req, res);
         }
         if (pathname === '/api/cron/status') {
+            const secret = parsed.searchParams.get('secret') || '';
+            const authHeader = req.headers?.authorization || '';
+            if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1')) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
             try {
                 const updated = await updateStatuses(db);
                 return res.json({ success: true, type: 'status', updated, ts: new Date().toISOString() });
             } catch (err) { return res.status(500).json({ error: err.message }); }
         }
         if (pathname === '/api/cron/notifications') {
+            const secret = parsed.searchParams.get('secret') || '';
+            const authHeader = req.headers?.authorization || '';
+            if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1')) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
             try {
                 const sent = await sendNotifications(db);
                 return res.json({ success: true, type: 'notifications', sent, ts: new Date().toISOString() });
