@@ -138,7 +138,7 @@ class VerificationEngine {
 
     try {
       const r = await this.db.execute(`
-        SELECT id, job_name, organization, official_application_link, application_start_date, application_end_date, salary_min, salary_max, selection_process
+        SELECT id, job_name, organization, official_application_link, application_start_date, application_end_date, salary_min, salary_max, minimum_age, maximum_age, vacancies, qualification_required, job_category, state, official_website_link, selection_process
         FROM jobs 
         ORDER BY last_verified_at ASC NULLS FIRST 
         LIMIT ${limit}
@@ -191,6 +191,60 @@ class VerificationEngine {
               updateArgs.push(scraped.salary_max);
             }
 
+            // Compare & update Min Age
+            if (scraped.minimum_age != null && scraped.minimum_age !== rec.minimum_age) {
+              needsUpdate = true;
+              updateFields.push("minimum_age = ?");
+              updateArgs.push(scraped.minimum_age);
+            }
+            // Compare & update Max Age
+            if (scraped.maximum_age != null && scraped.maximum_age !== rec.maximum_age) {
+              needsUpdate = true;
+              updateFields.push("maximum_age = ?");
+              updateArgs.push(scraped.maximum_age);
+            }
+
+            // Compare & update Vacancies
+            if (scraped.vacancies != null && scraped.vacancies !== rec.vacancies) {
+              needsUpdate = true;
+              updateFields.push("vacancies = ?");
+              updateArgs.push(scraped.vacancies);
+            }
+
+            // Compare & update Qualification
+            if (scraped.qualification_required && scraped.qualification_required !== rec.qualification_required) {
+              needsUpdate = true;
+              updateFields.push("qualification_required = ?");
+              updateArgs.push(scraped.qualification_required);
+            }
+
+            // Compare & update Job Category
+            if (scraped.job_category && scraped.job_category !== rec.job_category) {
+              needsUpdate = true;
+              updateFields.push("job_category = ?");
+              updateArgs.push(scraped.job_category);
+            }
+
+            // Compare & update State
+            if (scraped.state && scraped.state !== rec.state) {
+              needsUpdate = true;
+              updateFields.push("state = ?");
+              updateArgs.push(scraped.state);
+            }
+
+            // Compare & update Official Website Link
+            if (scraped.official_website_link && scraped.official_website_link !== rec.official_website_link) {
+              needsUpdate = true;
+              updateFields.push("official_website_link = ?");
+              updateArgs.push(scraped.official_website_link);
+            }
+            // Compare & update Official Application Link
+            if (scraped.official_application_link && scraped.official_application_link !== rec.official_application_link) {
+              needsUpdate = true;
+              updateFields.push("official_application_link = ?");
+              updateArgs.push(scraped.official_application_link);
+            }
+
             // Compare & update Selection Stages
             if (scraped.selection_process && scraped.selection_process !== rec.selection_process && scraped.selection_process.trim().length > 15) {
               needsUpdate = true;
@@ -199,7 +253,8 @@ class VerificationEngine {
             }
 
             // Update checksum, status and stamp
-            updateFields.push("discovery_source = 'deep_scraped'");
+            updateFields.push("discovery_source = ?");
+            updateArgs.push('deep_scraped');
             updateFields.push("last_verified_at = ?");
             updateArgs.push(new Date().toISOString());
 
@@ -220,8 +275,8 @@ class VerificationEngine {
             } else {
               // Just mark synced
               await this.db.execute({
-                sql: `UPDATE jobs SET discovery_source = 'deep_scraped', last_verified_at = ? WHERE id = ?`,
-                args: [new Date().toISOString(), rec.id]
+                sql: `UPDATE jobs SET discovery_source = ?, last_verified_at = ? WHERE id = ?`,
+                args: ['deep_scraped', new Date().toISOString(), rec.id]
               });
             }
           } else {

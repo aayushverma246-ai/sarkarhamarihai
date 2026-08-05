@@ -53,7 +53,14 @@ async function scrapeExamData(jobName, organization, officialLink) {
         application_end_date: null,
         salary_min: null,
         salary_max: null,
+        minimum_age: null,
+        maximum_age: null,
+        vacancies: null,
+        qualification_required: null,
+        job_category: null,
+        state: null,
         selection_process: null,
+        official_website_link: null,
         official_application_link: officialLink || null,
         error: null,
         logs: []
@@ -76,7 +83,7 @@ async function scrapeExamData(jobName, organization, officialLink) {
                 result.logs.push(`[Scraper] Connection successful. Status 200. Capturing HTML source...`);
                 const cleanText = extractCleanText(response.data);
                 pageText = cleanText.substring(0, 5000); // Send robust first 5k characters to keep cost/time low
-                result.logs.push(`[Scraper] Successfully extracted ${pageText.length} characters of visble page content.`);
+                result.logs.push(`[Scraper] Successfully extracted ${pageText.length} characters of visible page content.`);
             } else {
                 throw new Error(`HTTP status code returned: ${response.status}`);
             }
@@ -90,10 +97,26 @@ async function scrapeExamData(jobName, organization, officialLink) {
         result.mode = 'ai_augmented';
     }
 
-    // Vertex AI automatically manages keyless/developer SDK configurations
-
     // Define prompt for structured JSON extraction
     let prompt = '';
+    const targetStructureDesc = `
+TARGET STRUCTURE (STRICT JSON ONLY):
+{
+  "application_start_date": "YYYY-MM-DD (or null if not found)",
+  "application_end_date": "YYYY-MM-DD (or null if not found)",
+  "salary_min": number (monthly basic salary, or null if not explicitly found),
+  "salary_max": number (monthly maximum salary, or null if not explicitly found),
+  "minimum_age": number (or null if not found),
+  "maximum_age": number (or null if not found),
+  "vacancies": number (total vacancies, or null if not found),
+  "qualification_required": "Class 8 / Class 10 / Class 12 / Graduate / Postgraduate / PhD / Diploma (choose the closest matching one, or null)",
+  "job_category": "Banking / UPSC / SSC / Railways / Defence / Police / State Government / Central Government / Healthcare / Teaching / PSU / Engineering / Insurance / Judiciary / Research & Science / Agriculture / Cooperative / Forest & Environment / Shipping & Ports / Telecom / Entrance Exam (choose the closest matching one)",
+  "state": "Name of Indian state if this is state-level, or 'All India' if central/national (or null)",
+  "selection_process": "Clear bullet points explaining recruitment stages (or null)",
+  "official_website_link": "Main website URL of the organization",
+  "official_application_link": "Direct application / registration URL"
+}`;
+
     if (result.mode === 'direct_scrape' && pageText.length > 50) {
         prompt = `You are an expert Indian Government recruitment verification crawler.
 Parse the following extracted text from the official landing page of ${jobName} by ${organization}.
@@ -102,21 +125,12 @@ EXTRACTED TEXT:
 """
 ${pageText}
 """
-
-TARGET STRUCTURE (STRICT JSON ONLY):
-{
-  "application_start_date": "YYYY-MM-DD (or null if not found)",
-  "application_end_date": "YYYY-MM-DD (or null if not found)",
-  "salary_min": number (monthly salary, or null if not explicitly found),
-  "salary_max": number (monthly salary, or null if not explicitly found),
-  "selection_process": "Clear bullet points explaining recruitment stages (or null if not found)",
-  "official_application_link": "Direct registration URL (or fall back to the landing page if not found)"
-}
+${targetStructureDesc}
 
 RULES:
 - Be 100% accurate based ONLY on the provided text.
 - If application dates are not explicitly present in the provided text, you MUST return null. Do NOT estimate, guess, or assume dates.
-- If dates are not in YYYY-MM-DD, convert them to standard ISO format (e.g. 15 June 2026 -> 2026-06-15).
+- If dates are not in YYYY-MM-DD, convert them to standard ISO format.
 - For payscales, ONLY extract monthly salary if explicitly mentioned in the text (e.g. ₹56,100 to ₹1,77,500). Extract minimum monthly basic pay as salary_min and maximum as salary_max. 
 - If no payscale/salary range is explicitly defined in the text, extract null or 0 for salary_min and salary_max. Never estimate, guess, or use fallback values.
 - If the selection process is not explicitly found in the text, return null or an empty string. Do NOT invent, assume, or generate generic stages or mock templates.
@@ -125,38 +139,27 @@ RULES:
         // AI augmented fallback matching prompt
         prompt = `You are an expert Indian Government recruitment verification system.
 We could not access the official URL directly. Use your deep knowledge base to retrieve the exact official notification details for "${jobName}" recruitment conducted by "${organization}" for the current 2026 academic/fiscal cycle.
-
-TARGET STRUCTURE (STRICT JSON ONLY):
-{
-  "application_start_date": "YYYY-MM-DD",
-  "application_end_date": "YYYY-MM-DD",
-  "salary_min": number (original monthly basic pay if officially known, or null),
-  "salary_max": number (original maximum monthly payscale if officially known, or null),
-  "selection_process": "Clear multi-stage breakdown of exams/interviews for this specific post (or null if not known)",
-  "official_application_link": "Standard official portal URL for this organization (e.g. upsc.gov.in or similar)"
-}
+${targetStructureDesc}
 
 RULES:
-- Provide high-fidelity dates matching the active recruitment cycles for this exam post in 2026.
-- If the exact 2026 dates are unknown, you MUST return null for both application_start_date and application_end_date. Do NOT estimate, guess, assume, or provide highly logical dates. Any dates returned must be 100% authentic and verified. Under no circumstances should you generate arbitrary dates like "2026-07-01" to "2026-07-31" or generic placeholders.
-- For payscales, ONLY extract if the official basic pay range is known for this specific post. If the payscale is not officially defined or not known, set salary_min and salary_max to null or 0. Never guess, assume, or provide mock placeholders.
-- If the selection process is not officially known for this exact post, set it to null or empty string. Do NOT generate standard templates or placeholders like 'Prelims -> Mains -> Interview'.
-- Keep selection process highly granular specific to this type of organization.
+- Provide high-fidelity details matching the active recruitment cycles for this exam post in 2026.
+- If the exact 2026 dates are unknown, you MUST return null for both application_start_date and application_end_date. Do NOT estimate, guess, assume, or provide highly logical dates. Any dates returned must be 100% authentic and verified. Under no circumstances should you generate arbitrary dates or generic placeholders.
+- For payscales, ONLY extract if the official basic pay range is known for this specific post. If the payscale is not officially defined or not known, set salary_min and salary_max to null. Never guess, assume, or provide mock placeholders.
+- If the selection process is not officially known for this exact post, set it to null. Do NOT generate standard templates or placeholders.
 - Return strictly raw JSON.`;
     }
 
     let parsedText = '';
 
     try {
-        result.logs.push(`[Scraper] Querying Vertex AI content generation...`);
+        result.logs.push(`[Scraper] Querying Vertex AI/NVIDIA content generation...`);
         const response = await generateContentDynamic(prompt, "application/json", 15000);
         parsedText = response.text();
     } catch (err) {
-        result.logs.push(`[Scraper] ⚠️ Gemini extraction failed: ${err.message}`);
+        result.logs.push(`[Scraper] ⚠️ AI extraction failed: ${err.message}`);
         throw err;
     }
 
-    require('fs').writeFileSync('tmp/raw_llm_completion.txt', parsedText, 'utf8');
     let cleanedText = parsedText;
     try {
         cleanedText = cleanedText.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (match, p1) => {
@@ -180,13 +183,21 @@ RULES:
         result.application_end_date = parsedJSON.application_end_date || null;
         result.salary_min = parsedJSON.salary_min ? Number(parsedJSON.salary_min) : null;
         result.salary_max = parsedJSON.salary_max ? Number(parsedJSON.salary_max) : null;
+        result.minimum_age = parsedJSON.minimum_age ? Number(parsedJSON.minimum_age) : null;
+        result.maximum_age = parsedJSON.maximum_age ? Number(parsedJSON.maximum_age) : null;
+        result.vacancies = parsedJSON.vacancies ? Number(parsedJSON.vacancies) : null;
+        result.qualification_required = parsedJSON.qualification_required || null;
+        result.job_category = parsedJSON.job_category || null;
+        result.state = parsedJSON.state || null;
+
         if (parsedJSON.selection_process && parsedJSON.selection_process.trim().length > 10) {
             result.selection_process = parsedJSON.selection_process;
         }
+        result.official_website_link = parsedJSON.official_website_link || null;
         result.official_application_link = parsedJSON.official_application_link || result.official_application_link;
         result.scraped_successfully = true;
 
-        result.logs.push(`[Scraper] Parsing successfully finished! Got dates: ${result.application_start_date} to ${result.application_end_date}.`);
+        result.logs.push(`[Scraper] Parsing successfully finished!`);
     } catch (err) {
         result.error = err.message;
         result.logs.push(`[Scraper] Extraction mapping failed: ${err.message}`);
