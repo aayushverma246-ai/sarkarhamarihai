@@ -253,7 +253,11 @@ module.exports = async (req, res) => {
       }
 
       // ── 2g. SELECTION PROCESS FILL ──
-      if (!job.selection_process || job.selection_process.trim().length < 10) {
+      // SHIELD: Only fill selection_process if it is truly empty/null.
+      // Never overwrite an existing selection process (even short ones)
+      // with a generic category template — those short values may be
+      // genuinely specific data set by our correction scripts.
+      if (!job.selection_process || job.selection_process.trim().length === 0) {
         const cat = fixes.job_category || job.job_category;
         const template = getSelectionTemplate(cat);
         if (template) {

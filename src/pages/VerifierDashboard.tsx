@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 
 const API_BASE: string = (import.meta as any).env.VITE_API_URL || 'http://localhost:3001/api';
-const CRON_SECRET = 'sarkar_cron_key_v1';
+const CRON_SECRET = (import.meta as any).env.VITE_CRON_SECRET || 'sarkar_cron_key_v1';
 
 interface DashboardData {
   metrics: any;

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getCachedUser, setCachedUser, clearToken } from '../api';
 import Navbar from '../components/Navbar';
+import Footer from '../components/Footer';
 import { indianStates } from '../data/states';
 import { useLanguage } from '../i18n/LanguageContext';
 import { translateDynamicData } from '../utils/translateHelper';
@@ -22,16 +23,25 @@ export default function ProfilePage() {
     qualification_type: 'Graduation', qualification_status: 'Pursuing',
     current_year: '', current_semester: '', expected_graduation_year: '',
   });
+  const [billing, setBilling] = useState<any>(null);
 
   useEffect(() => {
     if (!cached) { navigate('/login'); return; }
     const load = async () => {
       setLoading(true);
       try {
-        // Fetch user profile
+        // Fetch user profile and billing status in parallel
         let me: any = null;
+        let billData: any = null;
 
-        try { me = await api.getMe(); } catch (meErr: any) {
+        try {
+          const [meRes, billRes] = await Promise.all([
+            api.getMe(),
+            api.getBillingStatus().catch(() => null)
+          ]);
+          me = meRes;
+          billData = billRes;
+        } catch (meErr: any) {
           // Only redirect on explicit auth failure, not on network errors
           if (meErr?.message?.includes('Session expired') || meErr?.message?.includes('401')) {
             clearToken(); navigate('/login'); return;
@@ -41,6 +51,7 @@ export default function ProfilePage() {
 
         const resolvedUser = (me && me.email) ? me : cached;
         setUser(resolvedUser);
+        setBilling(billData);
         if (me && me.email) setCachedUser(resolvedUser);
         setForm({
           full_name: resolvedUser.full_name || '',
@@ -208,11 +219,11 @@ export default function ProfilePage() {
             </form>
           )}
         </div>
-
         <button onClick={handleLogout} className="w-full mt-4 py-2.5 bg-[#0e0e0e] border border-[#1a1a1a] text-gray-600 font-medium rounded-lg hover:bg-[#141414] hover:text-gray-400 transition-colors text-sm">
           Sign out
         </button>
       </div>
+      <Footer />
     </div>
   );
 }

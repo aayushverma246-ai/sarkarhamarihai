@@ -34,15 +34,24 @@ router.post('/recommendations', auth, async (req, res) => {
     const cleanCategory = (category === 'All' || category === 'all') ? '' : category;
     const cleanState = (state === 'All' || state === 'All India' || state === 'all') ? '' : state;
 
-    // Get source exam IDs from applied
-    let sourceIds = (appliedExams || []).map(e => e.id).filter(Boolean);
+    // Get source exam IDs from client payload FIRST
+    let sourceIds = Array.isArray(appliedExams)
+      ? appliedExams.map(e => (typeof e === 'string' ? e : e?.id)).filter(Boolean)
+      : [];
 
-    // Fetch applied jobs as source from applied_jobs table
-    const { data: appliedRows } = await sb.from('applied_jobs')
-      .select('job_id').eq('user_id', userId);
-    if (appliedRows) sourceIds.push(...appliedRows.map(r => r.job_id));
+    // Fall back to querying applied_jobs DB table ONLY if appliedExams was not provided in request body
+    if (!req.body.hasOwnProperty('appliedExams') || !Array.isArray(req.body.appliedExams)) {
+      const { data: appliedRows } = await sb.from('applied_jobs')
+        .select('job_id').eq('user_id', userId);
+      if (appliedRows) sourceIds.push(...appliedRows.map(r => r.job_id));
+    }
 
     sourceIds = [...new Set(sourceIds)];
+
+    // If there are no applied source exams, return empty list immediately
+    if (sourceIds.length === 0) {
+      return res.json({ data: [], hasMore: false, page: 1, totalMatches: 0 });
+    }
 
     // FALLBACK: If no source exams, return popular LIVE exams
     if (sourceIds.length === 0) {

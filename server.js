@@ -33,12 +33,19 @@ app.use(async (req, res, next) => {
 });
 
 // --- TEMP OCR BYPASS ---
-app.get('/dump-ui', (req, res) => res.sendFile(__dirname + '/local-dump.html'));
-app.post('/dump/:type', express.text({ type: '*/*' }), (req, res) => {
-    require('fs').writeFileSync(__dirname + `/backend/dump_${req.params.type}.txt`, req.body);
-    console.log(`[OCR BYPASS] Successfully intercepted and saved flawless ${req.params.type}!`);
-    res.send('OK');
-});
+if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
+    app.get('/dump-ui', (req, res) => res.sendFile(__dirname + '/local-dump.html'));
+    app.post('/dump/:type', express.text({ type: '*/*' }), (req, res) => {
+        try {
+            require('fs').writeFileSync(__dirname + `/backend/dump_${req.params.type}.txt`, req.body);
+            console.log(`[OCR BYPASS] Successfully intercepted and saved flawless ${req.params.type}!`);
+            res.send('OK');
+        } catch (err) {
+            console.error('[OCR BYPASS Error]:', err);
+            res.status(500).send('Failed to write dump');
+        }
+    });
+}
 // -----------------------
 
 // Direct API Routes (Top Priority)
@@ -189,6 +196,8 @@ app.use('/api/exam', require('./backend/src/routes/exam')); // NEW Exam dynamic 
 app.use('/api/health', require('./backend/src/routes/health')); // Robust DB monitors
 app.use('/api/audit', require('./backend/src/routes/audit')); // Data audit system
 app.use('/api/verifier', require('./backend/src/routes/verifier')); // Dynamic Data Verifier System
+app.use('/api/billing', require('./backend/src/routes/billing')); // Billing status system
+
 
 // Serve static frontend (from dist/ array) with high-performance production cache-control
 app.use(express.static(path.join(__dirname, 'dist'), {

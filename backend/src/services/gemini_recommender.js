@@ -18,7 +18,7 @@ const { generateContentDynamic, getEmbeddingDynamic } = require('./gemini');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ═══════════════════════════════════════════════════════════════
-// CIRCUIT BREAKER SYSTEM — Handles aggressive rate limiting (DB Persistent)
+// CIRCUIT BREAKER SYSTEM — Handles transient rate limiting (In-Memory Only)
 // ═══════════════════════════════════════════════════════════════
 let _circuitBreakerTrippedUntil = 0;
 
@@ -26,41 +26,18 @@ function isGeminiHealthy() {
   return Date.now() > _circuitBreakerTrippedUntil;
 }
 
-function tripCircuitBreaker(durationMs = 60000 * 15) {
-  if (Date.now() >= _circuitBreakerTrippedUntil) {
-    const trippedUntil = Date.now() + durationMs;
+function tripCircuitBreaker(durationMs = 30000) {
+  // Cap max circuit breaker trip to 30 seconds to prevent prolonged lockouts
+  const cappedDuration = Math.min(durationMs, 30000);
+  const trippedUntil = Date.now() + cappedDuration;
+  if (trippedUntil > _circuitBreakerTrippedUntil) {
     _circuitBreakerTrippedUntil = trippedUntil;
-    console.warn(`[AI v2] Circuit breaker TRIPPED! Bypassing Gemini API calls for the next ${durationMs / 1000}s to prevent request hanging.`);
-    
-    // Background persistent write
-    const sb = getSb();
-    sb.from('ai_recommendation_cache').upsert({
-      key: 'gemini:circuit_breaker',
-      data: { tripped_until: trippedUntil },
-      updated_at: new Date().toISOString()
-    }).then(null, err => {
-      console.error('[AI v2] Background circuit breaker write failed:', err.message);
-    });
+    console.warn(`[AI v2] Circuit breaker TRIPPED! Bypassing Gemini API calls for ${Math.round(cappedDuration / 1000)}s.`);
   }
 }
 
 async function syncCircuitBreakerWithDB(sb) {
-  if (Date.now() > _circuitBreakerTrippedUntil) {
-    try {
-      const { data } = await sb.from('ai_recommendation_cache').select('data').eq('key', 'gemini:circuit_breaker').single();
-      if (data && data.data && data.data.tripped_until) {
-        const dbTrippedUntil = Number(data.data.tripped_until);
-        if (dbTrippedUntil > _circuitBreakerTrippedUntil) {
-          _circuitBreakerTrippedUntil = dbTrippedUntil;
-          if (Date.now() < _circuitBreakerTrippedUntil) {
-            console.warn(`[AI v2] Persistent circuit breaker loaded: Gemini API bypassed for another ${Math.round((_circuitBreakerTrippedUntil - Date.now()) / 1000)}s.`);
-          }
-        }
-      }
-    } catch (e) {
-      // Suppress, default to memory state
-    }
-  }
+  // In-memory only — DB persistence removed to prevent stale DB lockouts
 }
 
 function getSb() {
@@ -81,11 +58,17 @@ const STANDARD_SYLLABI = {
   'Banking': 'Quantitative Aptitude & Data Interpretation: Simplification, Quadratic Equations, Number Series, Percentage, Profit and Loss, Simple and Compound Interest, Average, Ratio, Time and Work, Probability. Reasoning Ability: Puzzles, Seating arrangements, Syllogism, Coding-decoding, Blood relations, Input-output. English Language: Reading Comprehension, Spotting Errors, Fillers, Cloze Test. Banking & Financial Awareness: Indian Banking System, RBI Functions, Monetary Policy, Financial Terms.',
   'Engineering': 'Engineering Mathematics: Linear Algebra, Calculus, Differential equations, Probability and Statistics, Numerical Methods. General Aptitude: Quantitative Aptitude, Analytical Reasoning, Verbal Ability. Core Engineering Subjects: Subject-specific engineering topics (Mechanical, Civil, Electrical, Electronics, Computer Science) and technical disciplines.',
   'State Government': 'State General Knowledge: State History, local Geography, Administrative structure, Culture, Heritage, State schemes and welfare policies. General Studies: Indian History, Geography, Polity, Basic Science. General Mental Ability: Logical reasoning, basic Arithmetic. Regional Language: Grammatical constructs, vocabulary, writing skills.',
-  'Police & Security': 'General Knowledge & Current Affairs: Indian Constitution, History, Geography, Science, Sports, Current Events. Numerical Ability: Simplification, Decimals, Fractions, Ratio, Percentage, Profit & Loss, Average. Reasoning Ability: Analogies, Similarities, Differences, Spatial visualization, Analysis. Physical Standards and general awareness.',
+  'Police & Security': 'General Knowledge & Current Affairs: Indian Constitution, History, Geography, Science, Sports, Current Events. Numerical Ability: Simplification, Decimals, Fractions, Ratio, Percentage, Profit & Loss, Average. Reasoning Ability: Analogy, Similarity, Difference, Spatial visualization, Analysis. Physical Standards and general awareness.',
   'Defence': 'General English: Synonyms, Antonyms, Idioms, Grammar, Comprehension. General Knowledge: Indian History, Geography, Physics, Chemistry, Biology, Current Affairs. Elementary Mathematics: Arithmetic, Algebra, Geometry, Trigonometry, Mensuration. Technical topics where applicable.',
   'Teaching & Education': 'Child Development and Pedagogy: Child development concepts, Inclusive education, learning theories. General Studies: History, Geography, EVS (Environmental Studies). Language I and II: Grammar and comprehension. Pedagogy of school subjects.',
   'Healthcare': 'Anatomy and Physiology, Nutrition, Microbiology, Nursing Foundations, Medical-Surgical Nursing, Community Health Nursing, Midwifery, Obstetrical Nursing, Child Health Nursing, Mental Health Nursing, general medicine and health awareness.',
   'PSU': 'General Aptitude: Reasoning, Arithmetic, Data Interpretation, Verbal Ability. Specialized Core Subjects: Professional knowledge domain linked to specific PSU hiring role or GATE syllabus.',
+  'Agriculture': 'Agriculture Science: Agronomy, Soil Science, Horticulture, Plant Pathology, Entomology, Agricultural Extension, Genetics and Plant Breeding, Agricultural Economics, Animal Husbandry and Dairying, Crop Production.',
+  'Forest & Environment': 'Forestry and Environment: Silviculture, Forest Management, Forest Protection, Forest Utilization, Wildlife Biology, Environmental Science, Ecology, Biodiversity Conservation, Environmental Laws, Climate Change.',
+  'Judiciary & Law': 'Legal and Judicial Studies: Constitutional Law, Civil Procedure Code CPC, Criminal Procedure Code CrPC, Indian Penal Code IPC, Indian Evidence Act, Contract Law, Tort Law, Jurisprudence, Family Law.',
+  'Shipping & Ports': 'Maritime Operations: Marine Engineering, Navigation, Port Management, Shipping Laws, Marine Logistics, Cargo Handling, Marine Environmental Protection, Ship Stability, Seamanship.',
+  'Telecom': 'Telecommunication Engineering: Electromagnetic Fields, Signals and Systems, Network Theory, Analog and Digital Communications, Computer Networks, Optical Fiber Communications, Satellite Communications, Wireless Communications.',
+  'Apprenticeships': 'Basic Technical Trade: Workshop Safety, Basic Fitting, Machine Tools, Workshop Calculation, Technical Drawing, Basic Electronics, Electrical Safety, Instrument Measurement, Practical Trade Knowledge.',
 };
 
 function getStandardSyllabus(category, jobName) {
@@ -99,9 +82,15 @@ function getStandardSyllabus(category, jobName) {
   if (cat.includes('defen')) return STANDARD_SYLLABI['Defence'];
   if (cat.includes('teach') || cat.includes('educat')) return STANDARD_SYLLABI['Teaching & Education'];
   if (cat.includes('eng') || cat.includes('gate')) return STANDARD_SYLLABI['Engineering'];
-  if (cat.includes('state') || cat.includes('psc') || cat.includes('forest')) return STANDARD_SYLLABI['State Government'];
   if (cat.includes('health') || cat.includes('medic') || cat.includes('nurs')) return STANDARD_SYLLABI['Healthcare'];
   if (cat.includes('psu')) return STANDARD_SYLLABI['PSU'];
+  if (cat.includes('agri') || cat.includes('dairy') || cat.includes('seri')) return STANDARD_SYLLABI['Agriculture'];
+  if (cat.includes('forest') || cat.includes('environ') || cat.includes('wildlife')) return STANDARD_SYLLABI['Forest & Environment'];
+  if (cat.includes('judici') || cat.includes('law') || cat.includes('legal')) return STANDARD_SYLLABI['Judiciary & Law'];
+  if (cat.includes('ship') || cat.includes('port')) return STANDARD_SYLLABI['Shipping & Ports'];
+  if (cat.includes('telecom')) return STANDARD_SYLLABI['Telecom'];
+  if (cat.includes('apprentice')) return STANDARD_SYLLABI['Apprenticeships'];
+  if (cat.includes('state') || cat.includes('psc')) return STANDARD_SYLLABI['State Government'];
   return STANDARD_SYLLABI[category] || STANDARD_SYLLABI['SSC'];
 }
 
@@ -225,7 +214,7 @@ RULES:
     return enrichedSyllabus;
   } catch (err) {
     console.error(`[Gemini Extract] Failed for ${examName}: ${err.message}`);
-    tripCircuitBreaker();
+    // Don't trip circuit breaker on syllabus extraction failure — it's non-critical
     _syllabusCache.set(cacheKey, existingSyllabus || examName);
     return existingSyllabus || examName || '';
   }
@@ -335,7 +324,7 @@ SCORING RULES:
       let lastErr = null;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const response = await generateContentDynamic(prompt, 'application/json', 25000);
+      const response = await generateContentDynamic(prompt, 'application/json', 45000);
 
           const text = response.text();
           let parsed;
@@ -388,10 +377,20 @@ SCORING RULES:
           lastErr = err;
           const msg = (err.message || '').toLowerCase();
           if (msg.includes('api key') || msg.includes('permission') || msg.includes('invalid') || msg.includes('blocked') || msg.includes('billing')) {
-            tripCircuitBreaker(60000 * 60); // trip for 1 hour
+            tripCircuitBreaker(60000 * 60); // trip for 1 hour on auth/billing errors
             throw err;
           }
-          tripCircuitBreaker();
+          // For transient errors (timeout, 429, network), retry but don't trip circuit breaker
+          if (msg.includes('429') || msg.includes('quota') || msg.includes('rate') || msg.includes('timed out') || msg.includes('timeout')) {
+            console.warn(`[Gemini Compare] Transient error (attempt ${attempt + 1}/3): ${err.message}`);
+            if (attempt < 2) {
+              await sleep(2000 * (attempt + 1)); // Progressive backoff
+              continue;
+            }
+          }
+          // For other errors, trip with short 60s cooldown and stop retrying this chunk
+          console.error(`[Gemini Compare] Non-transient error: ${err.message}`);
+          tripCircuitBreaker(60000);
           break; // Stop attempts for this chunk
         }
       }
@@ -472,7 +471,7 @@ function preFilter(sourceStructured, candidateJob, sourceCategories) {
     if (candText.includes(k)) keywordHits++;
   }
 
-  return subjectHits >= 1 || keywordHits >= 2;
+  return subjectHits >= 1 || keywordHits >= 1;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -607,9 +606,25 @@ function meetsStateCriteria(user, job) {
   return false;
 }
 
-function meetsTechnicalCriteria(job) {
-  const textToSearch = (job.job_name + ' ' + (job.organization || ''));
-  const isHighlyTechnical = /(?:junior engineer|assistant engineer|ae\/je|\bAE\b|\bJE\b|b\.tech|\bbtech\b|m\.tech|\bmtech\b|diploma in|\bITI\b|nursing|medical officer|\bMBBS\b)/i.test(textToSearch);
+function meetsTechnicalCriteria(user, job, sourceExams = []) {
+  const userQual = (user.qualification_type || '').toLowerCase();
+  const hasTechnicalBackground = userQual.includes('b.tech') || 
+                                 userQual.includes('b.e.') || 
+                                 userQual.includes('m.tech') || 
+                                 userQual.includes('diploma') ||
+                                 userQual.includes('nursing') ||
+                                 userQual.includes('medical') ||
+                                 userQual.includes('iti') ||
+                                 sourceExams.some(e => {
+                                   const t = (e.job_name + ' ' + (e.organization || '') + ' ' + (e.job_category || '')).toLowerCase();
+                                   return /(?:junior engineer|assistant engineer|ae\/je|\bae\b|\bje\b|b\.tech|\bbtech\b|m\.tech|\bmtech\b|diploma in|\biti\b|nursing|medical officer|\bmbbs\b|engineering|technical)/i.test(t);
+                                 });
+
+  if (hasTechnicalBackground) return true; // Technical user can see technical exams
+
+  // For general users, filter out highly technical engineering/medical exams
+  const textToSearch = (job.job_name + ' ' + (job.organization || '')).toLowerCase();
+  const isHighlyTechnical = /(?:junior engineer|assistant engineer|ae\/je|\bae\b|\bje\b|b\.tech|\bbtech\b|m\.tech|\bmtech\b|diploma in|\biti\b|nursing|medical officer|\bmbbs\b)/i.test(textToSearch);
   return !isHighlyTechnical;
 }
 
@@ -632,75 +647,67 @@ function isJobVerified(job) {
 // MAIN RECOMMENDATION FUNCTION — GEMINI-POWERED
 // ═══════════════════════════════════════════════════════════════
 async function getRecommendations(sourceExamIds, userId, filters = {}) {
+  if (!sourceExamIds || sourceExamIds.length === 0) {
+    return { data: [], hasMore: false, page: 1, totalMatches: 0 };
+  }
+
   const { page = 1, search = '', category = '', state = '' } = filters;
   const sb = getSb();
   await syncCircuitBreakerWithDB(sb);
 
-  // Cache check (both local in-memory and persistent PostgreSQL cache, scoped by user ID)
-  const cacheKey = `reco:${userId}:${sourceExamIds.sort().join(',')}:${category}:${search}:${state}:${page}`;
-  const cachedMem = _resultCache.get(cacheKey);
-  if (cachedMem && (Date.now() - cachedMem.ts) < RESULT_TTL) return cachedMem.data;
+  const sortedSources = [...sourceExamIds].sort().join(',');
+  const cleanSearch = (search || '').toLowerCase().trim();
+  const cacheKey = `reco_full:${userId}:${sortedSources}:${category}:${state}:${cleanSearch}`;
+  const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours caching
 
+  // 1. Check in-memory cache first
+  const memCache = _resultCache.get(cacheKey);
+  if (memCache && (Date.now() - memCache.timestamp < CACHE_TTL)) {
+    console.log(`[AI Cache] In-memory HIT for user ${userId} (Key: ${cacheKey})`);
+    let filteredScored = memCache.data;
+    if (search) {
+      const searchLower = search.toLowerCase();
+      filteredScored = memCache.data.filter(r =>
+        (r.job_name || '').toLowerCase().includes(searchLower) ||
+        (r.organization || '').toLowerCase().includes(searchLower) ||
+        (r.job_category || '').toLowerCase().includes(searchLower)
+      );
+    }
+    const PAGE_SIZE = 10;
+    const startIdx = (page - 1) * PAGE_SIZE;
+    const pageData = filteredScored.slice(startIdx, startIdx + PAGE_SIZE);
+    return { data: pageData, hasMore: filteredScored.length > startIdx + PAGE_SIZE, page, totalMatches: filteredScored.length };
+  }
+
+  // 2. Check Database cache next
   try {
-    const { data: cachedRow } = await sb
-      .from('ai_recommendation_cache')
-      .select('data, created_at')
+    const { data: dbCache } = await sb.from('ai_recommendation_cache')
+      .select('data, updated_at')
       .eq('key', cacheKey)
       .single();
 
-    if (cachedRow) {
-      const age = Date.now() - new Date(cachedRow.created_at).getTime();
-      if (age < RESULT_TTL) {
-        console.log(`[AI Cache] Hot page cache hit: ${cacheKey}`);
-        _resultCache.set(cacheKey, { data: cachedRow.data, ts: Date.now() });
-        return cachedRow.data;
+    if (dbCache && dbCache.data) {
+      const updatedAt = new Date(dbCache.updated_at).getTime();
+      if (Date.now() - updatedAt < CACHE_TTL) {
+        console.log(`[AI Cache] Supabase DB HIT for user ${userId} (Key: ${cacheKey})`);
+        _resultCache.set(cacheKey, { data: dbCache.data, timestamp: updatedAt });
+        let filteredScored = dbCache.data;
+        if (search) {
+          const searchLower = search.toLowerCase();
+          filteredScored = dbCache.data.filter(r =>
+            (r.job_name || '').toLowerCase().includes(searchLower) ||
+            (r.organization || '').toLowerCase().includes(searchLower) ||
+            (r.job_category || '').toLowerCase().includes(searchLower)
+          );
+        }
+        const PAGE_SIZE = 10;
+        const startIdx = (page - 1) * PAGE_SIZE;
+        const pageData = filteredScored.slice(startIdx, startIdx + PAGE_SIZE);
+        return { data: pageData, hasMore: filteredScored.length > startIdx + PAGE_SIZE, page, totalMatches: filteredScored.length };
       }
     }
   } catch (err) {
-    // Ignore and proceed to recompute
-  }
-
-  // Check the full scored cache (reco_full) to load other pages instantly
-  const fullCacheKey = `reco_full:${userId}:${sourceExamIds.sort().join(',')}:${category}:${search}:${state}`;
-  let fullScoredList = null;
-  const cachedFullMem = _resultCache.get(fullCacheKey);
-  if (cachedFullMem && (Date.now() - cachedFullMem.ts) < RESULT_TTL) {
-    fullScoredList = cachedFullMem.data;
-  } else {
-    try {
-      const { data: cachedRow } = await sb
-        .from('ai_recommendation_cache')
-        .select('data, created_at')
-        .eq('key', fullCacheKey)
-        .single();
-
-      if (cachedRow) {
-        const age = Date.now() - new Date(cachedRow.created_at).getTime();
-        if (age < RESULT_TTL) {
-          console.log(`[AI Cache] Full cache hit: ${fullCacheKey}`);
-          fullScoredList = cachedRow.data;
-          _resultCache.set(fullCacheKey, { data: fullScoredList, ts: Date.now() });
-        }
-      }
-    } catch (err) {
-      // Ignore
-    }
-  }
-
-  if (fullScoredList) {
-    const PAGE_SIZE = 10;
-    const startIdx = (page - 1) * PAGE_SIZE;
-    const pageData = fullScoredList.slice(startIdx, startIdx + PAGE_SIZE);
-    const result = { data: pageData, hasMore: fullScoredList.length > startIdx + PAGE_SIZE, page, totalMatches: fullScoredList.length };
-
-    _resultCache.set(cacheKey, { data: result, ts: Date.now() });
-    try {
-      await sb.from('ai_recommendation_cache')
-        .upsert({ key: cacheKey, data: result, updated_at: new Date().toISOString() });
-    } catch (err) {
-      // Ignore
-    }
-    return result;
+    // Ignore cache error, run fresh recommendation
   }
 
   // Fetch user profile from Supabase
@@ -759,6 +766,24 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
   let allCandidates = [];
   const catSet = new Set(sourceCategories.filter(Boolean));
 
+  // Query Part S: If search keyword is specified, ALWAYS fetch search-matched candidates from DB first!
+  if (search && search.trim()) {
+    const sTerm = search.trim();
+    let searchQuery = sb.from('jobs')
+      .select('id, job_name, organization, job_category, syllabus, form_status, application_start_date, application_end_date, salary_min, salary_max, qualification_required, official_application_link, official_website_link, state, minimum_age, maximum_age, states')
+      .not('id', 'in', `(${sourceExamIds.join(',')})`)
+      .in('form_status', ['LIVE', 'UPCOMING', 'RECENTLY_CLOSED'])
+      .or(`job_name.ilike.%${sTerm}%,organization.ilike.%${sTerm}%,job_category.ilike.%${sTerm}%`);
+
+    if (category) searchQuery = searchQuery.eq('job_category', category);
+    if (state && state !== 'All India') searchQuery = searchQuery.or(`state.eq.${state},state.eq.All India`);
+
+    const { data: searchCandidates } = await searchQuery.limit(500);
+    if (searchCandidates && searchCandidates.length > 0) {
+      allCandidates.push(...searchCandidates);
+    }
+  }
+
   // Query Part A: Fetch active candidates in the same categories
   let catQuery = sb.from('jobs')
     .select('id, job_name, organization, job_category, syllabus, form_status, application_start_date, application_end_date, salary_min, salary_max, qualification_required, official_application_link, official_website_link, state, minimum_age, maximum_age, states')
@@ -773,15 +798,15 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
   if (state && state !== 'All India') {
     catQuery = catQuery.or(`state.eq.${state},state.eq.All India`);
   }
-  if (search) catQuery = catQuery.or(`job_name.ilike.%${search}%,organization.ilike.%${search}%`);
+  // NOTE: search is applied as post-filter on scored results, NOT here on the candidate pool
 
-  const { data: catCandidates } = await catQuery.limit(1000);
+  const { data: catCandidates } = await catQuery.limit(5000);
   if (catCandidates && catCandidates.length > 0) {
     allCandidates.push(...catCandidates);
   }
 
   // Query Part B: Backfill with general candidates if room remains
-  if (allCandidates.length < 1000) {
+  if (allCandidates.length < 10000) {
     const pulledIds = allCandidates.map(c => c.id);
     const excludeIds = [...sourceExamIds, ...pulledIds];
 
@@ -798,9 +823,9 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     if (state && state !== 'All India') {
       genQuery = genQuery.or(`state.eq.${state},state.eq.All India`);
     }
-    if (search) genQuery = genQuery.or(`job_name.ilike.%${search}%,organization.ilike.%${search}%`);
+    // NOTE: search is applied as post-filter on scored results, NOT here on the candidate pool
 
-    const { data: genCandidates } = await genQuery.limit(1000 - allCandidates.length);
+    const { data: genCandidates } = await genQuery.limit(10000 - allCandidates.length);
     if (genCandidates && genCandidates.length > 0) {
       allCandidates.push(...genCandidates);
     }
@@ -850,14 +875,23 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
         meetsQualification(user, c) &&
         meetsAge(user, c) &&
         meetsStateCriteria(user, c) &&
-        meetsTechnicalCriteria(c)
+        meetsTechnicalCriteria(user, c, sourceExams)
       )
     );
     console.log(`[AI Eligibility Pre-Filtering] Reduced candidate pool from ${priorLength} to ${allCandidates.length} eligible candidates`);
   }
 
   // 5. Pre-filter with local matching (generous pass)
-  const shortlisted = allCandidates.filter(c => likedSet.has(c.id) || preFilter(sourceStructured, c, sourceCategories));
+  const searchLower = search ? search.toLowerCase() : '';
+  const shortlisted = allCandidates.filter(c => 
+    likedSet.has(c.id) || 
+    (searchLower && (
+      (c.job_name || '').toLowerCase().includes(searchLower) ||
+      (c.organization || '').toLowerCase().includes(searchLower) ||
+      (c.job_category || '').toLowerCase().includes(searchLower)
+    )) || 
+    preFilter(sourceStructured, c, sourceCategories)
+  );
 
   // Compute initial fast local score for ALL shortlisted candidates
   const candidatesWithLocalScore = [];
@@ -876,11 +910,18 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     });
   }
 
-  // Sort candidates by localScore DESC
+  // Sort candidates by search match FIRST, then localScore DESC
   candidatesWithLocalScore.sort((a, b) => {
     const aLiked = likedSet.has(a.cand.id) ? 1 : 0;
     const bLiked = likedSet.has(b.cand.id) ? 1 : 0;
     if (aLiked !== bLiked) return bLiked - aLiked;
+
+    if (searchLower) {
+      const aMatch = (a.cand.job_name || '').toLowerCase().includes(searchLower) || (a.cand.organization || '').toLowerCase().includes(searchLower) || (a.cand.job_category || '').toLowerCase().includes(searchLower) ? 1 : 0;
+      const bMatch = (b.cand.job_name || '').toLowerCase().includes(searchLower) || (b.cand.organization || '').toLowerCase().includes(searchLower) || (b.cand.job_category || '').toLowerCase().includes(searchLower) ? 1 : 0;
+      if (aMatch !== bMatch) return bMatch - aMatch;
+    }
+
     return b.localScore - a.localScore;
   });
 
@@ -969,8 +1010,9 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
       }
     }
 
-    // STRICT FILTER FOR OVERLAP >= 50%
-    if (finalScore < 50) continue;
+    // FILTER FOR OVERLAP (70% standard, 30% if user explicitly searched for a keyword)
+    const minThreshold = search ? 30 : 70;
+    if (finalScore < minThreshold) continue;
 
     const diffGap = finalScore >= 85 ? 'low' : finalScore >= 60 ? 'medium' : 'high';
     const gap = computeGapAnalysis(sourceStructured, candStructured);
@@ -1085,8 +1127,9 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
   for (const item of remainingCandidatesSubset) {
     const { cand, candStructured, localScore, sharedSubjects } = item;
 
-    // STRICT FILTER FOR OVERLAP >= 50%
-    if (localScore < 50) continue;
+    // FILTER FOR OVERLAP (70% standard, 30% if user explicitly searched for a keyword)
+    const minThreshold = search ? 30 : 70;
+    if (localScore < minThreshold) continue;
 
     const gap = computeGapAnalysis(sourceStructured, candStructured);
     const diffGap = localScore >= 85 ? 'low' : localScore >= 60 ? 'medium' : 'high';
@@ -1196,11 +1239,13 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     });
   }
 
-  // Sort: Liked/saved first, then 2026 exams first (priority for this year), then DESC by score, then LIVE first
+  // Sort: search match first (if searching), then 2026 exams, then DESC by score, then LIVE first
   scored.sort((a, b) => {
-    const aLiked = likedSet.has(a.id) ? 1 : 0;
-    const bLiked = likedSet.has(b.id) ? 1 : 0;
-    if (aLiked !== bLiked) return bLiked - aLiked;
+    if (searchLower) {
+      const aMatch = (a.job_name || '').toLowerCase().includes(searchLower) || (a.organization || '').toLowerCase().includes(searchLower) || (a.job_category || '').toLowerCase().includes(searchLower) ? 1 : 0;
+      const bMatch = (b.job_name || '').toLowerCase().includes(searchLower) || (b.organization || '').toLowerCase().includes(searchLower) || (b.job_category || '').toLowerCase().includes(searchLower) ? 1 : 0;
+      if (aMatch !== bMatch) return bMatch - aMatch;
+    }
 
     // Prioritize 2026 exams for the current year
     const aIs2026 = (a.job_name || '').includes('2026') || (a.application_start_date && a.application_start_date.startsWith('2026')) ? 1 : 0;
@@ -1258,29 +1303,36 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     }
   }
 
-  // Store the full list in database cache (so other pages can load instantly)
+  // Save the calculated recommendations to both in-memory cache and Supabase DB cache (24h TTL)
+  _resultCache.set(cacheKey, { data: limitedScored, timestamp: Date.now() });
+
   try {
-    await sb.from('ai_recommendation_cache')
-      .upsert({ key: fullCacheKey, data: limitedScored, updated_at: new Date().toISOString() });
-    _resultCache.set(fullCacheKey, { data: limitedScored, ts: Date.now() });
+    await sb.from('ai_recommendation_cache').upsert({
+      key: cacheKey,
+      data: limitedScored,
+      updated_at: new Date().toISOString()
+    });
+    console.log(`[AI Cache] Saved recommendations cache for user ${userId} (Key: ${cacheKey})`);
   } catch (err) {
-    console.error(`[AI Cache] Failed to store full persistent cache in Supabase:`, err.message);
+    console.error(`[AI Cache] Failed to save recommendations cache:`, err.message);
+  }
+
+  // Apply search as a POST-FILTER on scored results (not on the candidate pool)
+  let filteredScored = limitedScored;
+  if (search) {
+    const searchLower = search.toLowerCase();
+    filteredScored = limitedScored.filter(r =>
+      (r.job_name || '').toLowerCase().includes(searchLower) ||
+      (r.organization || '').toLowerCase().includes(searchLower) ||
+      (r.job_category || '').toLowerCase().includes(searchLower)
+    );
   }
 
   // Paginate
   const PAGE_SIZE = 10;
   const startIdx = (page - 1) * PAGE_SIZE;
-  const pageData = limitedScored.slice(startIdx, startIdx + PAGE_SIZE);
-  const result = { data: pageData, hasMore: limitedScored.length > startIdx + PAGE_SIZE, page, totalMatches: limitedScored.length };
-
-  _resultCache.set(cacheKey, { data: result, ts: Date.now() });
-  try {
-    await sb.from('ai_recommendation_cache')
-      .upsert({ key: cacheKey, data: result, updated_at: new Date().toISOString() });
-  } catch (err) {
-    console.error(`[AI Cache] Failed to store persistent cache in Supabase:`, err.message);
-  }
-  return result;
+  const pageData = filteredScored.slice(startIdx, startIdx + PAGE_SIZE);
+  return { data: pageData, hasMore: filteredScored.length > startIdx + PAGE_SIZE, page, totalMatches: filteredScored.length };
 }
 
 function buildExplanation(score, sharedSubjects, gap, diffGap) {

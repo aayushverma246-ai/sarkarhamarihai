@@ -124,7 +124,7 @@ const STATE_MAP = {
   'chandigarh': 'https://chandigarh.gov.in',
   'delhi': 'https://dsssb.delhi.gov.in',
   'lakshadweep': 'https://lakshadweep.gov.in',
-  'andaman': 'https://andaman.gov.in',
+  'andaman': 'https://andamannicobar.gov.in',
   'dadra': 'https://dnh.gov.in',
   'nagar haveli': 'https://dnh.gov.in',
   'ladakh': 'https://ladakh.gov.in',

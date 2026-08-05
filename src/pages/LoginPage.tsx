@@ -417,7 +417,7 @@ export default function LoginPage() {
                       dispatch({ type: 'AUTH_START' });
                       try {
                         const { supabase } = await import('../utils/supabase');
-                        const redirectUrl = 'https://sarkarhamarihai.vercel.app/auth/callback?platform=mobile';
+                        const redirectUrl = 'https://sarkarhamarihai.app/auth/callback?platform=mobile';
                         const { data, error } = await supabase.auth.signInWithOAuth({
                           provider: 'google',
                           options: {
@@ -566,7 +566,7 @@ export default function LoginPage() {
                 const { supabase } = await import('../utils/supabase');
                 const isNative = Capacitor.isNativePlatform();
                 const redirectUrl = isNative
-                  ? 'https://sarkarhamarihai.vercel.app/auth/callback?platform=mobile'
+                  ? 'https://sarkarhamarihai.app/auth/callback?platform=mobile'
                   : window.location.origin + '/auth/callback';
                 
                 if (isNative) {

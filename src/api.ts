@@ -14,7 +14,7 @@ function getApiBase(): string {
     if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform()) {
         // Prefer env var if it's already absolute, otherwise use production
         if (envUrl && envUrl.startsWith('http')) return envUrl;
-        return 'https://sarkarhamarihai.vercel.app/api';
+        return 'https://sarkarhamarihai.app/api';
     }
 
     return envUrl || 'http://localhost:3001/api';
@@ -404,11 +404,11 @@ export const api = {
         const res = await cachedGet<{ reminders_enabled: boolean }>(`/apply/reminder/${jobId}`, THIRTY_SEC, true);
         return res || { reminders_enabled: false };
     },
-    toggleApplied: (jobId: string) => {
+    toggleApplied: (jobId: string, applied: boolean) => {
         // Only invalidate applied-jobs list and the specific job's apply status
         invalidateCache('/apply/applied');
         invalidateCache(`/apply/status/${jobId}`);
-        return request<{ applied: boolean }>('POST', '/apply/toggle', { job_id: jobId }, true);
+        return request<{ applied: boolean }>('POST', '/apply/toggle', { job_id: jobId, applied }, true);
     },
     toggleReminder: (jobId: string) => {
         invalidateCache('/apply/reminders');
@@ -447,4 +447,6 @@ export const api = {
         const minimalExams = (appliedExams || []).map(e => ({ id: typeof e === 'string' ? e : e.id }));
         return request<any>('POST', '/ai/recommendations', { appliedExams: minimalExams, page, search, category, state }, true);
     },
+    getBillingStatus: () => request<any>('GET', '/billing/status', undefined, true),
 };
+

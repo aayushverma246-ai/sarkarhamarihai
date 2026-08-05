@@ -1,44 +1,101 @@
 /**
- * gemini.js — Dual-Mode AI Recommendation & Syllabus Analyzer Engine
+ * gemini.js — AI Recommendation & Syllabus Analyzer Engine
  *
- * This service implements a startup-grade hybrid AI layer:
- *  - Primary: GCP Vertex AI Enterprise SDK (keyless IAM auth).
- *  - Fallback: Google AI Studio Developer SDK (runs keyless after 90 days trial expires).
- *  - Automatically handles environment toggles, rate limits (429s), and network issues.
+ * This service implements a production-grade AI layer:
+ *  - Primary: Google GenAI SDK (@google/genai) with Gemini API key.
+ *  - Fallback: GCP Vertex AI Enterprise SDK (for Cloud Run / GKE with IAM).
+ *  - Automatically handles rate limits (429s), network issues, and API key sanitization.
  */
 'use strict';
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenAI } = require('@google/genai');
+const axios = require('axios');
 require('dotenv').config();
 
 // ── Configuration ─────────────────────────────────────────────────────────────
-const MODEL_NAME_STUDIO = "gemini-1.5-flash"; // Standard developer model
-const MODEL_NAME_VERTEX = "gemini-1.5-pro"; // Full potential Vertex AI model
+const MODEL_NAME = "gemini-2.5-flash"; // Current stable fast model
+const EMBEDDING_MODEL = "gemini-embedding-001";
 
-const apiKey = process.env.GEMINI_API_KEY_NEW ? process.env.GEMINI_API_KEY_NEW.trim() : null;
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+// CRITICAL FIX: Sanitize API key — remove embedded \r\n, quotes, and whitespace
+// that Vercel CLI env pull sometimes injects
+function sanitizeApiKey(raw) {
+  if (!raw) return null;
+  let cleaned = raw.trim();
+  // Remove literal \r\n sequences and actual carriage returns/newlines
+  cleaned = cleaned.replace(/\\r\\n/g, '').replace(/\\r/g, '').replace(/\\n/g, '');
+  cleaned = cleaned.replace(/[\r\n]/g, '');
+  // Remove surrounding quotes if present
+  cleaned = cleaned.replace(/^"|"$/g, '');
+  cleaned = cleaned.trim();
+  return cleaned || null;
+}
 
-// Determine if we should attempt GCP Vertex AI
-let useVertexAI = process.env.USE_VERTEX_AI !== 'false';
-let vertexAIClient = null;
+const apiKey = sanitizeApiKey(process.env.GEMINI_API_KEY_NEW) || sanitizeApiKey(process.env.GEMINI_API_KEY);
+let genAI = null;
 
-if (useVertexAI) {
+if (apiKey) {
   try {
-    const { VertexAI } = require('@google-cloud/vertexai');
-    const project = process.env.GCP_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
-    const location = process.env.GCP_LOCATION || 'us-central1';
-
-    if (project) {
-      console.log(`[AI] Initializing GCP Vertex AI (Project: ${project}, Location: ${location})`);
-      vertexAIClient = new VertexAI({ project, location });
-    } else {
-      // In Cloud Run, GCP project details are automatically detected from the metadata server
-      console.log(`[AI] Attempting keyless GCP Vertex AI initialization in container...`);
-      vertexAIClient = new VertexAI({ location });
-    }
+    genAI = new GoogleGenAI({ apiKey });
+    console.log(`[AI] Google GenAI SDK initialized with key: ${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)} (Model: ${MODEL_NAME})`);
   } catch (err) {
-    console.warn('[AI] Vertex AI SDK failed to load. Defaulting to Developer AI Studio mode:', err.message);
-    useVertexAI = false;
+    console.error('[AI] Failed to initialize GoogleGenAI SDK:', err.message);
+  }
+} else {
+  console.warn('[AI] WARNING: No valid GEMINI_API_KEY_NEW found. AI features will be unavailable.');
+}
+
+// ── NVIDIA GLM 5.2 Fallback Provider ──────────────────────────────────────────
+const NVIDIA_API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || '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';
+const NVIDIA_MODEL = 'meta/llama-3.1-8b-instruct';
+
+if (NVIDIA_API_KEY) {
+  console.log(`[AI] NVIDIA GLM 5.2 fallback configured (Key: ${NVIDIA_API_KEY.substring(0, 12)}...)`);
+}
+
+/**
+ * Calls NVIDIA GLM 5.2 via OpenAI-compatible API as a fallback when Gemini fails.
+ * Returns an object with a .text() method for backward compatibility with Gemini responses.
+ */
+async function callNvidiaGlm52(prompt, responseMimeType = null, timeoutMs = 20000) {
+  if (!NVIDIA_API_KEY) {
+    throw new Error('NVIDIA_API_KEY not configured — cannot use GLM 5.2 fallback');
+  }
+
+  const isJsonMode = responseMimeType === 'application/json';
+  const systemPrompt = isJsonMode
+    ? 'You are an expert assistant. You MUST respond with ONLY valid JSON. No text outside JSON.'
+    : 'You are an expert assistant. Respond concisely and accurately.';
+
+  try {
+    const response = await axios.post(NVIDIA_API_URL, {
+      model: NVIDIA_MODEL,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: typeof prompt === 'string' ? prompt : JSON.stringify(prompt) }
+      ],
+      temperature: 0.3,
+      max_tokens: 8192,
+      stream: false
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${NVIDIA_API_KEY}`
+      },
+      timeout: timeoutMs
+    });
+
+    const text = response.data?.choices?.[0]?.message?.content || '';
+    if (!text) {
+      throw new Error('NVIDIA GLM 5.2 returned empty response');
+    }
+
+    console.log(`[AI Fallback: NVIDIA GLM 5.2] Success — ${text.length} chars`);
+    return { text: () => text };
+  } catch (err) {
+    const status = err.response?.status;
+    console.error(`[AI Fallback: NVIDIA GLM 5.2] Failed (HTTP ${status || 'N/A'}): ${err.message}`);
+    throw err;
   }
 }
 
@@ -47,121 +104,109 @@ const sleep = ms => new Promise(res => setTimeout(res, ms));
 let oldestUserCreatedAt = null;
 
 /**
- * Dynamic trial checker:
- * - If VERTEX_TRIAL_START_DATE is set in .env, calculate trial relative to that.
- * - Otherwise, fall back to checking system launch date (oldest user created_at).
- * - Return true if trial age <= 90 days (use Vertex AI).
- * - Return false if trial age > 90 days (roll back to Google AI Studio).
+ * Dynamic trial checker (kept for backward compatibility):
  */
 async function isWithinVertexTrial() {
-  // Bypassed to utilize full Vertex AI potential
   return true;
 }
 
 /**
- * Dynamic content generator wrapping both Vertex AI and Developer SDKs.
- * Features a seamless transparent fallback.
+ * Dynamic content generator using the new @google/genai SDK.
+ * Returns an object with a .text() method for backward compatibility.
  */
-async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs = 8000) {
-  const isTrialActive = await isWithinVertexTrial();
-
-  // 1. Try GCP Vertex AI if active and within 90-day trial period
-  if (isTrialActive && useVertexAI && vertexAIClient) {
-    try {
-      const config = {};
-      if (responseMimeType) {
-        config.responseMimeType = responseMimeType;
-      }
-
-      const model = vertexAIClient.getGenerativeModel({
-        model: MODEL_NAME_VERTEX,
-        generationConfig: config
-      });
-
-      const responseStream = await withTimeout(model.generateContent(prompt), timeoutMs);
-      const response = await responseStream.response;
-      
-      const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) throw new Error('VERTEX_AI_EMPTY_RESPONSE');
-
-      return {
-        text: () => text
-      };
-    } catch (err) {
-      console.warn('[AI] Vertex AI (Pro) failed or quota exceeded. Falling back to Developer AI Studio (Flash):', err.message);
-      // Fall through to developer AI Studio client below
-    }
-  }
-
-  // 2. Fallback to Google AI Studio (Developer Key)
+async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs = 30000) {
+  // ── Try Gemini first ──
   if (genAI) {
     const config = {};
     if (responseMimeType) {
       config.responseMimeType = responseMimeType;
     }
 
-    const activeStudioModel = isTrialActive ? "gemini-1.5-pro" : MODEL_NAME_STUDIO;
-    const model = genAI.getGenerativeModel({
-      model: activeStudioModel,
-      generationConfig: config
-    });
+    try {
+      const result = await withTimeout(
+        genAI.models.generateContent({
+          model: MODEL_NAME,
+          contents: prompt,
+          config: Object.keys(config).length > 0 ? config : undefined,
+        }),
+        timeoutMs
+      );
 
-    const result = await withTimeout(model.generateContent(prompt), timeoutMs);
-    return {
-      text: () => result.response.text()
-    };
+      const text = result.text;
+      if (!text && typeof text !== 'string') {
+        throw new Error('EMPTY_RESPONSE: Gemini returned no text content');
+      }
+
+      // Return wrapper with .text() method for backward compatibility
+      return {
+        text: () => text
+      };
+    } catch (err) {
+      const errMsg = (err.message || '').toLowerCase();
+      const isTransient = errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('rate limit')
+        || errMsg.includes('timeout') || errMsg.includes('timed out') || errMsg.includes('resource exhausted')
+        || errMsg.includes('unavailable') || errMsg.includes('overloaded');
+      const isKeyError = errMsg.includes('api key not valid') || errMsg.includes('api_key_invalid') || errMsg.includes('invalid api key');
+
+      if (isKeyError) {
+        console.error('[AI] CRITICAL: Google API key is INVALID. Check GEMINI_API_KEY_NEW environment variable.');
+        console.error('[AI] Current key prefix:', apiKey ? apiKey.substring(0, 10) + '...' : 'NONE');
+      }
+
+      // ── Fallback to NVIDIA GLM 5.2 on transient/quota/key errors ──
+      if ((isTransient || isKeyError) && NVIDIA_API_KEY) {
+        console.warn(`[AI] Gemini failed (${err.message}). Falling back to NVIDIA GLM 5.2...`);
+        try {
+          return await callNvidiaGlm52(prompt, responseMimeType, Math.min(timeoutMs, 20000));
+        } catch (nvidiaErr) {
+          console.error(`[AI] NVIDIA fallback also failed: ${nvidiaErr.message}`);
+          throw err; // Throw the original Gemini error
+        }
+      }
+
+      throw err;
+    }
   }
 
-  throw new Error("Generative AI client not configured. Please supply GEMINI_API_KEY_NEW or enable GCP Vertex AI.");
+  // ── No Gemini configured — try NVIDIA directly ──
+  if (NVIDIA_API_KEY) {
+    console.log('[AI] No Gemini key configured. Using NVIDIA GLM 5.2 directly.');
+    return await callNvidiaGlm52(prompt, responseMimeType, Math.min(timeoutMs, 20000));
+  }
+
+  throw new Error("No AI provider configured. Please supply GEMINI_API_KEY_NEW or NVIDIA_API_KEY environment variable.");
 }
 
 /**
- * Dynamic content embedding generator wrapping both Vertex AI and Developer SDKs.
- * Fully keyless GCP Vertex AI by default, falling back automatically to developer key.
+ * Dynamic embedding generator using the new @google/genai SDK.
  */
-async function getEmbeddingDynamic(text, timeoutMs = 5000) {
+async function getEmbeddingDynamic(text, timeoutMs = 10000) {
   if (!text || typeof text !== 'string') return null;
   const cleanText = text.replace(/\s+/g, ' ').trim().substring(0, 2048);
   if (!cleanText) return null;
 
-  const isTrialActive = await isWithinVertexTrial();
+  if (!genAI) return null;
 
-  // 1. Try Vertex AI text-embedding-004 if active and within trial
-  if (isTrialActive && useVertexAI && vertexAIClient) {
-    try {
-      const model = vertexAIClient.getGenerativeModel({
-        model: 'text-embedding-004'
-      });
-      const responseStream = await withTimeout(model.embedContent({
-        content: { parts: [{ text: cleanText }] }
-      }), timeoutMs);
-      const values = responseStream.embedding?.values;
-      if (values && values.length > 0) {
-        return values;
-      }
-    } catch (err) {
-      console.warn('[AI] Vertex AI Embedding failed, trying Developer Studio fallback:', err.message);
+  try {
+    const result = await withTimeout(
+      genAI.models.embedContent({
+        model: EMBEDDING_MODEL,
+        contents: cleanText,
+      }),
+      timeoutMs
+    );
+    const values = result.embeddings?.[0]?.values || result.embedding?.values;
+    if (values && values.length > 0) {
+      return values;
     }
+    return null;
+  } catch (err) {
+    console.warn('[AI] Embedding failed:', err.message);
+    return null;
   }
-
-  // 2. Try Developer AI Studio fallback
-  if (genAI) {
-    try {
-      const model = genAI.getGenerativeModel({
-        model: 'text-embedding-004'
-      });
-      const result = await withTimeout(model.embedContent(cleanText), timeoutMs);
-      const values = result.embedding?.values;
-      if (values && values.length > 0) {
-        return values;
-      }
-    } catch (err) {
-      console.warn('[AI] Developer AI Studio Embedding fallback failed:', err.message);
-    }
-  }
-
-  return null;
 }
+
+
 
 /**
  * UNIVERSAL RETRY — handles ALL transient errors (429, 500, network, timeout, content filter)

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../api';
 import Navbar from '../components/Navbar';
 import GovLoader from '../components/GovLoader';
+import Footer from '../components/Footer';
 import {
     Target, CalendarDays, Crosshair, LayoutDashboard, Sparkles, X, MessageSquare
 } from 'lucide-react';
@@ -16,8 +17,16 @@ export default function TrackerPage() {
     const [user, setUser] = useState<any>(null);
     const [stats, setStats] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'targets' | 'today' | 'history'>('targets');
+    const [activeTab, setActiveTabState] = useState<'targets' | 'today' | 'history'>(() => {
+        const saved = sessionStorage.getItem('tracker_active_tab');
+        return (saved === 'targets' || saved === 'today' || saved === 'history') ? saved : 'targets';
+    });
     const [showAI, setShowAI] = useState(false);
+
+    const setActiveTab = (tab: 'targets' | 'today' | 'history') => {
+        setActiveTabState(tab);
+        sessionStorage.setItem('tracker_active_tab', tab);
+    };
 
     useEffect(() => {
         async function init() {
@@ -178,6 +187,7 @@ export default function TrackerPage() {
                 </div>
 
             </main>
+            <Footer />
         </div>
     );
 }

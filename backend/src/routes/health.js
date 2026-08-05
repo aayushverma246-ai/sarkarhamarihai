@@ -62,4 +62,19 @@ router.get('/', async (req, res) => {
     }
 });
 
+// POST /api/health/log
+router.post('/log', async (req, res) => {
+    try {
+        const { type, data } = req.body;
+        // In a full SaaS setup, you would log this to Sentry, write to a log management service (like Datadog/Axiom),
+        // or record in a postgres table for internal developer dashboards.
+        console.log(`[CLIENT TELEMETRY - ${type?.toUpperCase() || 'UNKNOWN'}]:`, JSON.stringify(data));
+        return res.json({ success: true });
+    } catch (err) {
+        console.error('[Health Logging API] Error:', err.message);
+        return res.status(500).json({ error: 'Failed to record telemetry' });
+    }
+});
+
 module.exports = router;
+

@@ -1,38 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Star, ArrowRight, Calendar, BookOpen, AlertCircle } from 'lucide-react';
 import Logo from '../assets/logo';
-import { Spotlight } from '../components/ui/spotlight';
-import { SpotlightHover } from '../components/ui/spotlight-hover';
-import { SplineScene } from '../components/ui/splite';
-
-const stableParticles = [
-    { x: 260, y: 310, targetY: 90,  targetX: 200, scale: 1.1, duration: 1.4, delay: 0.0 },
-    { x: 310, y: 290, targetY: 110, targetX: 280, scale: 0.9, duration: 1.6, delay: 0.15 },
-    { x: 280, y: 330, targetY: 80,  targetX: 150, scale: 1.15, duration: 1.2, delay: 0.3 },
-    { x: 330, y: 300, targetY: 130, targetX: 310, scale: 0.8, duration: 1.8, delay: 0.45 },
-    { x: 250, y: 320, targetY: 100, targetX: 180, scale: 1.0, duration: 1.5, delay: 0.6 },
-    { x: 300, y: 280, targetY: 120, targetX: 240, scale: 1.2, duration: 1.3, delay: 0.75 },
-    { x: 290, y: 340, targetY: 95,  targetX: 220, scale: 0.75, duration: 1.5, delay: 0.9 },
-    { x: 320, y: 315, targetY: 85,  targetX: 260, scale: 1.1, duration: 1.7, delay: 1.05 }
-];
+import Footer from '../components/Footer';
 
 export default function LandingPage() {
     const navigate = useNavigate();
-    const { scrollYProgress } = useScroll();
-    
-    // Active robot emotion ('neutral' | 'happy' | 'wow')
-    const [robotEmotion, setRobotEmotion] = useState<'neutral' | 'happy' | 'wow'>('neutral');
+
+    // Page title syncing
+    useEffect(() => {
+        document.title = "SarkarHamariHai | AI Study & Exam Tracker";
+    }, []);
 
     // FAQ state variable
     const [faqOpen, setFaqOpen] = useState<number | null>(null);
 
-    // Parallax background effects
-    const yBg = useTransform(scrollYProgress, [0, 1], ['0%', '30%']);
-    const opacityBg = useTransform(scrollYProgress, [0, 0.5], [1, 0.2]);
-
-    const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+    // Mobile check & Navigation drawer
     const [isMobile, setIsMobile] = useState(false);
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
     useEffect(() => {
         const checkMobile = () => {
@@ -43,65 +29,78 @@ export default function LandingPage() {
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
+    // Throttled Scroll State via top-anchor IntersectionObserver (No scroll listeners)
+    const [isScrolled, setIsScrolled] = useState(false);
     useEffect(() => {
-        // Bypass cursor tracking mouse listener on mobile
-        if (isMobile) return;
+        const observer = new IntersectionObserver(([entry]) => {
+            setIsScrolled(!entry.isIntersecting);
+        }, { threshold: 0 });
 
-        let rafId: number;
-        let lastEvent: MouseEvent | null = null;
+        const anchor = document.getElementById('top-anchor');
+        if (anchor) observer.observe(anchor);
 
-        const handleMouseMove = (e: MouseEvent) => {
-            setMousePosition({
-                x: e.clientX,
-                y: e.clientY,
-            });
-
-            if (!e.isTrusted) return; // Prevent infinite event loops from synthetic events
-            lastEvent = e;
-
-            // Throttle synthetic event dispatches using requestAnimationFrame to ensure jitter-free cursor tracking aligned with monitor refresh rates
-            if (!rafId) {
-                rafId = requestAnimationFrame(() => {
-                    const canvas = document.querySelector('canvas');
-                    if (canvas && lastEvent) {
-                        // Dispatch mousemove
-                        canvas.dispatchEvent(new MouseEvent('mousemove', {
-                            clientX: lastEvent.clientX,
-                            clientY: lastEvent.clientY,
-                            screenX: lastEvent.screenX,
-                            screenY: lastEvent.screenY,
-                            bubbles: false,
-                            cancelable: true,
-                        }));
-
-                        // Dispatch pointermove
-                        if (window.PointerEvent) {
-                            canvas.dispatchEvent(new PointerEvent('pointermove', {
-                                clientX: lastEvent.clientX,
-                                clientY: lastEvent.clientY,
-                                screenX: lastEvent.screenX,
-                                screenY: lastEvent.screenY,
-                                bubbles: false,
-                                cancelable: true,
-                                pointerType: 'mouse',
-                                isPrimary: true
-                            }));
-                        }
-                    }
-                    rafId = 0;
-                });
-            }
-        };
-        window.addEventListener('mousemove', handleMouseMove);
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            if (rafId) cancelAnimationFrame(rafId);
+            if (anchor) observer.unobserve(anchor);
         };
-    }, [isMobile]);
+    }, []);
+
+    // Scroll restoration for Landing Page
+    useEffect(() => {
+        const savedScroll = sessionStorage.getItem('landing_scroll');
+        if (savedScroll) {
+            const scrollPos = parseInt(savedScroll, 10);
+            if (scrollPos > 0) {
+                const timer = setTimeout(() => {
+                    window.scrollTo({ top: scrollPos, behavior: 'instant' });
+                    requestAnimationFrame(() => {
+                        window.scrollTo({ top: scrollPos, behavior: 'instant' });
+                    });
+                }, 100);
+                return () => clearTimeout(timer);
+            }
+        }
+    }, []);
+
+    useEffect(() => {
+        let debounceTimer: ReturnType<typeof setTimeout>;
+        const handleScroll = () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                const y = Math.max(
+                    window.scrollY,
+                    document.documentElement.scrollTop,
+                    document.body?.scrollTop || 0
+                );
+                sessionStorage.setItem('landing_scroll', y.toString());
+            }, 100);
+        };
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        return () => {
+            clearTimeout(debounceTimer);
+            window.removeEventListener('scroll', handleScroll);
+        };
+    }, []);
+
+    // Dynamic Clock Time (NYC clock translated to candidate local experience / standard premium tag)
+    const [currentTime, setCurrentTime] = useState('12:00 PM');
+    useEffect(() => {
+        const updateTime = () => {
+            const now = new Date();
+            let hours = now.getHours();
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12; // the hour '0' should be '12'
+            setCurrentTime(`${hours}:${minutes} ${ampm}`);
+        };
+        updateTime();
+        const timer = setInterval(updateTime, 60000);
+        return () => clearInterval(timer);
+    }, []);
 
     const fadeInUp = {
         hidden: { opacity: 0, y: 30 },
-        visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] } }
+        visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] } }
     };
 
     const staggerContainer = {
@@ -112,375 +111,485 @@ export default function LandingPage() {
         }
     };
 
-    // Highly damped, premium spring transitions with ZERO wobble/overshoot
-    const robotMotionVariants = {
-        neutral: {
-            scale: 1,
-            x: 0,
-            y: 0,
-            rotateY: 0,
-            rotateX: 0,
-            rotateZ: 0,
-            transition: { type: "spring" as const, stiffness: 150, damping: 35 }
-        },
-        happy: {
-            scale: 1.15,
-            x: 0,
-            y: -10,
-            rotateY: 0,
-            rotateX: 0,
-            rotateZ: 0,
-            transition: { type: "spring" as const, stiffness: 150, damping: 35 }
-        },
-        wow: {
-            scale: 1.25,
-            x: 0,
-            y: -12,
-            rotateY: 0,
-            rotateX: -10, // Leans forward in surprise/wow
-            rotateZ: 4,   // Cute slight head tilt
-            transition: { type: "spring" as const, stiffness: 150, damping: 30 }
-        }
-    };
-
     return (
-        <div className="min-h-screen bg-black text-white font-sans overflow-hidden selection:bg-red-600/30 selection:text-white">
-            
-            {/* Dynamic Cursor Glow (Desktop Only) */}
-            {!isMobile && (
-                <motion.div 
-                    className="fixed top-0 left-0 w-[400px] h-[400px] bg-red-600/10 rounded-full blur-[100px] pointer-events-none z-0"
-                    animate={{
-                        x: mousePosition.x - 200,
-                        y: mousePosition.y - 200,
-                    }}
-                    transition={{ type: "spring", damping: 40, stiffness: 150, mass: 0.5 }}
-                />
-            )}
+        <div className="min-h-screen bg-[#050505] text-white font-sans overflow-hidden selection:bg-[#FF4500] selection:text-white relative">
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
-            {/* Subtle Dot Grid Background */}
-            <div className="fixed inset-0 z-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#555 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
+                body, .font-sans {
+                    font-family: 'Inter', sans-serif !important;
+                    -webkit-font-smoothing: antialiased;
+                    -moz-osx-font-smoothing: grayscale;
+                    text-rendering: optimizeLegibility;
+                }
 
-            {/* ── HEADER ── */}
-            <header className="fixed top-0 w-full z-50 bg-black/40 backdrop-blur-2xl border-b border-white/[0.05]">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
-                    <div className="flex items-center gap-2 sm:gap-3 cursor-pointer group" onClick={() => navigate('/')}>
+                .font-serif {
+                    font-family: 'Playfair Display', serif !important;
+                }
+
+                .font-mono {
+                    font-family: 'JetBrains Mono', monospace !important;
+                }
+
+                /* Reveal Animation class mappings */
+                .reveal-effect {
+                    opacity: 0;
+                    transform: translateY(25px);
+                    transition: all 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+                }
+
+                .reveal-effect.active {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+
+                /* Floating animations for surrealist hands */
+                @keyframes float-hand-left {
+                    0%, 100% { transform: translateY(0) rotate(0); }
+                    50% { transform: translateY(-20px) rotate(2deg); }
+                }
+
+                @keyframes float-hand-right {
+                    0%, 100% { transform: translateY(0) rotate(0); }
+                    50% { transform: translateY(20px) rotate(-2deg); }
+                }
+
+                .animate-float-left {
+                    animation: float-hand-left 12s ease-in-out infinite;
+                }
+
+                .animate-float-right {
+                    animation: float-hand-right 14s ease-in-out infinite;
+                }
+
+                /* Global Noise overlay */
+                .noise-overlay {
+                    position: fixed;
+                    inset: 0;
+                    z-index: 50;
+                    pointer-events: none;
+                    opacity: 0.04;
+                    mix-blend-mode: overlay;
+                    background-image: url("https://grainy-gradients.vercel.app/noise.svg");
+                }
+
+                /* Rendering performance optimization for offscreen content elements */
+                #problem, #expertise, #works, #solutions, #faq {
+                    content-visibility: auto;
+                    contain-intrinsic-size: 500px;
+                }
+            `}</style>
+
+            {/* Top Anchor for Header scroll state */}
+            <div id="top-anchor" className="absolute top-0 left-0 w-full h-1 pointer-events-none" />
+
+            {/* Global Noise Overlay */}
+            <div className="noise-overlay" />
+
+            {/* ── NAVIGATION ── */}
+            <nav 
+                className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 py-8 ${
+                    isScrolled 
+                        ? 'py-4 bg-[#050505]/80 backdrop-blur-md border-b border-white/5 shadow-lg' 
+                        : 'bg-transparent border-b border-transparent'
+                }`}
+            >
+                <div className="container mx-auto px-6 flex items-center justify-between">
+                    <a href="#" className="flex items-center gap-3 cursor-pointer group" onClick={() => navigate('/')}>
                         <div className="relative">
-                            <div className="absolute inset-0 bg-red-600 blur-lg opacity-0 group-hover:opacity-40 transition-opacity duration-700" />
-                            <Logo size={32} className="relative z-10" />
+                            <div className="absolute inset-0 bg-[#FF4500] blur-lg opacity-0 group-hover:opacity-40 transition-opacity duration-700" />
+                            <Logo size={28} className="relative z-10" />
                         </div>
-                        <span className="text-base sm:text-lg font-normal tracking-wide text-white uppercase hidden sm:block">
-                            SarkarHamariHai
+                        <span className="text-2xl font-light tracking-wide text-white font-serif">
+                            Sarkar <span className="text-[#FF4500] italic font-semibold">Hamari</span> Hai<span className="text-[#FF4500]">.</span>
                         </span>
+                    </a>
+                    
+                    <div className="hidden md:flex items-center space-x-10 font-sans">
+                        <a href="#problem" className="text-sm text-gray-400 hover:text-white transition-colors duration-300">The Problem</a>
+                        <a href="#expertise" className="text-sm text-gray-400 hover:text-white transition-colors duration-300">Categories</a>
+                        <a href="#works" className="text-sm text-gray-400 hover:text-white transition-colors duration-300">Features</a>
+                        <a href="#faq" className="text-sm text-gray-400 hover:text-white transition-colors duration-300">FAQs</a>
                     </div>
-                    <div className="flex items-center gap-3 sm:gap-6">
-                        <button
+
+                    <div className="flex items-center gap-4">
+                        <button 
                             onClick={() => navigate('/login')}
-                            onMouseEnter={() => setRobotEmotion('wow')}
-                            onMouseLeave={() => setRobotEmotion('neutral')}
-                            className="bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 hover:text-white px-4 py-1.5 sm:px-6 sm:py-2.5 text-[11px] sm:text-[13px] font-semibold uppercase tracking-wide transition-all rounded-full backdrop-blur-md whitespace-nowrap"
+                            className="hidden sm:inline-block text-xs uppercase tracking-widest text-gray-400 hover:text-white px-5 py-2 transition-all font-mono"
                         >
-                            LOG IN
+                            Log In
                         </button>
                         <button
                             onClick={() => navigate('/signup')}
-                            onMouseEnter={() => setRobotEmotion('happy')}
-                            onMouseLeave={() => setRobotEmotion('neutral')}
-                            className="bg-red-600 hover:bg-red-500 text-white px-4 py-1.5 sm:px-7 sm:py-2.5 text-[12px] sm:text-[15px] font-semibold transition-all rounded-full shadow-lg hover:shadow-red-500/20 whitespace-nowrap"
+                            className="inline-flex items-center justify-center px-6 py-3 rounded-full text-xs md:text-sm font-medium bg-white text-black hover:scale-105 hover:bg-gray-100 transition-all duration-300 font-sans uppercase tracking-wider"
                         >
-                            Sign Up
+                            Start Free
+                        </button>
+                        {/* Mobile Hamburger Button */}
+                        <button
+                            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                            className="md:hidden flex flex-col justify-center items-center gap-1.5 w-10 h-10 rounded-full border border-white/10 bg-white/5 z-50 relative"
+                            aria-label="Toggle mobile menu"
+                        >
+                            <span className={`w-4 h-0.5 bg-white transition-transform duration-300 ${mobileMenuOpen ? 'rotate-45 translate-y-1' : ''}`} />
+                            <span className={`w-4 h-0.5 bg-white transition-opacity duration-300 ${mobileMenuOpen ? 'opacity-0' : 'opacity-100'}`} />
+                            <span className={`w-4 h-0.5 bg-white transition-transform duration-300 ${mobileMenuOpen ? '-rotate-45 -translate-y-1' : ''}`} />
                         </button>
                     </div>
                 </div>
-            </header>
+            </nav>
+
+            {/* Mobile Menu Drawer */}
+            <AnimatePresence>
+                {mobileMenuOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        transition={{ duration: 0.3 }}
+                        className="fixed inset-0 z-40 bg-[#050505] pt-32 px-6 flex flex-col gap-8 md:hidden"
+                    >
+                        <div className="flex flex-col gap-6 text-xl font-sans text-left">
+                            <a href="#problem" onClick={() => setMobileMenuOpen(false)} className="text-gray-400 hover:text-white transition-colors py-2 border-b border-white/5">The Problem</a>
+                            <a href="#expertise" onClick={() => setMobileMenuOpen(false)} className="text-gray-400 hover:text-white transition-colors py-2 border-b border-white/5">Categories</a>
+                            <a href="#works" onClick={() => setMobileMenuOpen(false)} className="text-gray-400 hover:text-white transition-colors py-2 border-b border-white/5">Features</a>
+                            <a href="#faq" onClick={() => setMobileMenuOpen(false)} className="text-gray-400 hover:text-white transition-colors py-2 border-b border-white/5">FAQs</a>
+                        </div>
+                        <div className="flex flex-col gap-4 mt-8">
+                            <button
+                                onClick={() => { setMobileMenuOpen(false); navigate('/login'); }}
+                                className="w-full py-4 rounded-full border border-white/10 bg-white/5 text-sm uppercase tracking-wider font-mono text-center"
+                            >
+                                Log In
+                            </button>
+                            <button
+                                onClick={() => { setMobileMenuOpen(false); navigate('/signup'); }}
+                                className="w-full py-4 rounded-full bg-white text-black text-sm uppercase tracking-wider font-sans font-medium text-center"
+                            >
+                                Start Free
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             <main className="relative z-10">
                 {/* ── HERO SECTION ── */}
-                <section className="relative min-h-screen flex items-center justify-center bg-black overflow-hidden pt-20">
-                    {/* Spotlight Backdrop Glow */}
-                    <Spotlight className="-top-40 left-0 md:left-60 md:-top-20" fill="red" />
+                <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-32 pb-20 bg-[#050505]">
+                    {/* Background Atmosphere */}
+                    <div className="absolute inset-0 z-0 pointer-events-none select-none">
+                        <div className="absolute top-0 left-0 w-full h-full opacity-60 mix-blend-screen">
+                            <img src="https://framerusercontent.com/images/9zvwRJAavKKacVyhFCwHyXW1U.png?width=1536&height=1024" alt="Atmosphere" className="w-full h-full object-cover object-center opacity-80" loading="eager" />
+                        </div>
+                        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#050505] z-10" />
+                    </div>
 
-                    {/* Red mesh blur glow in background */}
-                    <motion.div style={{ y: yBg, opacity: opacityBg }} className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-[800px] h-[800px] bg-gradient-to-b from-red-900/10 to-transparent rounded-full blur-[100px] absolute top-1/4" />
-                    </motion.div>
+                    {/* Floating Surrealist Left Hand (Reaching) */}
+                    <div className="absolute -left-[10%] top-[-10%] md:left-[-5%] md:top-[-15%] w-[50vw] md:w-[40vw] max-w-[800px] z-10 pointer-events-none mix-blend-hard-light opacity-80 animate-float-left">
+                         <img src="https://framerusercontent.com/images/KNhiA5A2ykNYqNkj04Hk6BVg5A.png?width=1540&height=1320" alt="Hand Reaching" className="w-full h-auto object-contain" />
+                    </div>
 
-                    {/* 12-Column Responsive Layout Grid */}
-                    <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-12 gap-12 items-center relative z-10 w-full pt-10">
-                        {/* Left Column: Bold text, description, CTAs (given higher z-index so buttons remain clickable) */}
-                        <motion.div 
-                            className="lg:col-span-7 text-left space-y-6 relative z-20"
-                            initial="hidden" animate="visible" variants={staggerContainer}
-                        >
-                            <motion.h1 
-                                variants={fadeInUp}
-                                className="text-4xl sm:text-6xl lg:text-7xl font-normal tracking-tight text-white leading-[1.1]"
+                    {/* Floating Surrealist Right Hand (Receiving) */}
+                    <div className="absolute -right-[10%] bottom-[-10%] md:right-[-5%] md:bottom-[-5%] w-[45vw] md:w-[35vw] max-w-[700px] z-10 pointer-events-none mix-blend-hard-light opacity-80 animate-float-right">
+                         <img src="https://framerusercontent.com/images/X89VFCABCEjjZ4oLGa3PjbOmsA.png?width=1542&height=1002" alt="Hand Receiving" className="w-full h-auto object-contain" />
+                    </div>
+
+                    {/* Hero Content (Centered layout mapping Superdesign layout structure) */}
+                    <div className="container mx-auto px-6 relative z-20 text-center flex flex-col items-center justify-center h-full max-w-5xl">
+                        <div id="hero-content-wrapper" className="max-w-4xl mx-auto">
+                            <motion.div 
+                                initial={{ opacity: 0, y: 25 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
                             >
-                                Stop Searching. <br />
-                                <span className="font-semibold text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-red-600">Start Preparing.</span>
-                            </motion.h1>
-
-                            <motion.p 
-                                variants={fadeInUp}
-                                className="text-base sm:text-lg text-gray-400 max-w-xl leading-relaxed font-normal"
-                            >
-                                An AI tracker that maps your profile to thousands of government jobs, manages your deadlines, and recommends exams with overlapping syllabi.
-                            </motion.p>
-
-                            <motion.div variants={fadeInUp} className="flex flex-col sm:flex-row items-center justify-start gap-4 pt-6">
-                                <button
-                                    onClick={() => navigate('/signup')}
-                                    onMouseEnter={() => setRobotEmotion('happy')}
-                                    onMouseLeave={() => setRobotEmotion('neutral')}
-                                    className="w-full sm:w-auto px-10 py-4 bg-red-600 hover:bg-red-500 text-white font-semibold text-[15px] transition-all flex items-center justify-center gap-3 rounded-full shadow-lg hover:shadow-red-500/20 active:scale-[0.98]"
-                                >
-                                    Get Started Free
-                                    <motion.span animate={{ x: [0, 5, 0] }} transition={{ repeat: Infinity, duration: 1.5 }}>→</motion.span>
-                                </button>
-                                <button
-                                    onClick={() => navigate('/login')}
-                                    onMouseEnter={() => setRobotEmotion('wow')}
-                                    onMouseLeave={() => setRobotEmotion('neutral')}
-                                    className="w-full sm:w-auto px-10 py-4 bg-white/5 border border-white/10 hover:border-white/20 text-gray-300 hover:text-white font-semibold text-[13px] uppercase tracking-wide transition-all flex items-center justify-center gap-2 rounded-full backdrop-blur-md active:scale-[0.98]"
-                                >
-                                    EXISTING USER
-                                </button>
+                                <h1 className="leading-[1.1] tracking-tight mb-8 text-[#ffe0e0] mix-blend-overlay font-serif" 
+                                    style={{ textShadow: '0 0 12px rgba(255,255,255,0.71)' }}>
+                                    <span className="text-5xl md:text-7xl lg:text-8xl block mb-4">SarkarHamariHai.</span>
+                                    <span className="italic font-light text-2xl md:text-5xl lg:text-6xl text-[#ffe0e0]/90 block">Stop searching. Start preparing.</span>
+                                </h1>
                             </motion.div>
-                        </motion.div>
-
-                        {/* Spacer column to preserve spacing in the grid */}
-                        <div className="lg:col-span-5 hidden lg:block pointer-events-none" />
-                    </div>
-
-                    {/* Absolute 3D Robot Container. On desktop it occupies 55% width and tracks cursor. On mobile/tablet, it is placed as an ambient background layer with touch pass-through so touch-scrolling remains buttery smooth and fast */}
-                    <div className="absolute right-0 bottom-0 w-full lg:w-[55%] h-[40vh] lg:h-full select-none z-10 opacity-25 lg:opacity-100 pointer-events-none lg:pointer-events-auto pt-10 lg:pt-20">
-                        {/* Excitement sparkles/particles (floating hearts) shown during happy state */}
-                        {robotEmotion === 'happy' && (
-                            <div className="absolute inset-0 z-20 pointer-events-none">
-                                {stableParticles.map((p, i) => (
-                                    <motion.div 
-                                        key={i}
-                                        className="absolute text-red-500/80 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)] select-none pointer-events-none font-sans text-xl"
-                                        initial={{ 
-                                            x: p.x, 
-                                            y: p.y, 
-                                            opacity: 0,
-                                            scale: 0.5 
-                                        }}
-                                        animate={{ 
-                                            y: [p.y, p.y - 120],
-                                            x: [p.x, p.x + (p.targetX - 250)],
-                                            opacity: [0, 1, 0],
-                                            scale: [0.5, p.scale, 0.5]
-                                        }}
-                                        transition={{ 
-                                            duration: p.duration, 
-                                            repeat: Infinity,
-                                            delay: p.delay,
-                                            ease: "easeOut"
-                                        }}
-                                    >
-                                        ❤️
-                                    </motion.div>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Golden stars sparked during wow state */}
-                        {robotEmotion === 'wow' && (
-                            <div className="absolute inset-0 z-20 pointer-events-none">
-                                {stableParticles.map((p, i) => (
-                                    <motion.div 
-                                        key={i}
-                                        className="absolute text-yellow-400/90 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)] select-none pointer-events-none font-sans text-xl"
-                                        initial={{ 
-                                            x: p.x, 
-                                            y: p.y, 
-                                            opacity: 0,
-                                            scale: 0.5 
-                                        }}
-                                        animate={{ 
-                                            y: [p.y, p.y - 120],
-                                            x: [p.x, p.x + (p.targetX - 250)],
-                                            opacity: [0, 1, 0],
-                                            scale: [0.5, p.scale, 0.5]
-                                        }}
-                                        transition={{ 
-                                            duration: p.duration, 
-                                            repeat: Infinity,
-                                            delay: p.delay,
-                                            ease: "easeOut"
-                                        }}
-                                    >
-                                        ✨
-                                    </motion.div>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Wow background shadow overlay */}
-                        <motion.div 
-                            className="absolute inset-0 z-10 pointer-events-none rounded-full bg-red-900/10 blur-3xl transition-opacity duration-300"
-                            animate={{ opacity: robotEmotion === 'wow' ? 0.5 : 0 }}
-                        />
-
-                        <motion.div 
-                            className="absolute inset-0 w-full h-full flex items-center justify-center"
-                            animate={robotEmotion}
-                            variants={robotMotionVariants}
-                            style={{ transformStyle: "preserve-3d", perspective: 1000 }}
-                        >
-                            <SplineScene 
-                                scene="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
-                                className="w-full h-full"
-                                emotion={robotEmotion}
-                            />
-                        </motion.div>
-                    </div>
-
-                    {/* Scroll Indicator */}
-                    <motion.div 
-                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.5, duration: 1 }}
-                        className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-20 pointer-events-none"
-                    >
-                        <span className="text-[9px] font-medium uppercase tracking-[0.3em] text-gray-600">Scroll</span>
-                        <div className="w-[1px] h-10 bg-gradient-to-b from-red-500/50 to-transparent" />
-                    </motion.div>
-                </section>
-
-                {/* ── THE PROBLEM ── */}
-                <section className="py-32 relative border-t border-white/[0.03] bg-gradient-to-b from-black to-[#050505]">
-                    <div className="max-w-7xl mx-auto px-6">
-                        <motion.div 
-                            initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={staggerContainer}
-                            className="grid lg:grid-cols-2 gap-20 items-center"
-                        >
-                            <div className="space-y-12">
-                                <motion.div variants={fadeInUp}>
-                                    <h2 className="text-3xl sm:text-4xl font-normal tracking-wide mb-6">
-                                        The System is <span className="text-gray-600 line-through">Broken</span> <br/><span className="text-red-500 font-medium">Chaotic.</span>
-                                    </h2>
-                                    <p className="text-lg text-gray-400 leading-relaxed font-normal">
-                                        Every year, millions of aspirants miss out on perfect opportunities simply because the information is scattered, confusing, and unforgiving.
-                                    </p>
-                                </motion.div>
-
-                                <motion.div variants={staggerContainer} className="space-y-4">
-                                    {[
-                                        { title: 'Information Overload', desc: '1,000+ notifications across 50+ archaic websites.' },
-                                        { title: 'Missed Deadlines', desc: 'Finding out about an exam the day after applications close.' },
-                                        { title: 'Wasted Potential', desc: 'Preparing for one exam, completely unaware of 5 others with the exact same syllabus.' },
-                                    ].map((item, i) => (
-                                        <motion.div key={i} variants={fadeInUp} className="flex items-start gap-5 p-6 bg-white/[0.02] rounded-3xl hover:border-red-500/20 transition-colors backdrop-blur-md relative overflow-hidden group">
-                                            <SpotlightHover size={200} className="from-red-500/10 via-red-500/5 to-transparent" />
-                                            <div className="text-red-500/50 font-mono text-sm tracking-wide mt-1 relative z-10">0{i+1}</div>
-                                            <div className="relative z-10">
-                                                <h3 className="text-sm font-medium text-white mb-2 uppercase tracking-wide">{item.title}</h3>
-                                                <p className="text-gray-500 text-sm leading-relaxed font-normal">{item.desc}</p>
-                                            </div>
-                                        </motion.div>
-                                    ))}
-                                </motion.div>
-                            </div>
                             
-                            {/* Visual Representation */}
-                            <motion.div variants={fadeInUp} className="relative h-[600px] w-full hidden lg:block">
-                                <div className="absolute inset-0 rounded-3xl bg-white/[0.01] backdrop-blur-2xl flex flex-col overflow-hidden">
-                                    <div className="h-10 border-b border-white/[0.05] flex items-center px-4 bg-black/40">
-                                        <div className="w-full max-w-sm h-6 bg-white/5 rounded-sm px-3 flex items-center">
-                                            <span className="text-[10px] text-gray-600 font-mono tracking-wider">search: government jobs eligibility...</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex-1 p-8 relative overflow-hidden">
-                                        <motion.div 
-                                            animate={{ y: [0, -400] }} transition={{ repeat: Infinity, duration: 15, ease: "linear" }}
-                                            className="space-y-4"
-                                        >
-                                            {[...Array(10)].map((_, i) => (
-                                                <div key={i} className="p-4 border border-white/[0.03] bg-white/[0.02] opacity-40 flex gap-4">
-                                                    <div className="w-10 h-10 bg-white/5" />
-                                                    <div className="space-y-2 flex-1 pt-1">
-                                                        <div className="h-3 w-3/4 bg-white/10" />
-                                                        <div className="h-2 w-1/2 bg-white/5" />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </motion.div>
-                                        {/* Overlays */}
-                                        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-red-900/10 to-black z-10" />
-                                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 w-64 p-8 bg-black/80 backdrop-blur-lg border border-red-500/50 text-center shadow-[0_0_30px_rgba(220,38,38,0.2)]">
-                                            <span className="text-red-500 font-medium uppercase tracking-wide text-xs block mb-3">Error 404</span>
-                                            <span className="text-gray-400 text-xs font-normal">Deadline Passed</span>
-                                        </div>
-                                    </div>
+                            <motion.div 
+                                initial={{ opacity: 0, y: 25 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                            >
+                                <p className="text-base md:text-lg text-[#ffe0e0]/90 max-w-2xl mx-auto mb-16 font-light tracking-wide leading-relaxed mix-blend-overlay font-sans"
+                                   style={{ textShadow: '0 0 12px rgba(255,255,255,0.71)' }}>
+                                    SarkarHamariHai maps your age, category, qualifications, and state parameters directly to thousands of active government exams. We track every notification and syllabus overlap, so you never miss an eligible vacancy.
+                                </p>
+                            </motion.div>
+
+                            <motion.div 
+                                initial={{ opacity: 0, y: 25 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.8, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                                className="flex flex-col items-center gap-6"
+                            >
+                                <div className="relative group cursor-pointer" onClick={() => navigate('/signup')}>
+                                   <div className="absolute inset-0 bg-[#FF4500]/20 blur-xl rounded-full opacity-0 group-hover:opacity-50 transition-opacity duration-500" />
+                                   <div className="relative border border-white/20 bg-white/5 backdrop-blur-sm px-8 py-3.5 rounded-full flex items-center gap-3 text-xs md:text-sm text-white/80 uppercase tracking-widest hover:bg-white/10 hover:border-white/40 transition-all duration-300 font-sans font-medium">
+                                     <span>Start Preparing</span>
+                                   </div>
+                                </div>
+                                
+                                <div className="flex items-center gap-4 text-[10px] md:text-xs text-white/40 uppercase tracking-widest mt-8 font-mono">
+                                   <span>{currentTime}</span>
+                                   <span className="w-px h-3 bg-white/20" />
+                                   <span>IN, ASIA</span>
                                 </div>
                             </motion.div>
-                        </motion.div>
-                    </div>
-                </section>
-
-                {/* ── THE SOLUTION ── */}
-                <section className="py-32 relative border-t border-white/[0.03] bg-black">
-                    <div className="max-w-7xl mx-auto px-6">
-                        <motion.div 
-                            initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-100px" }} variants={staggerContainer}
-                            className="text-center max-w-4xl mx-auto mb-20"
-                        >
-                            <motion.h2 variants={fadeInUp} className="text-3xl sm:text-4xl font-normal tracking-wide mb-6">
-                                The <span className="font-medium text-white">AI</span> Advantage
-                            </motion.h2>
-                            <motion.p variants={fadeInUp} className="text-lg text-gray-400 font-normal leading-relaxed">
-                                SarkarHamariHai flips the script. You don't look for exams; the right exams look for you.
-                            </motion.p>
-                        </motion.div>
-
-                        <div className="grid md:grid-cols-3 gap-6">
-                            {[
-                                { 
-                                    icon: "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4", 
-                                    title: 'Profile Matching Engine', 
-                                    desc: 'Input your exact age, category, physical traits, and qualifications. Our engine filters out the noise and shows only what you are 100% eligible for.' 
-                                },
-                                { 
-                                    icon: "M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9", 
-                                    title: 'Live Tracking & Alerts', 
-                                    desc: 'A unified dashboard that monitors upcoming notifications, tracks live applications, and alerts you before deadlines hit.' 
-                                },
-                                { 
-                                    icon: "M13 10V3L4 14h7v7l9-11h-7z", 
-                                    title: 'Syllabus Synergy', 
-                                    desc: 'Preparing for UPSC? Our AI scans syllabus vectors to find state PSCs or SSC exams with 80%+ overlap, maximizing your chances.' 
-                                }
-                            ].map((item, i) => (
-                                <motion.div 
-                                    key={i}
-                                    initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeInUp}
-                                    className="group relative rounded-3xl bg-white/[0.01] hover:bg-white/[0.03] transition-all duration-500 p-10 backdrop-blur-sm overflow-hidden"
-                                >
-                                    <SpotlightHover size={250} className="from-red-500/10 via-red-500/5 to-transparent" />
-                                    <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-red-500/0 group-hover:via-red-500/50 to-transparent transition-all duration-700 z-10" />
-                                    <svg className="w-8 h-8 text-red-500/80 mb-8 stroke-[1] relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d={item.icon} /></svg>
-                                    <div className="relative z-10">
-                                        <h3 className="text-sm font-medium text-white mb-4 uppercase tracking-wider">{item.title}</h3>
-                                        <p className="text-gray-500 leading-relaxed font-normal text-sm">{item.desc}</p>
-                                    </div>
-                                </motion.div>
-                            ))}
                         </div>
                     </div>
                 </section>
 
+                {/* ── THE PROBLEM IN INDIA ── */}
+                <section id="problem" className="py-32 relative border-t border-white/[0.03] bg-gradient-to-b from-[#050505] to-black">
+                    <div className="container mx-auto px-6 max-w-7xl">
+                        <div className="grid lg:grid-cols-12 gap-16 items-center">
+                            <div className="lg:col-span-6 space-y-12">
+                                <motion.div 
+                                    initial={{ opacity: 0, y: 30 }}
+                                    whileInView={{ opacity: 1, y: 0 }}
+                                    viewport={{ once: true }}
+                                    transition={{ duration: 0.8 }}
+                                >
+                                    <h2 className="text-4xl md:text-6xl text-white mb-8 font-serif leading-[1.1]">
+                                        The Indian Exam <br />
+                                        <span className="italic font-light text-[#FF4500]">Chaotic Landscape.</span>
+                                    </h2>
+                                    <p className="text-lg text-gray-400 font-light leading-relaxed font-sans">
+                                        Every year, millions of Indian aspirants prepare in isolation, missing crucial notification updates and failing to leverage syllabus overlaps simply because information is scattered across archaic government portals.
+                                    </p>
+                                </motion.div>
 
+                                <div className="space-y-6 font-sans">
+                                    {[
+                                        { index: '01', title: 'Information Fragmentation', desc: 'Over 5,000+ public sector vacancy notices published annually across 50+ central and state portals with dense legalese PDFs.' },
+                                        { index: '02', title: 'Missed Timelines', desc: 'Aspirants routinely discover active recruitment notifications days after application portals have officially closed.' },
+                                        { index: '03', title: 'Preparation Redundancy', desc: 'Candidates study for one exam, completely unaware of other active notifications with 80%+ syllabus overlaps.' },
+                                    ].map((item, idx) => (
+                                        <div 
+                                            key={idx}
+                                            className="flex gap-6 p-6 rounded-2xl bg-white/[0.01] border border-white/5 hover:border-white/10 transition-colors duration-300"
+                                        >
+                                            <div className="text-[#FF4500] font-mono text-sm tracking-wide mt-0.5">{item.index}</div>
+                                            <div>
+                                                <h3 className="text-sm font-semibold uppercase tracking-wider text-white mb-2">{item.title}</h3>
+                                                <p className="text-gray-500 text-sm font-light leading-relaxed">{item.desc}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
 
-                {/* ── APP PREVIEW SECTION ── */}
-                <section className="py-32 relative border-t border-white/[0.03] bg-[#030303] overflow-hidden">
+                            {/* Visual representation card */}
+                            <div className="lg:col-span-6 hidden lg:block relative h-[600px] w-full">
+                                <div className="absolute inset-0 rounded-3xl border border-white/5 bg-white/[0.01] backdrop-blur-2xl flex flex-col overflow-hidden">
+                                    <div className="h-12 border-b border-white/5 flex items-center px-6 bg-black/40">
+                                        <div className="flex gap-2">
+                                            <div className="w-3 h-3 rounded-full bg-white/10" />
+                                            <div className="w-3 h-3 rounded-full bg-white/10" />
+                                            <div className="w-3 h-3 rounded-full bg-white/10" />
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 p-8 relative overflow-hidden flex flex-col justify-between">
+                                        {/* Faux chaotic logs scrolling */}
+                                        <div className="space-y-4 opacity-30 select-none pointer-events-none font-mono text-[10px] text-gray-500">
+                                            <div>&gt; Scanning portals: upsc.gov.in, ssc.gov.in, rrb.gov.in...</div>
+                                            <div>&gt; Found 82-page notification PDF: Advt No. 4/2026</div>
+                                            <div>&gt; Parsing age limits, reservations, physical traits...</div>
+                                            <div>&gt; Warning: Scattered state-level notifications detected.</div>
+                                            <div className="text-red-500/80 font-bold">&gt; Error: Candidate unaware of 84% syllabus overlap with active SSC post.</div>
+                                        </div>
+                                        <div className="p-8 bg-black/80 border border-[#FF4500]/50 rounded-2xl relative z-10 text-center shadow-[0_0_50px_rgba(255,69,0,0.15)] max-w-sm mx-auto">
+                                            <span className="text-[#FF4500] font-semibold uppercase tracking-widest text-xs block mb-3 font-mono">Notification Chaos</span>
+                                            <span className="text-gray-300 text-sm font-light leading-relaxed font-sans block">
+                                                Aspirants miss an average of 4 target notifications every year simply due to disjointed information pipelines.
+                                            </span>
+                                        </div>
+                                        <div className="h-10" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* ── MISSION SECTION ("Expertise" scrolls here) ── */}
+                <section id="expertise" className="py-32 relative border-t border-white/[0.03] bg-gradient-to-b from-black to-[#050505]">
+                    <div className="container mx-auto px-6">
+                        <motion.div 
+                            initial={{ opacity: 0, y: 30 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true, margin: "-100px" }}
+                            transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+                            className="max-w-4xl mx-auto text-center"
+                        >
+                            <h2 className="text-3xl md:text-5xl lg:text-6xl leading-tight text-white/90 mb-12 font-serif">
+                                Track your exam timelines and map eligibility profiles.
+                            </h2>
+                            <p className="text-xl md:text-2xl text-gray-500 leading-relaxed font-light font-sans">
+                                Clarity is power. We remove the search and focus you on the prep. From discovery to tracker.
+                            </p>
+                        </motion.div>
+
+                        {/* Logo Grid */}
+                        <div className="mt-32 grid grid-cols-2 md:grid-cols-4 gap-8 items-center justify-items-center opacity-40 grayscale hover:grayscale-0 transition-all duration-500">
+                            <div className="font-bold text-xl tracking-widest text-white font-serif">UPSC</div>
+                            <div className="font-bold text-xl tracking-widest text-white font-serif">SSC</div>
+                            <div className="font-bold text-xl tracking-widest text-white font-serif">RAILWAYS</div>
+                            <div className="font-bold text-xl tracking-widest text-white font-serif">BANKING</div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* ── CARDS SECTION ("Works" scrolls here) ── */}
+                <section id="works" className="py-40 relative overflow-hidden bg-black">
+                    <div className="container mx-auto px-6 relative z-10">
+                        <motion.div 
+                            initial={{ opacity: 0, y: 30 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true }}
+                            transition={{ duration: 0.8 }}
+                            className="mb-32 text-center"
+                        >
+                            <h2 className="text-5xl md:text-7xl font-serif">
+                                Define your <br />
+                                <span className="italic">career trajectory</span>
+                            </h2>
+                        </motion.div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+                            {/* Card 1 - Red Orange */}
+                            <motion.div 
+                                initial={{ opacity: 0, y: 40 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true }}
+                                transition={{ duration: 0.8 }}
+                                className="bg-[#FF4500] rounded-3xl p-8 md:p-12 aspect-auto min-h-[380px] md:aspect-[4/5] flex flex-col justify-between shadow-2xl hover:shadow-[0_20px_50px_rgba(255,69,0,0.3)] transition-all duration-500 group cursor-pointer"
+                            >
+                                <div className="flex justify-between items-start">
+                                    <div className="w-12 h-12 rounded-full bg-black/10 flex items-center justify-center group-hover:rotate-45 transition-transform duration-500">
+                                        <Star className="text-black w-6 h-6" />
+                                    </div>
+                                    <span className="text-black font-medium text-sm border border-black/20 px-3 py-1 rounded-full font-mono">01</span>
+                                </div>
+                                
+                                <div>
+                                    <h3 className="text-4xl md:text-5xl text-black mb-4 leading-none tracking-tight font-serif">
+                                        Eligibility <br />Lock
+                                    </h3>
+                                    <p className="text-black/80 text-lg leading-snug font-light">
+                                        Save your qualifications once. Our engine screens out the noise to instantly lock down exactly which vacancies you qualify for under vertical and horizontal reservation guidelines.
+                                    </p>
+                                </div>
+                                
+                                <div className="w-full h-px bg-black/10 mt-8" />
+                            </motion.div>
+
+                            {/* Card 2 - Black Legacy */}
+                            <motion.div 
+                                initial={{ opacity: 0, y: 40 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true }}
+                                transition={{ duration: 0.8, delay: 0.15 }}
+                                className="bg-[#111] border border-white/10 rounded-3xl p-8 md:p-12 aspect-auto min-h-[380px] md:aspect-[4/5] flex flex-col justify-between shadow-2xl group cursor-pointer hover:border-[#FF4500]/50 transition-all duration-500 md:mt-12"
+                            >
+                                <div className="flex justify-between items-start">
+                                    <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
+                                       <ArrowRight className="text-white w-6 h-6 -rotate-45" />
+                                    </div>
+                                    <span className="text-white/50 font-medium text-sm border border-white/10 px-3 py-1 rounded-full font-mono">02</span>
+                                </div>
+                                
+                                <div>
+                                    <h3 className="text-4xl md:text-5xl text-white mb-4 leading-none tracking-tight font-serif">
+                                        Syllabus <br />Overlap Finder
+                                    </h3>
+                                    <p className="text-gray-400 text-lg leading-snug font-light">
+                                        Discover exams sharing 80%+ of the same curriculum. Master one set of topics and double your success rates by appearing for multiple aligned examinations.
+                                    </p>
+                                </div>
+                                
+                                <div className="w-full h-px bg-white/10 mt-8" />
+                            </motion.div>
+
+                            {/* Card 3 - Black Legacy 2 */}
+                            <motion.div 
+                                initial={{ opacity: 0, y: 40 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true }}
+                                transition={{ duration: 0.8 }}
+                                className="bg-[#111] border border-white/10 rounded-3xl p-8 md:p-12 aspect-auto min-h-[380px] md:aspect-[4/5] flex flex-col justify-between shadow-2xl group cursor-pointer hover:border-[#FF4500]/50 transition-all duration-500"
+                            >
+                                <div className="flex justify-between items-start">
+                                    <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
+                                       <Calendar className="text-white w-6 h-6" />
+                                    </div>
+                                    <span className="text-white/50 font-medium text-sm border border-white/10 px-3 py-1 rounded-full font-mono">03</span>
+                                </div>
+                                
+                                <div>
+                                    <h3 className="text-4xl md:text-5xl text-white mb-4 leading-none tracking-tight font-serif">
+                                        Missed-Deadline <br />Guard
+                                    </h3>
+                                    <p className="text-gray-400 text-lg leading-snug font-light">
+                                        Receive direct alerts and in-app notifications 14 days before registration portals close. We verify timelines daily so you never miss an application.
+                                    </p>
+                                </div>
+                                
+                                <div className="w-full h-px bg-white/10 mt-8" />
+                            </motion.div>
+
+                            {/* Card 4 - Red Orange 2 */}
+                            <motion.div 
+                                initial={{ opacity: 0, y: 40 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true }}
+                                transition={{ duration: 0.8, delay: 0.15 }}
+                                className="bg-[#FF4500] rounded-3xl p-8 md:p-12 aspect-auto min-h-[380px] md:aspect-[4/5] flex flex-col justify-between shadow-2xl hover:shadow-[0_20px_50px_rgba(255,69,0,0.3)] transition-all duration-500 group cursor-pointer md:mt-12"
+                            >
+                                <div className="flex justify-between items-start">
+                                    <div className="w-12 h-12 rounded-full bg-black/10 flex items-center justify-center group-hover:rotate-45 transition-transform duration-500">
+                                        <BookOpen className="text-black w-6 h-6" />
+                                    </div>
+                                    <span className="text-black font-medium text-sm border border-black/20 px-3 py-1 rounded-full font-mono">04</span>
+                                </div>
+                                
+                                <div>
+                                    <h3 className="text-4xl md:text-5xl text-black mb-4 leading-none tracking-tight font-serif">
+                                        Timeline <br />Roadmaps
+                                    </h3>
+                                    <p className="text-black/80 text-lg leading-snug font-light">
+                                        Chronological roadmaps guiding you step-by-step from notification release to application deadlines, exam phases, and document verification.
+                                    </p>
+                                </div>
+                                
+                                <div className="w-full h-px bg-black/10 mt-8" />
+                            </motion.div>
+                        </div>
+                    </div>
+                    
+                    {/* Background Pattern */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] opacity-10 pointer-events-none z-0"
+                         style={{ backgroundImage: 'radial-gradient(circle, #333 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+                </section>
+
+                {/* ── APP PREVIEW SECTION ("Solutions" scrolls here) ── */}
+                <section id="solutions" className="py-32 relative border-t border-white/[0.03] bg-[#030303] overflow-hidden">
                     <div className="max-w-7xl mx-auto px-6 text-center">
+                         <div className="mb-16">
+                             <h2 className="text-3xl sm:text-5xl font-medium tracking-tight mb-4 text-white font-serif">Your Command Center</h2>
+                             <p className="text-base text-gray-400 font-light max-w-2xl mx-auto">An illustrative preview of the candidate dashboard, showing compatibility scores calculated dynamically based on real-time syllabus similarity parameters.</p>
+                         </div>
                          <motion.div 
                             initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-100px" }}
                             transition={{ duration: 0.8 }}
                             className="relative max-w-5xl mx-auto"
                         >
-                            <div className="absolute -inset-10 bg-gradient-to-r from-red-600/10 to-red-900/10 blur-[100px] opacity-50" />
-                            <div className="relative border border-white/[0.08] bg-[#0a0a0a] shadow-2xl overflow-hidden">
+                            <div className="absolute -inset-10 bg-gradient-to-r from-[#FF4500]/10 to-[#ff733b]/10 blur-[100px] opacity-50" />
+                            <div className="relative border border-white/[0.08] bg-[#0a0a0a] shadow-2xl overflow-hidden rounded-3xl">
                                 <div className="h-10 border-b border-white/[0.05] bg-[#0f0f0f] flex items-center px-4 gap-2">
                                     <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
                                     <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
@@ -489,29 +598,40 @@ export default function LandingPage() {
                                 <div className="p-8 flex flex-col lg:flex-row gap-6 relative bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white/[0.02] to-transparent">
                                     {/* Dashboard Mockup */}
                                     <div className="w-full lg:w-1/3 space-y-4 text-left">
-                                        <div className="bg-white/[0.02] rounded-3xl p-5">
-                                            <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-3 font-medium">Readiness Score</div>
-                                            <div className="flex items-end gap-2"><span className="text-4xl font-normal text-red-500 tracking-tighter">84</span><span className="text-gray-600 text-xs mb-1">/ 100</span></div>
+                                        <div className="bg-white/[0.02] rounded-2xl p-5 border border-white/5">
+                                            <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-3 font-medium font-mono">Readiness Score</div>
+                                            <div className="flex items-end gap-2"><span className="text-4xl font-normal text-[#FF4500] tracking-tighter">84</span><span className="text-gray-600 text-xs mb-1 font-mono">/ 100</span></div>
                                         </div>
-                                        <div className="bg-white/[0.02] rounded-3xl p-5">
-                                            <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-5 font-medium">Syllabus Match</div>
-                                            <div className="space-y-4">
-                                                <div><div className="flex justify-between text-[10px] mb-1.5"><span className="text-gray-300">SSC CGL</span><span className="text-red-400">92%</span></div><div className="h-0.5 bg-white/10"><div className="h-full bg-red-500 w-[92%]" /></div></div>
-                                                <div><div className="flex justify-between text-[10px] mb-1.5"><span className="text-gray-300">RRB NTPC</span><span className="text-red-400">78%</span></div><div className="h-0.5 bg-white/10"><div className="h-full bg-red-500 w-[78%]" /></div></div>
+                                        <div className="bg-white/[0.02] rounded-2xl p-5 border border-white/5">
+                                            <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-5 font-medium font-mono">Syllabus Match</div>
+                                            <div className="space-y-4 font-mono">
+                                                <div><div className="flex justify-between text-[10px] mb-1.5"><span className="text-gray-300">SSC CGL</span><span className="text-[#FF4500]">92%</span></div><div className="h-0.5 bg-white/10"><div className="h-full bg-[#FF4500] w-[92%]" /></div></div>
+                                                <div><div className="flex justify-between text-[10px] mb-1.5"><span className="text-gray-300">RRB NTPC</span><span className="text-[#FF4500]">78%</span></div><div className="h-0.5 bg-white/10"><div className="h-full bg-[#FF4500] w-[78%]" /></div></div>
                                                 <div><div className="flex justify-between text-[10px] mb-1.5"><span className="text-gray-300">IBPS PO</span><span className="text-gray-500">45%</span></div><div className="h-0.5 bg-white/10"><div className="h-full bg-gray-600 w-[45%]" /></div></div>
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="flex-1 space-y-4 text-left">
+                                    <div className="flex-1 space-y-4 text-left font-mono">
                                         <div className="flex gap-4 border-b border-white/[0.05] pb-2">
-                                            <div className="text-xs text-white font-medium pb-2 border-b border-red-500 translate-y-[9px]">Live Exams (3)</div>
+                                            <div className="text-xs text-white font-medium pb-2 border-b border-[#FF4500] translate-y-[9px]">Live Exams (3)</div>
                                             <div className="text-xs text-gray-600 font-normal pb-2">Upcoming</div>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-4 pt-2">
-                                            {[1,2,3,4].map(i => (
-                                                <div key={i} className="bg-white/[0.02] rounded-3xl p-5 hover:border-red-500/30 transition-colors">
-                                                    <div className="flex justify-between items-start mb-6"><div className="w-6 h-6 bg-white/10 rounded-sm" /><span className="text-[9px] text-green-500 border border-green-500/30 bg-green-500/10 px-2 py-0.5 uppercase tracking-wide">Live</span></div>
-                                                    <div><div className="h-2 w-3/4 bg-white/20 mb-2" /><div className="h-1.5 w-1/2 bg-white/10" /></div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                                            {[
+                                                { title: "UPSC Civil Services", code: "UPSC-26" },
+                                                { title: "SSC CGL Exam", code: "SSC-CGL" },
+                                                { title: "Railway RRB NTPC", code: "RRB-NTPC" },
+                                                { title: "IBPS Clerk Vacancy", code: "IBPS-26" }
+                                            ].map((job, idx) => (
+                                                <div key={idx} className="bg-white/[0.02] border border-white/5 rounded-2xl p-5 hover:border-[#FF4500]/30 transition-colors">
+                                                    <div className="flex justify-between items-start mb-6">
+                                                        <div className="w-6 h-6 bg-white/10 rounded-sm flex items-center justify-center text-[10px] text-gray-300">★</div>
+                                                        <span className="text-[9px] text-green-500 border border-green-500/30 bg-green-500/10 px-2 py-0.5 uppercase tracking-wide">Live</span>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-xs text-white font-medium mb-2 truncate">{job.title}</div>
+                                                        <div className="text-[10px] text-gray-600">{job.code}</div>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
@@ -523,31 +643,31 @@ export default function LandingPage() {
                     </div>
                 </section>
 
-                {/* ── FAQ SECTION ── */}
-                <section className="py-32 relative border-t border-white/[0.03] bg-black">
+                {/* ── FAQ SECTION ("Perspectives" scrolls here) ── */}
+                <section id="faq" className="py-32 relative border-t border-white/[0.03] bg-black">
                     <div className="max-w-4xl mx-auto px-6">
                         <div className="text-center mb-16">
-                            <h2 className="text-3xl sm:text-4xl font-normal tracking-wide mb-4 text-white">Frequently Asked Questions</h2>
-                            <p className="text-base text-gray-400 font-normal">Answers to everything you need to know about the SarkarHamariHai AI ecosystem.</p>
+                            <h2 className="text-3xl sm:text-5xl font-medium tracking-tight mb-4 text-white font-serif">Frequently Asked Questions</h2>
+                            <p className="text-base text-gray-400 font-light">Answers to everything you need to know about the SarkarHamariHai ecosystem.</p>
                         </div>
                         
                         <div className="space-y-4">
                             {[
                                 {
-                                    q: "How does the Syllabus Synergy calculator work?",
-                                    a: "Our AI scans the official syllabus PDFs of central and state level exams using vector embeddings. It correlates topics, weights, and scoring distributions to calculate a synergy percentage, showing you exactly which additional exams require zero extra study."
+                                    q: "How does the Eligibility Lock feature identify which vacancies match my background?",
+                                    a: "The Eligibility Lock checks your profile inputs (such as qualifications, reservation category, state, and age) against the active guidelines of each job vacancy. It automatically accounts for state and central criteria relaxations, immediately sorting the listings to show you only the exams you are eligible to sit for."
                                 },
                                 {
-                                    q: "What types of government exams are tracked?",
-                                    a: "We track 5,000+ public sector vacancies yearly including Central (SSC, UPSC, Railways, IBPS, Defence, LIC) and State Civil Services, police recruitments, and teachers eligibility tests across all major states."
+                                    q: "How does the Syllabus Overlap Finder help me target multiple exams?",
+                                    a: "The overlap tool evaluates the syllabus topics of different exams side-by-side. If you are preparing for a primary exam, it calculates the subject overlap with other active jobs. High similarity means you can appear for those exams with minimal extra preparation."
                                 },
                                 {
-                                    q: "How does the SMS & live alerts service function?",
-                                    a: "Once you lock in your profile qualifications, our background crawler checks for state-level portal modifications. If a notification is released that matches your profile, you receive a direct SMS and dashboard alert 14 days before applications close."
+                                    q: "How does the app ensure its vacancy listings stay up to date?",
+                                    a: "Our vacancy system updates directly from official state and central recruitment boards daily. It checks for date extensions, syllabus changes, or post corrections, ensuring your dashboard shows live updates before application windows close."
                                 },
                                 {
-                                    q: "Is my personal qualification and age data secure?",
-                                    a: "Yes. All data is securely stored inside Supabase under industry-grade Row-Level Security (RLS) policies. We do not sell or distribute candidate data to third-party institutions."
+                                    q: "How is the vacancy information verified for accuracy?",
+                                    a: "Before any vacancy listing appears on your dashboard, it goes through a multi-stage validation check. We confirm crucial details like fee structures, physical requirements, active links, and dates, preventing errors before you start the application process."
                                 }
                             ].map((item, index) => {
                                 const isOpen = faqOpen === index;
@@ -557,8 +677,8 @@ export default function LandingPage() {
                                             onClick={() => setFaqOpen(isOpen ? null : index)}
                                             className="w-full px-8 py-6 text-left flex justify-between items-center gap-4 text-white hover:bg-white/[0.02] transition-colors"
                                         >
-                                            <span className="text-sm font-medium tracking-wide uppercase text-left">{item.q}</span>
-                                            <span className="text-red-500 font-light text-2xl transition-transform duration-300" style={{ transform: isOpen ? 'rotate(45deg)' : 'rotate(0deg)' }}>+</span>
+                                            <span className="text-xs uppercase tracking-widest text-left font-medium">{item.q}</span>
+                                            <span className="text-[#FF4500] font-light text-2xl transition-transform duration-300" style={{ transform: isOpen ? 'rotate(45deg)' : 'rotate(0deg)' }}>+</span>
                                         </button>
                                         <motion.div 
                                             initial={{ height: 0, opacity: 0 }}
@@ -566,7 +686,7 @@ export default function LandingPage() {
                                             transition={{ duration: 0.3, ease: "easeInOut" }}
                                             className="overflow-hidden"
                                         >
-                                            <div className="px-8 pb-6 text-sm text-gray-500 leading-relaxed font-normal text-left">
+                                            <div className="px-8 pb-6 text-sm text-gray-400 leading-relaxed font-light text-left">
                                                 {item.a}
                                             </div>
                                         </motion.div>
@@ -580,9 +700,9 @@ export default function LandingPage() {
                 {/* ── FINAL CTA ── */}
                 <section className="py-40 relative border-t border-white/[0.03] bg-black text-center overflow-hidden">
                     <div className="absolute inset-0 z-0 flex items-center justify-center opacity-20 pointer-events-none">
-                         <div className="w-[80vw] h-[80vw] lg:w-[40vw] lg:h-[40vw] border-[1px] border-red-500/20 rounded-full flex items-center justify-center">
-                            <div className="w-[75%] h-[75%] border-[1px] border-red-500/20 rounded-full flex items-center justify-center">
-                                <div className="w-[60%] h-[60%] border-[1px] border-red-500/20 rounded-full" />
+                         <div className="w-[80vw] h-[80vw] lg:w-[40vw] lg:h-[40vw] border-[1px] border-[#FF4500]/10 rounded-full flex items-center justify-center">
+                            <div className="w-[75%] h-[75%] border-[1px] border-[#FF4500]/10 rounded-full flex items-center justify-center">
+                                <div className="w-[60%] h-[60%] border-[1px] border-[#FF4500]/10 rounded-full" />
                             </div>
                          </div>
                     </div>
@@ -590,48 +710,34 @@ export default function LandingPage() {
                     <div className="max-w-4xl mx-auto px-6 relative z-10">
                         <motion.h2 
                             initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-                            className="text-4xl sm:text-6xl font-normal tracking-tight mb-6"
+                            className="text-4xl sm:text-6xl font-normal tracking-tight mb-6 font-serif"
                         >
                             Take Control.
                         </motion.h2>
                         <motion.p 
                             initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}
-                            className="text-lg text-gray-400 mb-12 font-normal max-w-xl mx-auto"
+                            className="text-lg text-gray-400 mb-12 font-light max-w-xl mx-auto"
                         >
                             Join thousands of aspirants who have automated their exam discovery and focused entirely on preparation.
                         </motion.p>
-                        <motion.div 
-                            initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 }}
-                            className="flex flex-col sm:flex-row justify-center gap-4"
-                        >
+                        <div className="flex flex-col sm:flex-row justify-center gap-4">
                             <button 
                                 onClick={() => navigate('/signup')}
-                                className="px-10 py-4 bg-red-600 hover:bg-red-500 text-white font-semibold text-[15px] transition-all rounded-full shadow-lg hover:shadow-red-500/20 active:scale-[0.98]"
+                                className="px-10 py-4 bg-[#FF4500] hover:bg-[#ff5714] text-white font-semibold text-[15px] rounded-full shadow-lg hover:shadow-[0_10px_30px_rgba(255,69,0,0.4)] hover:-translate-y-0.5 active:scale-95 transition-all duration-300 ease-out uppercase tracking-wider"
                             >
-                                Start For Free
+                                Start Free
                             </button>
                              <button 
                                 onClick={() => navigate('/login')}
-                                className="px-10 py-4 bg-white/5 border border-white/10 hover:border-white/20 text-gray-300 hover:text-white font-semibold text-[13px] uppercase tracking-wide transition-all rounded-full active:scale-[0.98]"
+                                className="px-10 py-4 bg-white/5 border border-white/10 hover:border-white/20 text-gray-300 hover:text-white font-semibold text-[13px] uppercase tracking-wide transition-all rounded-full active:scale-95"
                             >
-                                LOG IN
+                                Log In
                             </button>
-                        </motion.div>
+                        </div>
                     </div>
                 </section>
             </main>
-            
-            <footer className="py-12 border-t border-white/[0.03] bg-[#030303] text-center">
-                <div className="max-w-7xl mx-auto px-6 flex flex-col items-center">
-                    <Logo className="w-6 h-6 text-gray-700 mb-6" />
-                    <div className="flex gap-8 mb-6 text-[10px] font-medium uppercase tracking-wide text-gray-500">
-                        <Link to="/privacy" className="hover:text-red-500 transition-colors">Privacy</Link>
-                        <Link to="/privacy" className="hover:text-red-500 transition-colors">Terms</Link>
-                        <a href="mailto:support@sarkarhamarihai.vercel.app" className="hover:text-red-500 transition-colors">Contact</a>
-                    </div>
-                    <p className="text-[10px] text-gray-600 font-mono tracking-wide">&copy; {new Date().getFullYear()} SARKARHAMARIHAI. ALL SYSTEMS OPERATIONAL.</p>
-                </div>
-            </footer>
+            <Footer />
         </div>
     );
 }

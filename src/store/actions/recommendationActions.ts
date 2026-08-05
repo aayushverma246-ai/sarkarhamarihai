@@ -68,12 +68,8 @@ export const fetchRecommendationsAction = (
         const likedJobs = getState().jobs.likedJobs || [];
         const likedIds = new Set(likedJobs.map((j: any) => j.id));
 
-        // Sort: Liked first, then DESC by similarity, then LIVE first
+        // Sort DESC by similarity, then LIVE first
         mergedList.sort((a, b) => {
-            const aLiked = likedIds.has(a.id) ? 1 : 0;
-            const bLiked = likedIds.has(b.id) ? 1 : 0;
-            if (aLiked !== bLiked) return bLiked - aLiked;
-
             const aVal = a.similarity !== undefined && a.similarity !== null ? a.similarity : a.overlap_score;
             const bVal = b.similarity !== undefined && b.similarity !== null ? b.similarity : b.overlap_score;
             const aSim = typeof aVal === 'number' ? aVal : parseFloat(String(aVal)) || 0;
@@ -86,20 +82,13 @@ export const fetchRecommendationsAction = (
             return bStatus - aStatus;
         });
 
-        // Filter out recommendations with less than 50% overlap (backend should have filtered it, but keeping for safety)
+        // Filter out recommendations based on threshold (70% standard, 30% when searching)
+        const minScore = search ? 30 : 70;
         const filteredList = mergedList.filter(r => {
             const val = r.similarity !== undefined && r.similarity !== null ? r.similarity : r.overlap_score;
             const score = typeof val === 'number' ? val : parseFloat(String(val)) || 0;
-            return score >= 50;
+            return score >= minScore;
         });
-
-        if (isPage1) {
-            try {
-                localStorage.setItem('ai_recs_cache', JSON.stringify(filteredList.slice(0, 8)));
-            } catch (err) {
-                console.warn('Failed to cache AI recs in localStorage:', err);
-            }
-        }
 
         dispatch({
             type: types.FETCH_RECS_SUCCESS,
@@ -111,36 +100,8 @@ export const fetchRecommendationsAction = (
             }
         });
     } catch (err: any) {
-        let cachedData = null;
-        try {
-            const cachedText = localStorage.getItem('ai_recs_cache');
-            if (cachedText) {
-                cachedData = JSON.parse(cachedText);
-            }
-        } catch (cacheErr) {
-            console.warn('Failed to parse cached recommendations:', cacheErr);
-        }
-
-        if (cachedData && cachedData.length > 0 && isPage1) {
-            console.log('AI Recommender offline/failed. Loaded verified recommendations from local cache.');
-            const filteredCache = cachedData.filter((r: any) => {
-                const val = r.similarity !== undefined && r.similarity !== null ? r.similarity : r.overlap_score;
-                const score = typeof val === 'number' ? val : parseFloat(String(val)) || 0;
-                return score >= 50;
-            });
-            dispatch({
-                type: types.FETCH_RECS_SUCCESS,
-                payload: {
-                    allMergedRecs: filteredCache,
-                    isPage1: true,
-                    hasMore: false,
-                    page: 1,
-                }
-            });
-        } else {
-            const errMsg = err.message || 'Failed to match syllabus recommendations';
-            dispatch({ type: types.FETCH_RECS_FAIL, payload: errMsg });
-            throw err;
-        }
+        const errMsg = err.message || 'Failed to match syllabus recommendations';
+        dispatch({ type: types.FETCH_RECS_FAIL, payload: errMsg });
+        throw err;
     }
 };

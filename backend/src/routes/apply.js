@@ -48,14 +48,38 @@ function withStatus(job) {
 // GET /api/apply/applied — get all applied jobs for current user
 router.get('/applied', auth, async (req, res) => {
     try {
-        const { getDb } = require('../db');
-        const db = getDb();
-        const result = await db.execute({
-            sql: `SELECT j.* FROM applied_jobs a JOIN jobs j ON a.job_id = j.id WHERE a.user_id = ? ORDER BY a.created_at DESC`,
-            args: [req.user.id]
-        });
-        const jobs = result.rows || [];
-        res.json(jobs.map(j => withStatus(j)));
+        const sb = getSb();
+        const { data: appliedRows, error } = await sb.from('applied_jobs')
+            .select('job_id')
+            .eq('user_id', req.user.id)
+            .order('created_at', { ascending: false });
+            
+        if (error) throw error;
+        
+        if (!appliedRows || appliedRows.length === 0) {
+            return res.json([]);
+        }
+        
+        const jobIds = appliedRows.map(r => r.job_id);
+        
+        const { data: jobs, error: jobsError } = await sb.from('jobs')
+            .select('*')
+            .in('id', jobIds);
+            
+        if (jobsError) throw jobsError;
+        
+        const jobMap = new Map();
+        for (const j of (jobs || [])) {
+            jobMap.set(j.id, j);
+        }
+        
+        const orderedJobs = [];
+        for (const id of jobIds) {
+            const j = jobMap.get(id);
+            if (j) orderedJobs.push(withStatus(j));
+        }
+        
+        res.json(orderedJobs);
     } catch (err) {
         console.error('GET /applied error:', err.message);
         res.status(500).json({ error: 'Server error' });
@@ -65,14 +89,38 @@ router.get('/applied', auth, async (req, res) => {
 // GET /api/apply/reminders — get all reminded jobs for current user
 router.get('/reminders', auth, async (req, res) => {
     try {
-        const { getDb } = require('../db');
-        const db = getDb();
-        const result = await db.execute({
-            sql: `SELECT j.* FROM job_reminders r JOIN jobs j ON r.job_id = j.id WHERE r.user_id = ? ORDER BY r.created_at DESC`,
-            args: [req.user.id]
-        });
-        const jobs = result.rows || [];
-        res.json(jobs.map(j => withStatus(j)));
+        const sb = getSb();
+        const { data: reminderRows, error } = await sb.from('job_reminders')
+            .select('job_id')
+            .eq('user_id', req.user.id)
+            .order('created_at', { ascending: false });
+            
+        if (error) throw error;
+        
+        if (!reminderRows || reminderRows.length === 0) {
+            return res.json([]);
+        }
+        
+        const jobIds = reminderRows.map(r => r.job_id);
+        
+        const { data: jobs, error: jobsError } = await sb.from('jobs')
+            .select('*')
+            .in('id', jobIds);
+            
+        if (jobsError) throw jobsError;
+        
+        const jobMap = new Map();
+        for (const j of (jobs || [])) {
+            jobMap.set(j.id, j);
+        }
+        
+        const orderedJobs = [];
+        for (const id of jobIds) {
+            const j = jobMap.get(id);
+            if (j) orderedJobs.push(withStatus(j));
+        }
+        
+        res.json(orderedJobs);
     } catch (err) {
         console.error('GET /reminders error:', err.message);
         res.status(500).json({ error: 'Server error' });
@@ -110,35 +158,62 @@ router.post('/toggle', auth, async (req, res) => {
             return res.status(404).json({ error: 'Job not found' });
         }
 
-        // Check current status
-        const { data: existing } = await sb.from('applied_jobs')
-            .select('id')
-            .eq('user_id', req.user.id)
-            .eq('job_id', job_id)
-            .limit(1);
-
+        // Check target applied state if explicitly provided by client
+        const targetApplied = req.body.applied;
         let applied = false;
-        if (existing && existing.length > 0) {
-            // Remove applied
-            await sb.from('applied_jobs')
-                .delete()
-                .eq('user_id', req.user.id)
-                .eq('job_id', job_id);
-            applied = false;
-        } else {
-            // Add applied
-            const id = 'app_' + Math.random().toString(36).substring(2, 9);
-            const { error } = await sb.from('applied_jobs')
-                .insert({ id, user_id: req.user.id, job_id });
-            if (error) {
-                // Might be duplicate — that's fine
-                if (error.code === '23505') {
-                    applied = true;
-                } else {
-                    throw error;
+
+        if (targetApplied !== undefined) {
+            if (targetApplied === true) {
+                // Add applied if not exists
+                const { data: existing } = await sb.from('applied_jobs')
+                    .select('id')
+                    .eq('user_id', req.user.id)
+                    .eq('job_id', job_id)
+                    .limit(1);
+                if (!existing || existing.length === 0) {
+                    const id = 'app_' + Math.random().toString(36).substring(2, 9);
+                    const { error } = await sb.from('applied_jobs')
+                        .insert({ id, user_id: req.user.id, job_id });
+                    if (error && error.code !== '23505') throw error;
                 }
-            } else {
                 applied = true;
+            } else {
+                // Remove applied
+                await sb.from('applied_jobs')
+                    .delete()
+                    .eq('user_id', req.user.id)
+                    .eq('job_id', job_id);
+                applied = false;
+            }
+        } else {
+            // Check current status (fallback legacy toggle behavior)
+            const { data: existing } = await sb.from('applied_jobs')
+                .select('id')
+                .eq('user_id', req.user.id)
+                .eq('job_id', job_id)
+                .limit(1);
+
+            if (existing && existing.length > 0) {
+                // Remove applied
+                await sb.from('applied_jobs')
+                    .delete()
+                    .eq('user_id', req.user.id)
+                    .eq('job_id', job_id);
+                applied = false;
+            } else {
+                // Add applied
+                const id = 'app_' + Math.random().toString(36).substring(2, 9);
+                const { error } = await sb.from('applied_jobs')
+                    .insert({ id, user_id: req.user.id, job_id });
+                if (error) {
+                    if (error.code === '23505') {
+                        applied = true;
+                    } else {
+                        throw error;
+                    }
+                } else {
+                    applied = true;
+                }
             }
         }
 

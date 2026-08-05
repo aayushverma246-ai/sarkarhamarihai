@@ -45,7 +45,7 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
     e.preventDefault();
     if (!user || isPending) return;
     setIsPending(true);
-    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(15);
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30);
 
     // Trigger heartbeat pulse
     setLikeBeat(true);
@@ -64,7 +64,7 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
     e.preventDefault();
     if (!user || isPending) return;
     setIsPending(true);
-    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(15);
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30);
     try {
       await onApplyToggle(isApplied);
     } catch (err) {
@@ -79,7 +79,7 @@ const JobCard = React.memo(function JobCard({ job, isLiked, onLikeToggle, isAppl
     e.preventDefault();
     if (!user || isPending) return;
     setIsPending(true);
-    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(15);
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30);
     try {
       await onRemindToggle?.(isReminded);
     } catch (err) {

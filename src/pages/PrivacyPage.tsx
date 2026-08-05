@@ -1,6 +1,15 @@
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 export default function PrivacyPage() {
+    const navigate = useNavigate();
+
+    const handleBack = () => {
+        if (window.history.length > 1) {
+            navigate(-1);
+        } else {
+            navigate('/');
+        }
+    };
     return (
         <div className="min-h-screen bg-[#080808] text-gray-200 p-8 md:p-16">
             <div className="max-w-3xl mx-auto bg-[#0e0e0e] border border-[#1a1a1a] rounded-xl p-8">
@@ -30,7 +39,13 @@ export default function PrivacyPage() {
                 </div>
 
                 <div className="mt-12 pt-6 border-t border-[#1a1a1a]">
-                    <Link to="/" className="text-red-500 hover:text-red-400 font-medium">← Back to Home</Link>
+                    <button 
+                        type="button" 
+                        onClick={handleBack} 
+                        className="text-red-500 hover:text-red-400 font-medium bg-transparent border-none p-0 cursor-pointer outline-none"
+                    >
+                        ← Back
+                    </button>
                 </div>
             </div>
         </div>

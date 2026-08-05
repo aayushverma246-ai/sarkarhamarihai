@@ -4,6 +4,7 @@ import { api, getCachedUser } from '../api';
 import { Job } from '../types';
 import Navbar from '../components/Navbar';
 import GovLoader from '../components/GovLoader';
+import Footer from '../components/Footer';
 import { useLanguage } from '../i18n/LanguageContext';
 import { formatRelativeTime, meetsAge, meetsQualification } from '../utils';
 import { translateDynamicData } from '../utils/translateHelper';
@@ -720,6 +721,12 @@ export default function JobDetailsPage() {
             setTimeout(() => {
               setRoadmap(content);
               setLoadingRoadmap(false);
+              // Track roadmap generation success
+              try {
+                import('../utils/telemetry').then(({ telemetry }) => {
+                  telemetry.track('roadmap_generated', { job_id: job.id, job_name: job.job_name });
+                }).catch(() => {});
+              } catch (_) {}
             }, 300);
           } else if (attempts < maxAttempts) {
             setTimeout(poll, pollInterval);
@@ -738,7 +745,14 @@ export default function JobDetailsPage() {
               setLoadingRoadmap(false);
             }, 300);
           }
-        } catch {
+        } catch (pollErr) {
+          // Track roadmap check error
+          try {
+            import('../utils/telemetry').then(({ telemetry }) => {
+              telemetry.captureException(pollErr instanceof Error ? pollErr : new Error(String(pollErr)), { context: 'roadmap_poll', job_id: job.id });
+            }).catch(() => {});
+          } catch (_) {}
+
           if (attempts < maxAttempts) {
             attempts++;
             setTimeout(poll, pollInterval);
@@ -1548,6 +1562,7 @@ export default function JobDetailsPage() {
           </div>
         </div>
       )}
+      <Footer />
     </div>
 
   );

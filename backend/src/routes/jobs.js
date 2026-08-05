@@ -651,15 +651,39 @@ router.get('/partial', auth, async (req, res) => {
 // GET /api/jobs/liked
 router.get('/liked', auth, async (req, res) => {
     try {
-        const { getDb } = require('../db');
-        const db = getDb();
+        const sb = getSupabase();
         const todayStr = getTodayIST();
-        const result = await db.execute({
-            sql: `SELECT j.* FROM liked_jobs l JOIN jobs j ON l.job_id = j.id WHERE l.user_id = ? ORDER BY l.created_at DESC`,
-            args: [req.user.id]
-        });
-        const jobs = result.rows || [];
-        return res.json(jobs.map(job => withStatus(job, todayStr)));
+        const { data: likedRows, error } = await sb.from('liked_jobs')
+            .select('job_id')
+            .eq('user_id', req.user.id)
+            .order('created_at', { ascending: false });
+            
+        if (error) throw error;
+        
+        if (!likedRows || likedRows.length === 0) {
+            return res.json([]);
+        }
+        
+        const jobIds = likedRows.map(r => r.job_id);
+        
+        const { data: jobs, error: jobsError } = await sb.from('jobs')
+            .select('*')
+            .in('id', jobIds);
+            
+        if (jobsError) throw jobsError;
+        
+        const jobMap = new Map();
+        for (const j of (jobs || [])) {
+            jobMap.set(j.id, j);
+        }
+        
+        const orderedJobs = [];
+        for (const id of jobIds) {
+            const j = jobMap.get(id);
+            if (j) orderedJobs.push(withStatus(j, todayStr));
+        }
+        
+        return res.json(orderedJobs);
     } catch (err) {
         console.error('GET /api/jobs/liked error:', err);
         return res.status(500).json({ error: 'Failed to fetch liked jobs', details: err.message });

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getCachedUser, invalidateCache } from '../api';
 import Navbar from '../components/Navbar';
+import Footer from '../components/Footer';
 import GovLoader from '../components/GovLoader';
 import { useLanguage } from '../i18n/LanguageContext';
 import { translateDynamicData } from '../utils/translateHelper';
@@ -301,6 +302,7 @@ export default function NotificationsPage() {
         )}
 
       </div>
+      <Footer />
     </div>
   );
 }

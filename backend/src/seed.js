@@ -672,8 +672,31 @@ const STATES = [
 
 
 
+// Helper to get correct state URL
+function getStatePortalUrl(stateName) {
+  const mapping = {
+    'Andaman & Nicobar Islands': 'https://andamannicobar.gov.in',
+    'Jammu & Kashmir': 'https://jk.gov.in',
+    'Dadra & Nagar Haveli and Daman & Diu': 'https://dnh.gov.in',
+    'Uttar Pradesh': 'https://up.gov.in',
+    'Tamil Nadu': 'https://tn.gov.in',
+    'Madhya Pradesh': 'https://mp.gov.in',
+    'Himachal Pradesh': 'https://hp.gov.in',
+    'West Bengal': 'https://wb.gov.in',
+    'Uttarakhand': 'https://uk.gov.in',
+    'Puducherry': 'https://py.gov.in',
+    'Chhattisgarh': 'https://cgstate.gov.in',
+    'Delhi': 'https://delhi.gov.in',
+    'Ladakh': 'https://ladakh.nic.in',
+    'Lakshadweep': 'https://lakshadweep.gov.in',
+    'Andhra Pradesh': 'https://ap.gov.in'
+  };
+  if (mapping[stateName]) return mapping[stateName];
+  return `https://${stateName.toLowerCase().replace(/\s/g, '').replace(/[^a-z0-9]/g, '')}.gov.in`;
+}
+
 STATES.forEach(({ c, n }, i) => {
-  const url = 'https://india.gov.in';
+  const url = getStatePortalUrl(n);
 
   // 13 standard types
   const [s0, e0] = tl(i);
@@ -900,7 +923,7 @@ additionalEntrance.forEach(([n, org, q, mn, mx, s1, s2, c, l], i) => { const [s,
 
 // ── GRANULAR STATE LOCAL BODIES / DEPARTMENTS (36 × 33 = 1188) ──────────
 STATES.forEach(({ c, n }, i) => {
-  const url = `https://${n.toLowerCase().replace(/\s/g, '')}.gov.in`;
+  const url = getStatePortalUrl(n);
   let baseIdx = 30 + (i * 3); // Dynamic timeline offset
 
   // Municipalities / City Administration

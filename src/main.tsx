@@ -1,3 +1,4 @@
+// Build timestamp: 2026-08-01T17:40:30Z - Fresh bundle cache bust
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
@@ -119,14 +120,18 @@ async function initCapacitor() {
   }
 }
 
+import ErrorBoundary from './components/ErrorBoundary';
+
 // ── Render the app ──────────────────────────────────────────────────
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <Provider store={store}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </Provider>
+    <ErrorBoundary>
+      <Provider store={store}>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </Provider>
+    </ErrorBoundary>
   </React.StrictMode>
 );
 

@@ -12,6 +12,7 @@ const LoginPage = React.lazy(() => import('./pages/LoginPage'));
 const SignupPage = React.lazy(() => import('./pages/SignupPage'));
 const AuthCallbackPage = React.lazy(() => import('./pages/AuthCallbackPage'));
 const PrivacyPage = React.lazy(() => import('./pages/PrivacyPage'));
+const TermsPage = React.lazy(() => import('./pages/TermsPage'));
 const DashboardPage = React.lazy(() => import('./pages/DashboardPage'));
 const ProfilePage = React.lazy(() => import('./pages/ProfilePage'));
 const NotificationsPage = React.lazy(() => import('./pages/NotificationsPage'));
@@ -101,6 +102,36 @@ function AuthListener() {
   return null;
 }
 
+function ViewTransitionManager() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleLinkClick = (e: MouseEvent) => {
+      const target = (e.target as HTMLElement).closest('a');
+      if (!target) return;
+
+      const href = target.getAttribute('href');
+      // Only transition internal SPA links, skip mailto/tel and external links
+      if (href && href.startsWith('/') && !target.getAttribute('target') && !e.defaultPrevented && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        
+        if (document.startViewTransition) {
+          document.startViewTransition(() => {
+            navigate(href);
+          });
+        } else {
+          navigate(href);
+        }
+      }
+    };
+
+    window.addEventListener('click', handleLinkClick);
+    return () => window.removeEventListener('click', handleLinkClick);
+  }, [navigate]);
+
+  return null;
+}
+
 export default function App() {
   useEffect(() => {
     const savedTheme = localStorage.getItem('sarkar_theme') || 'dark';
@@ -116,6 +147,7 @@ export default function App() {
       <OfflineBanner />
       <RealtimeNotificationBanner />
       <AuthListener />
+      <ViewTransitionManager />
       <Suspense fallback={<SuspenseFallback />}>
         <Routes>
           {/* "/" → login (mobile app) or dashboard (if logged in) — no landing page */}
@@ -124,6 +156,7 @@ export default function App() {
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           {/* Keep landing page accessible via direct URL for web */}
           <Route path="/landing" element={<LandingPage />} />
           <Route path="/profile-setup" element={<ProtectedRoute><ProfileSetupPage /></ProtectedRoute>} />

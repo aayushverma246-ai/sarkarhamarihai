@@ -7,6 +7,8 @@ import { fetchAllJobsAction, fetchAppliedJobsAction, toggleLikeAction, toggleApp
 import { Job } from '../types';
 import Navbar from '../components/Navbar';
 import JobCard from '../components/JobCard';
+import Footer from '../components/Footer';
+import { motion, AnimatePresence } from 'framer-motion';
 
 
 import { useLanguage } from '../i18n/LanguageContext';
@@ -38,7 +40,7 @@ export default function DashboardPage() {
     remindedJobs,
     loading
   } = useAppSelector(selectJobsState);
-  const [isCriticalLoaded, setIsCriticalLoaded] = useState(false);
+  const [isCriticalLoaded, setIsCriticalLoaded] = useState(() => rawAllJobs.length > 0);
 
   const [criticalError, setCriticalError] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -46,34 +48,48 @@ export default function DashboardPage() {
   // Startup-grade Auto Recovery Array
   useEffect(() => {
     if (criticalError) {
-      const t = setTimeout(() => window.location.reload(), 15000);
-      return () => clearTimeout(t);
+      const timeoutId = setTimeout(() => window.location.reload(), 15000);
+      return () => clearTimeout(timeoutId);
     }
   }, [criticalError]);
+
+  // ── Scroll & State Persistence Helpers ──────────────────────
+  const [restoredState] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('dashboard_nav_state');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
 
   // Helper to safely get the initial tab
   const getInitialTab = useCallback((): TabKey => {
     const urlTab = searchParams.get('tab') as TabKey;
     const validTabs: TabKey[] = ['eligible', 'eligibleLive', 'partial', 'live', 'upcoming', 'closed', 'liked', 'applied', 'reminded', 'all'];
     if (urlTab && validTabs.includes(urlTab)) return urlTab;
+    if (restoredState && restoredState.activeTab && validTabs.includes(restoredState.activeTab)) return restoredState.activeTab;
     const storedTab = localStorage.getItem('dashboard_last_tab') as TabKey;
     if (storedTab && validTabs.includes(storedTab as TabKey)) return storedTab as TabKey;
     return 'all';
-  }, [searchParams]);
+  }, [searchParams, restoredState]);
 
   // Explicit state for active tab
-  const [activeTab, setActiveTabState] = useState<TabKey>(getInitialTab());
+  const [activeTab, setActiveTabState] = useState<TabKey>(getInitialTab);
   // visualTab updates instantly for zero-lag UI feedback
-  const [visualTab, setVisualTab] = useState<TabKey>(getInitialTab());
+  const [visualTab, setVisualTab] = useState<TabKey>(getInitialTab);
   const [isSwitching, setIsSwitching] = useState(false);
-  const [viewMode, setViewMode] = useState<'exams' | 'recs'>((localStorage.getItem('dashboard_view_mode') as 'exams' | 'recs') || 'exams');
+  const [viewMode, setViewMode] = useState<'exams' | 'recs'>(() => {
+    if (restoredState && restoredState.viewMode) return restoredState.viewMode;
+    return (localStorage.getItem('dashboard_view_mode') as 'exams' | 'recs') || 'exams';
+  });
 
   // Progressive rendering state
   const INITIAL_BATCH = 30;
   const [visibleCount, setVisibleCount] = useState(INITIAL_BATCH);
   const prevTabRef = useRef<TabKey>(getInitialTab());
 
-  const [selectedState, setSelectedState] = useState<string>('All India');
+  const [selectedState, setSelectedState] = useState<string>(() => restoredState?.selectedState || 'All India');
 
   // Unified setter with guaranteed zero-lag paint
   const setActiveTab = useCallback((tab: TabKey) => {
@@ -137,8 +153,8 @@ export default function DashboardPage() {
   }, []); // Only once on mount
 
   // Declare filter state before the useMemos that reference them
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('All');
+  const [search, setSearch] = useState(() => restoredState?.search || '');
+  const [category, setCategory] = useState(() => restoredState?.category || 'All');
   const [dbCategories, setDbCategories] = useState<string[]>([]);
 
   // Preload categories from DB for instant dropdowns
@@ -188,43 +204,42 @@ export default function DashboardPage() {
 
   // ── Scroll & State Persistence ──────────────────────────────
   const isRestoringScroll = useRef(false);
-
-  // Restore state on mount
-  useEffect(() => {
-    const saved = sessionStorage.getItem('dashboard_nav_state');
-    if (saved) {
-      try {
-        const { search: sSearch, category: sCat, selectedState: sState, activeTab: sTab, viewMode: sView } = JSON.parse(saved);
-        if (sSearch) setSearch(sSearch);
-        if (sCat) setCategory(sCat);
-        if (sState) setSelectedState(sState);
-        if (sTab) {
-          setActiveTabState(sTab);
-          setVisualTab(sTab);
-        }
-        if (sView) setViewMode(sView);
-      } catch (e) {
-        console.error("Failed to restore dashboard state:", e);
-      }
-    }
-  }, []);
+  const isScrollRestored = useRef(false);
 
   const saveNavState = useCallback(() => {
+    let scrollPosition = window.scrollY;
+    // Keep saved scroll position if scroll restoration hasn't finished yet
+    if (!isScrollRestored.current) {
+      try {
+        const saved = sessionStorage.getItem('dashboard_nav_state');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (typeof parsed.scrollPosition === 'number') {
+            scrollPosition = parsed.scrollPosition;
+          }
+        }
+      } catch (e) {}
+    }
+
     const state = {
       search,
       category,
       selectedState,
       activeTab,
       viewMode,
-      scrollPosition: window.scrollY
+      scrollPosition
     };
     sessionStorage.setItem('dashboard_nav_state', JSON.stringify(state));
   }, [search, category, selectedState, activeTab, viewMode]);
 
+  // Save nav state whenever user changes filter/tab settings
+  useEffect(() => {
+    saveNavState();
+  }, [search, category, selectedState, activeTab, viewMode, saveNavState]);
+
   // Scroll listener ─────────────────────────────────────────────────────────────
   // LOCK ON MOUNT — prevents the scroll listener from saving y=0 during
   // the initial loading phase before restoration can read sessionStorage.
-  // LOCK ON MOUNT — prevents the scroll listener from saving y=0 during
   const loadingRef = useRef(loading);
   loadingRef.current = loading;
 
@@ -249,6 +264,16 @@ export default function DashboardPage() {
           document.body?.scrollTop || 0
         );
         sessionStorage.setItem(`dashboard_scroll_${activeTab}_${viewMode}`, y.toString());
+
+        // Update the main nav state scroll position as well
+        const saved = sessionStorage.getItem('dashboard_nav_state');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            parsed.scrollPosition = y;
+            sessionStorage.setItem('dashboard_nav_state', JSON.stringify(parsed));
+          } catch (e) {}
+        }
       }, 100);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -256,17 +281,19 @@ export default function DashboardPage() {
       clearTimeout(debounceTimer);
       window.removeEventListener('scroll', handleScroll);
     };
-  }, [activeTab]);
+  }, [activeTab, viewMode]);
 
   // Restore scroll after loading is complete
   useEffect(() => {
     if (!loading) {
       const saved = sessionStorage.getItem('dashboard_nav_state');
+      let didRestore = false;
       if (saved) {
         try {
           const { scrollPosition, activeTab: sTab, viewMode: sView } = JSON.parse(saved);
           if (activeTab === sTab && viewMode === sView && scrollPosition > 0) {
             isRestoringScroll.current = true;
+            didRestore = true;
 
             // Use requestAnimationFrame to ensure DOM is rendered before scrolling
             const restore = () => {
@@ -275,6 +302,7 @@ export default function DashboardPage() {
               requestAnimationFrame(() => {
                 window.scrollTo({ top: scrollPosition, behavior: 'instant' });
                 isRestoringScroll.current = false;
+                isScrollRestored.current = true;
               });
             };
 
@@ -283,6 +311,9 @@ export default function DashboardPage() {
         } catch (e) {
           isRestoringScroll.current = false;
         }
+      }
+      if (!didRestore) {
+        isScrollRestored.current = true;
       }
     }
   }, [loading, activeTab, viewMode]);
@@ -301,21 +332,20 @@ export default function DashboardPage() {
     if (!cachedUser) { navigate('/login'); return; }
 
     const loadData = async () => {
-      setIsCriticalLoaded(false);
+      if (rawAllJobs.length === 0) {
+        setIsCriticalLoaded(false);
+      }
       try {
         await dispatch(fetchAllJobsAction());
         setIsCriticalLoaded(true);
       } catch (err: any) {
         console.error('Dashboard load failed:', err);
-        setCriticalError(err.message || 'Failed to connect to official servers. Please check your connection.');
+        if (rawAllJobs.length === 0) {
+          setCriticalError(err.message || 'Failed to connect to official servers. Please check your connection.');
+        }
       }
     };
 
-    const handleAppliedSync = () => {
-      dispatch(fetchAppliedJobsAction());
-    };
-
-    window.addEventListener('app:appliedToggled', handleAppliedSync);
     loadData();
 
     // Auto-refresh every 1 hour to keep data accurate
@@ -324,7 +354,6 @@ export default function DashboardPage() {
     }, 3600000);
 
     return () => {
-      window.removeEventListener('app:appliedToggled', handleAppliedSync);
       clearInterval(hourlyRefresh);
     };
     // eslint-disable-next-line
@@ -531,13 +560,13 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#080808] text-white">
+      <Navbar user={user} />
       {!isCriticalLoaded ? (
-        <div className="min-h-screen w-full flex items-center justify-center">
+        <div className="min-h-[calc(100vh-56px)] w-full flex items-center justify-center">
           <GovLoader message="Synthesizing your personalized dashboard..." />
         </div>
       ) : (
         <>
-          <Navbar user={user} />
           <div className="dashboard-content max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 animate-[fadeIn_0.4s_ease-out]">
             {/* Header */}
             <div className="mb-5">
@@ -817,22 +846,32 @@ export default function DashboardPage() {
                     </div>
                   ) : (
                     <>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {visibleJobs.map((job, i) => (
-                          <JobCard
-                            key={job.id}
-                            job={job}
-                            user={user}
-                            staggerIndex={i}
-                            isLiked={likedSet.has(job.id)}
-                            onLikeToggle={(liked) => handleLikeToggle(job, liked)}
-                            isApplied={appliedSet.has(job.id)}
-                            onApplyToggle={(applied) => handleApplyToggle(job, applied)}
-                            isReminded={remindedSet.has(job.id)}
-                            onRemindToggle={(reminded) => handleRemindToggle(job, reminded)}
-                            onBeforeNavigate={saveNavState}
-                          />
-                        ))}
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 relative">
+                        <AnimatePresence mode="popLayout">
+                          {visibleJobs.map((job, i) => (
+                            <motion.div
+                              key={job.id}
+                              layout
+                              initial={{ opacity: 0, scale: 0.96 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.9, y: 12, transition: { duration: 0.18 } }}
+                              transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                            >
+                              <JobCard
+                                job={job}
+                                user={user}
+                                staggerIndex={i}
+                                isLiked={likedSet.has(job.id)}
+                                onLikeToggle={(liked) => handleLikeToggle(job, liked)}
+                                isApplied={appliedSet.has(job.id)}
+                                onApplyToggle={(applied) => handleApplyToggle(job, applied)}
+                                isReminded={remindedSet.has(job.id)}
+                                onRemindToggle={(reminded) => handleRemindToggle(job, reminded)}
+                                onBeforeNavigate={saveNavState}
+                              />
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
                       </div>
                       {hasMore && (
                         <div ref={sentinelRef} className="flex justify-center py-6">
@@ -852,9 +891,7 @@ export default function DashboardPage() {
         </>
       )}
 
-      <p className="text-center text-[10px] text-gray-700 mt-6">
-        {t('dashboard.footer')} • v1.7.0 • {new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })}
-      </p>
+      <Footer />
     </div>
   );
 }

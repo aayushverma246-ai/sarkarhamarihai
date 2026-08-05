@@ -20,10 +20,12 @@ if (!apiKey) {
     process.exit(1);
 }
 
+const cronSecret = process.env.CRON_SECRET || 'Mnc6Ql9cqg84dOevfjxDvsbN9p9dCPVMlEL25eAB5kE=';
+
 const jobsToSetup = [
     {
         title: "SarkarHamariHai - Daily Sync",
-        url: "https://sarkarhamarihai.vercel.app/api/cron/daily?secret=sarkar_cron_key_v1",
+        url: `https://sarkarhamarihai.app/api/cron/daily?secret=${encodeURIComponent(cronSecret)}`,
         schedule: {
             timezone: "Asia/Kolkata",
             expiresAt: 0,
@@ -36,7 +38,7 @@ const jobsToSetup = [
     },
     {
         title: "SarkarHamariHai - Reminders Dispatch",
-        url: "https://sarkarhamarihai.vercel.app/api/cron/notifications?secret=sarkar_cron_key_v1",
+        url: `https://sarkarhamarihai.app/api/cron/notifications?secret=${encodeURIComponent(cronSecret)}`,
         schedule: {
             timezone: "Asia/Kolkata",
             expiresAt: 0,
@@ -49,7 +51,7 @@ const jobsToSetup = [
     },
     {
         title: "SarkarHamariHai - Status Change Notification",
-        url: "https://sarkarhamarihai.vercel.app/api/cron/status-change-notify?secret=sarkar_cron_key_v1",
+        url: `https://sarkarhamarihai.app/api/cron/status-change-notify?secret=${encodeURIComponent(cronSecret)}`,
         schedule: {
             timezone: "Asia/Kolkata",
             expiresAt: 0,
@@ -62,7 +64,7 @@ const jobsToSetup = [
     },
     {
         title: "SarkarHamariHai - Final Close Notification",
-        url: "https://sarkarhamarihai.vercel.app/api/cron/final-close-notify?secret=sarkar_cron_key_v1",
+        url: `https://sarkarhamarihai.app/api/cron/final-close-notify?secret=${encodeURIComponent(cronSecret)}`,
         schedule: {
             timezone: "Asia/Kolkata",
             expiresAt: 0,
@@ -75,7 +77,7 @@ const jobsToSetup = [
     },
     {
         title: "SarkarHamariHai - Scraper Pipeline",
-        url: "https://sarkarhamarihai.vercel.app/api/cron/hourly-update?secret=sarkar_cron_key_v1",
+        url: `https://sarkarhamarihai.app/api/cron/hourly-update?secret=${encodeURIComponent(cronSecret)}`,
         schedule: {
             timezone: "Asia/Kolkata",
             expiresAt: 0,
@@ -88,7 +90,7 @@ const jobsToSetup = [
     },
     {
         title: "SarkarHamariHai - Deep Audit",
-        url: "https://sarkarhamarihai.vercel.app/api/cron/deep-audit?secret=sarkar_cron_key_v1",
+        url: `https://sarkarhamarihai.app/api/cron/deep-audit?secret=${encodeURIComponent(cronSecret)}`,
         schedule: {
             timezone: "Asia/Kolkata",
             expiresAt: 0,
@@ -101,7 +103,7 @@ const jobsToSetup = [
     },
     {
         title: "SarkarHamariHai - Verification Engine",
-        url: "https://sarkarhamarihai.vercel.app/api/cron/verify?secret=sarkar_cron_key_v1",
+        url: `https://sarkarhamarihai.app/api/cron/verify?secret=${encodeURIComponent(cronSecret)}`,
         schedule: {
             timezone: "Asia/Kolkata",
             expiresAt: 0,
@@ -114,7 +116,7 @@ const jobsToSetup = [
     },
     {
         title: "SarkarHamariHai - Refresh Cache",
-        url: "https://sarkarhamarihai.vercel.app/api/cron/refresh?secret=sarkar_cron_key_v1",
+        url: `https://sarkarhamarihai.app/api/cron/refresh?secret=${encodeURIComponent(cronSecret)}`,
         schedule: {
             timezone: "Asia/Kolkata",
             expiresAt: 0,
@@ -127,7 +129,7 @@ const jobsToSetup = [
     },
     {
         title: "SarkarHamariHai - Discovery Scraper",
-        url: "https://sarkarhamarihai.vercel.app/api/cron/discovery?secret=sarkar_cron_key_v1",
+        url: `https://sarkarhamarihai.app/api/cron/discovery?secret=${encodeURIComponent(cronSecret)}`,
         schedule: {
             timezone: "Asia/Kolkata",
             expiresAt: 0,
@@ -140,7 +142,7 @@ const jobsToSetup = [
     },
     {
         title: "SarkarHamariHai - Healer",
-        url: "https://sarkarhamarihai.vercel.app/api/cron/healer?secret=sarkar_cron_key_v1",
+        url: `https://sarkarhamarihai.app/api/cron/healer?secret=${encodeURIComponent(cronSecret)}`,
         schedule: {
             timezone: "Asia/Kolkata",
             expiresAt: 0,

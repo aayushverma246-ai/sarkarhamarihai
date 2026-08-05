@@ -122,6 +122,17 @@ function richnessScore(exam) {
 function mergeExams(existing, incoming) {
   const merged = { ...existing };
 
+  const genericDomains = [
+    'india.gov.in', 'careers.india.gov.in', 'apprenticeshipindia.org',
+    'metro.gov.in', 'mha.gov.in', 'dnh.gov.in', 'andaman.gov.in'
+  ];
+
+  const isGeneric = (url) => {
+    if (!url) return true;
+    const lower = url.toLowerCase();
+    return genericDomains.some(d => lower.includes(d));
+  };
+
   // For each field, prefer non-empty incoming over empty existing
   const fields = [
     'qualification_required', 'application_start_date', 'application_end_date',
@@ -133,6 +144,22 @@ function mergeExams(existing, incoming) {
   for (const field of fields) {
     const existVal = existing[field];
     const incVal = incoming[field];
+
+    // Shield: Protect specific/cleared links from being overwritten by generic fallback links
+    if (['official_website_link', 'official_application_link', 'official_notification_link'].includes(field)) {
+      if (existVal === '' || (existVal && !isGeneric(existVal))) {
+        if (!incVal || isGeneric(incVal)) {
+          continue; // Keep the specific or cleared link
+        }
+      }
+    }
+
+    // Shield: Protect specific selection process from being overwritten by short/generic/empty text
+    if (field === 'selection_process' && existVal && existVal.trim().length > 15) {
+      if (!incVal || incVal.trim().length <= 15) {
+        continue; // Keep the richer selection process
+      }
+    }
 
     // Prefer incoming if existing is empty/null/default
     if ((!existVal || existVal === '' || existVal === 'Not Specified' || existVal === 0) && incVal) {

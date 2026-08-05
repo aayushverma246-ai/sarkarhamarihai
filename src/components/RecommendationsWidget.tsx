@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Job } from '../types';
 import { RefreshCcw, Zap, Heart, CheckCircle, ClipboardList, BookOpen, ExternalLink, Target, AlertTriangle, UserX, Info, Brain, Clock, Shield, ArrowRight, BarChart3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +10,7 @@ import { fetchRecommendationsAction } from '../store/actions/recommendationActio
 import { toggleLikeAction, toggleApplyAction } from '../store/actions/jobActions';
 import { useLanguage } from '../i18n/LanguageContext';
 import { translateDynamicData } from '../utils/translateHelper';
+import * as types from '../store/actionTypes';
 
 /* ─── Types ─── */
 interface RJob extends Job {
@@ -207,7 +209,7 @@ const RecommendationCard = memo(function RecommendationCard({ job, isApplied, is
         e.preventDefault();
         if (isPending) return;
         setIsPending(true);
-        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(15);
+        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30);
         setLikeBeat(true);
         setTimeout(() => setLikeBeat(false), 400);
         try {
@@ -224,7 +226,7 @@ const RecommendationCard = memo(function RecommendationCard({ job, isApplied, is
         e.preventDefault();
         if (isPending) return;
         setIsPending(true);
-        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(15);
+        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30);
         try {
             await onToggleApply(isApplied);
         } catch (err) {
@@ -347,15 +349,23 @@ export default function RecommendationsWidget({ externalSearch = '', externalCat
         error
     } = useAppSelector(selectRecsState);
 
+    const [search, setSearch] = useState('');
+    const [category, setCategory] = useState('All');
+    const [stateFilter, setStateFilter] = useState('All India');
+    const [selectedJob, setSelectedJob] = useState<RJob | null>(null);
+    const [showExplanation, setShowExplanation] = useState(false);
+
     const recs = useMemo(() => {
         if (!rawRecs || rawRecs.length === 0) return [];
-        const likedIds = new Set((likedJobs || []).map((j: any) => j.id));
-        const sorted = [...rawRecs];
+        // Filter based on threshold (70% standard, 30% when searching)
+        const minScore = search ? 30 : 70;
+        const filtered = rawRecs.filter(j => {
+            const val = j.similarity !== undefined && j.similarity !== null ? j.similarity : j.overlap_score;
+            const score = typeof val === 'number' ? val : parseFloat(String(val)) || 0;
+            return score >= minScore;
+        });
+        const sorted = [...filtered];
         sorted.sort((a, b) => {
-            const aLiked = likedIds.has(a.id) ? 1 : 0;
-            const bLiked = likedIds.has(b.id) ? 1 : 0;
-            if (aLiked !== bLiked) return bLiked - aLiked;
-
             const aVal = a.similarity !== undefined && a.similarity !== null ? a.similarity : a.overlap_score;
             const bVal = b.similarity !== undefined && b.similarity !== null ? b.similarity : b.overlap_score;
             const aSim = typeof aVal === 'number' ? aVal : parseFloat(String(aVal)) || 0;
@@ -368,13 +378,7 @@ export default function RecommendationsWidget({ externalSearch = '', externalCat
             return bStatus - aStatus;
         });
         return sorted;
-    }, [rawRecs, likedJobs]);
-
-    const [search, setSearch] = useState('');
-    const [category, setCategory] = useState('All');
-    const [stateFilter, setStateFilter] = useState('All India');
-    const [selectedJob, setSelectedJob] = useState<RJob | null>(null);
-    const [showExplanation, setShowExplanation] = useState(false);
+    }, [rawRecs, search]);
 
     const navigate = useNavigate();
     const isMounted = useRef(true);
@@ -417,7 +421,13 @@ export default function RecommendationsWidget({ externalSearch = '', externalCat
 
     /* ── CORE LOADER ── */
     const loadData = useCallback(async (pageNum = 1) => {
-        if (combinedExams.length === 0) return;
+        if (combinedExams.length === 0) {
+            dispatch({
+                type: types.FETCH_RECS_SUCCESS,
+                payload: { allMergedRecs: [], isPage1: true, hasMore: false, page: 1 }
+            });
+            return;
+        }
         try {
             await dispatch(fetchRecommendationsAction(
                 combinedExams,
@@ -432,12 +442,10 @@ export default function RecommendationsWidget({ externalSearch = '', externalCat
     }, [combinedExams, dispatch]);
 
     const handleToggleApply = useCallback((job: Job, currentlyApplied: boolean) => {
-        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(15);
         return dispatch(toggleApplyAction(job, currentlyApplied));
     }, [dispatch]);
 
     const handleToggleLike = useCallback((job: Job, currentlyLiked: boolean) => {
-        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(15);
         return dispatch(toggleLikeAction(job, currentlyLiked));
     }, [dispatch]);
 
@@ -447,12 +455,10 @@ export default function RecommendationsWidget({ externalSearch = '', externalCat
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            if (combinedExams.length > 0) {
-                loadData(1);
-            }
+            loadData(1);
         }, 300);
         return () => clearTimeout(timer);
-    }, [search, category, stateFilter, combinedExams.length, loadData]);
+    }, [search, category, stateFilter, combinedExams, loadData]);
 
     const isRestoringScroll = useRef(false);
     useEffect(() => {
@@ -639,19 +645,31 @@ export default function RecommendationsWidget({ externalSearch = '', externalCat
                 </div>
             ) : recs.length > 0 ? (
                 <div className="space-y-4">
-                    {refreshing && <AIProcessLoader />}
                     <p className="text-[10px] text-gray-600 font-bold uppercase tracking-wider px-1">
                         {recs.length} {t('recs.strongOverlap') || "exams with strong syllabus overlap"}
                     </p>
-                    {recs.map(job => (
-                        <RecommendationCard key={job.id} job={job}
-                            isApplied={appliedJobs.some(j => j.id === job.id)}
-                            isLiked={likedJobs.some(j => j.id === job.id)}
-                            onToggleApply={(applied) => handleToggleApply(job, applied)}
-                            onToggleLike={(liked) => handleToggleLike(job, liked)}
-                            onNavigate={handleNavigation}
-                            onOpenDetails={setSelectedJob} />
-                    ))}
+                    <div className="space-y-4 relative">
+                        <AnimatePresence mode="popLayout">
+                            {recs.map(job => (
+                                <motion.div
+                                    key={job.id}
+                                    layout
+                                    initial={{ opacity: 0, scale: 0.97 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.93, y: 12, transition: { duration: 0.18 } }}
+                                    transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                                >
+                                    <RecommendationCard job={job}
+                                        isApplied={appliedJobs.some(j => j.id === job.id)}
+                                        isLiked={likedJobs.some(j => j.id === job.id)}
+                                        onToggleApply={(applied) => handleToggleApply(job, applied)}
+                                        onToggleLike={(liked) => handleToggleLike(job, liked)}
+                                        onNavigate={handleNavigation}
+                                        onOpenDetails={setSelectedJob} />
+                                </motion.div>
+                            ))}
+                        </AnimatePresence>
+                    </div>
                     {error && recs.length > 0 && (
                         <div className="p-4 bg-red-950/15 border border-red-800/20 rounded-xl text-center flex flex-col items-center gap-2 max-w-md mx-auto">
                             <p className="text-xs text-red-400 font-semibold">{error}</p>

@@ -2,6 +2,17 @@ import * as types from '../actionTypes';
 import { api, getCachedUser } from '../../api';
 import { Job } from '../../types';
 import { meetsQualification, meetsAge, meetsTechnicalCriteria } from '../../utils';
+// ── CONCURRENCY MUTEX / PROMISE SERIALIZATION QUEUE ──
+// Prevents rapid toggles from generating out-of-order backend requests for the same job.
+const jobQueues = new Map<string, Promise<any>>();
+
+const enqueueJobRequest = (jobId: string, fn: () => Promise<any>): Promise<any> => {
+    const current = jobQueues.get(jobId) || Promise.resolve();
+    const next = current.then(fn).catch(() => {});
+    jobQueues.set(jobId, next);
+    return next;
+};
+
 // Helper to normalize strings for deduplication key
 const normalizeString = (str: string): string => {
     if (!str) return '';
@@ -288,6 +299,7 @@ export const fetchRemindedJobsAction = () => async (dispatch: any) => {
 };
 
 // Optimistic action creators with rollback/refetch and localStorage sync
+// Optimistic action creators with rollback/refetch and localStorage sync
 export const toggleLikeAction = (job: Job, currentlyLiked: boolean) => async (dispatch: any) => {
     dispatch({
         type: types.TOGGLE_LIKE_OPTIMISTIC,
@@ -310,38 +322,40 @@ export const toggleLikeAction = (job: Job, currentlyLiked: boolean) => async (di
         console.error('Failed to update local liked cache:', e);
     }
 
-    try {
-        if (currentlyLiked) {
-            await api.unlikeJob(job.id);
-        } else {
-            await api.likeJob(job.id);
-        }
-    } catch (err) {
-        // Rollback state in Redux and LocalStorage
-        dispatch({
-            type: types.TOGGLE_LIKE_OPTIMISTIC,
-            payload: { job, isLiked: currentlyLiked }
-        });
+    enqueueJobRequest(job.id, async () => {
         try {
-            const cached = localStorage.getItem('sarkar_liked_jobs');
-            let list: Job[] = cached ? JSON.parse(cached) : [];
             if (currentlyLiked) {
-                if (!list.some(j => j.id === job.id)) list.push(job);
+                await api.unlikeJob(job.id);
             } else {
-                list = list.filter(j => j.id !== job.id);
+                await api.likeJob(job.id);
             }
-            localStorage.setItem('sarkar_liked_jobs', JSON.stringify(list));
-        } catch (e) {
-            console.error('Failed to rollback local liked cache:', e);
+        } catch (err) {
+            // Rollback state in Redux and LocalStorage
+            dispatch({
+                type: types.TOGGLE_LIKE_OPTIMISTIC,
+                payload: { job, isLiked: currentlyLiked }
+            });
+            try {
+                const cached = localStorage.getItem('sarkar_liked_jobs');
+                let list: Job[] = cached ? JSON.parse(cached) : [];
+                if (currentlyLiked) {
+                    if (!list.some(j => j.id === job.id)) list.push(job);
+                } else {
+                    list = list.filter(j => j.id !== job.id);
+                }
+                localStorage.setItem('sarkar_liked_jobs', JSON.stringify(list));
+            } catch (e) {
+                console.error('Failed to rollback local liked cache:', e);
+            }
         }
-        throw err;
-    }
+    });
 };
 
 export const toggleApplyAction = (job: Job, currentlyApplied: boolean) => async (dispatch: any) => {
+    const targetApplied = !currentlyApplied;
     dispatch({
         type: types.TOGGLE_APPLY_OPTIMISTIC,
-        payload: { job, isApplied: !currentlyApplied }
+        payload: { job, isApplied: targetApplied }
     });
 
     // Update LocalStorage cache optimistically
@@ -360,29 +374,29 @@ export const toggleApplyAction = (job: Job, currentlyApplied: boolean) => async 
         console.error('Failed to update local applied cache:', e);
     }
 
-    try {
-        await api.toggleApplied(job.id);
-        window.dispatchEvent(new Event('app:appliedToggled'));
-    } catch (err) {
-        // Rollback state in Redux and LocalStorage
-        dispatch({
-            type: types.TOGGLE_APPLY_OPTIMISTIC,
-            payload: { job, isApplied: currentlyApplied }
-        });
+    enqueueJobRequest(job.id, async () => {
         try {
-            const cached = localStorage.getItem('sarkar_applied_jobs');
-            let list: Job[] = cached ? JSON.parse(cached) : [];
-            if (currentlyApplied) {
-                if (!list.some(j => j.id === job.id)) list.push(job);
-            } else {
-                list = list.filter(j => j.id !== job.id);
+            await api.toggleApplied(job.id, targetApplied);
+        } catch (err) {
+            // Rollback state in Redux and LocalStorage
+            dispatch({
+                type: types.TOGGLE_APPLY_OPTIMISTIC,
+                payload: { job, isApplied: currentlyApplied }
+            });
+            try {
+                const cached = localStorage.getItem('sarkar_applied_jobs');
+                let list: Job[] = cached ? JSON.parse(cached) : [];
+                if (currentlyApplied) {
+                    if (!list.some(j => j.id === job.id)) list.push(job);
+                } else {
+                    list = list.filter(j => j.id !== job.id);
+                }
+                localStorage.setItem('sarkar_applied_jobs', JSON.stringify(list));
+            } catch (e) {
+                console.error('Failed to rollback local applied cache:', e);
             }
-            localStorage.setItem('sarkar_applied_jobs', JSON.stringify(list));
-        } catch (e) {
-            console.error('Failed to rollback local applied cache:', e);
         }
-        throw err;
-    }
+    });
 };
 
 export const toggleReminderAction = (job: Job, currentlyReminded: boolean) => async (dispatch: any) => {
@@ -407,26 +421,27 @@ export const toggleReminderAction = (job: Job, currentlyReminded: boolean) => as
         console.error('Failed to update local reminded cache:', e);
     }
 
-    try {
-        await api.toggleReminder(job.id);
-    } catch (err) {
-        // Rollback state in Redux and LocalStorage
-        dispatch({
-            type: types.TOGGLE_REMINDER_OPTIMISTIC,
-            payload: { job, isReminded: currentlyReminded }
-        });
+    enqueueJobRequest(job.id, async () => {
         try {
-            const cached = localStorage.getItem('sarkar_reminded_jobs');
-            let list: Job[] = cached ? JSON.parse(cached) : [];
-            if (currentlyReminded) {
-                if (!list.some(j => j.id === job.id)) list.push(job);
-            } else {
-                list = list.filter(j => j.id !== job.id);
+            await api.toggleReminder(job.id);
+        } catch (err) {
+            // Rollback state in Redux and LocalStorage
+            dispatch({
+                type: types.TOGGLE_REMINDER_OPTIMISTIC,
+                payload: { job, isReminded: currentlyReminded }
+            });
+            try {
+                const cached = localStorage.getItem('sarkar_reminded_jobs');
+                let list: Job[] = cached ? JSON.parse(cached) : [];
+                if (currentlyReminded) {
+                    if (!list.some(j => j.id === job.id)) list.push(job);
+                } else {
+                    list = list.filter(j => j.id !== job.id);
+                }
+                localStorage.setItem('sarkar_reminded_jobs', JSON.stringify(list));
+            } catch (e) {
+                console.error('Failed to rollback local reminded cache:', e);
             }
-            localStorage.setItem('sarkar_reminded_jobs', JSON.stringify(list));
-        } catch (e) {
-            console.error('Failed to rollback local reminded cache:', e);
         }
-        throw err;
-    }
+    });
 };

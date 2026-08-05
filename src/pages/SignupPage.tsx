@@ -112,9 +112,23 @@ export default function SignupPage() {
       const { user } = await api.setupProfile(profileData);
       localStorage.removeItem('sarkar_pending_profile');
       setCachedUser(user);
+
+      // Track conversion event (SaaS telemetry)
+      try {
+        import('../utils/telemetry').then(({ telemetry }) => {
+          telemetry.track('user_signup', { category: form.category, state: form.state });
+        }).catch(() => {});
+      } catch (err) {}
+
       navigate('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
+      // Track signup exception
+      try {
+        import('../utils/telemetry').then(({ telemetry }) => {
+          telemetry.captureException(err instanceof Error ? err : new Error(String(err)), { context: 'signup_submit' });
+        }).catch(() => {});
+      } catch (e) {}
     } finally {
       setLoading(false);
     }
@@ -281,7 +295,7 @@ export default function SignupPage() {
               try {
                 const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
                 const redirectUrl = isNative
-                  ? 'https://sarkarhamarihai.vercel.app/auth/callback?platform=mobile'
+                  ? 'https://sarkarhamarihai.app/auth/callback?platform=mobile'
                   : window.location.origin + '/auth/callback';
                 
                 if (isNative) {

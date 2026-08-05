@@ -67,8 +67,8 @@ const STATE_WEBSITES = {
     'Jammu & Kashmir': 'https://jk.gov.in',
     'Ladakh': 'https://ladakh.gov.in',
     'Chandigarh': 'https://chandigarh.gov.in',
-    'Andaman & Nicobar': 'https://andaman.gov.in',
-    'Andaman & Nicobar Islands': 'https://andaman.gov.in',
+    'Andaman & Nicobar': 'https://andamannicobar.gov.in',
+    'Andaman & Nicobar Islands': 'https://andamannicobar.gov.in',
     'Dadra & Nagar Haveli': 'https://dnh.gov.in',
     'Dadra & Nagar Haveli and Daman & Diu': 'https://dnh.gov.in',
     'Daman & Diu': 'https://dnh.gov.in',
@@ -180,15 +180,13 @@ function extractState(jobName, organization) {
 }
 
 // ── HELPER: Fix broken URL ──────────────────────────────────────────────────────
+// SHIELD: Never fallback to generic state root websites — only fix formatting.
+// Cleared URLs ('') must be preserved as intentionally cleared.
 function fixUrl(url, state) {
-    if (!url || url.length < 5) {
-        // Try to provide a proper state website
-        if (state && STATE_WEBSITES[state]) return STATE_WEBSITES[state];
-        return '';
-    }
+    if (!url || url === '') return '';
+    if (url.length < 5) return '';
     // Fix URLs with spaces (e.g. "https://andhra pradesh.gov.in")
     if (url.includes(' ')) {
-        if (state && STATE_WEBSITES[state]) return STATE_WEBSITES[state];
         return url.replace(/\s+/g, '');
     }
     return url;
@@ -272,12 +270,14 @@ async function healAllRecords() {
                 changed = true;
             }
 
-            // 4. Fix selection process if it's generic boilerplate
+            // 4. Fix selection process — ONLY if it is truly empty/null.
+            // SHIELD: Never overwrite an existing selection process (even if
+            // different from the category template) — it may be genuinely
+            // specific data set by our correction scripts.
             const cat = rec.job_category;
             if (cat && CATEGORY_SELECTION_PROCESS[cat]) {
-                const proper = CATEGORY_SELECTION_PROCESS[cat];
-                if (rec.selection_process !== proper) {
-                    patch.selection_process = proper;
+                if (!rec.selection_process || rec.selection_process.trim().length === 0) {
+                    patch.selection_process = CATEGORY_SELECTION_PROCESS[cat];
                     changed = true;
                     totalSelProcFixes++;
                 }
