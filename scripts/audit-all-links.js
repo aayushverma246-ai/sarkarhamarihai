@@ -26,7 +26,8 @@ const genericDomains = [
   'apprenticeshipindia.org',
   'metro.gov.in',
   'mha.gov.in',
-  'andaman.gov.in'
+  'andaman.gov.in',
+  'indianbanksassociation.org'
 ];
 
 const statePortals = {
@@ -77,8 +78,20 @@ const directOrgPortals = {
   'UPSC': 'https://upsc.gov.in',
   'Staff Selection Commission': 'https://ssc.gov.in',
   'SSC': 'https://ssc.gov.in',
-  'State Bank of India': 'https://bank.sbi',
-  'SBI': 'https://bank.sbi',
+  'State Bank of India': 'https://www.sbi.co.in',
+  'State Bank of India (SBI)': 'https://www.sbi.co.in',
+  'SBI': 'https://www.sbi.co.in',
+  'Punjab National Bank': 'https://www.pnbindia.in',
+  'Punjab National Bank (PNB)': 'https://www.pnbindia.in',
+  'PNB': 'https://www.pnbindia.in',
+  'Union Bank of India': 'https://www.unionbankofindia.co.in',
+  'Canara Bank': 'https://canarabank.com',
+  'Bank of Baroda': 'https://www.bankofbaroda.in',
+  'Bank of Baroda (BOB)': 'https://www.bankofbaroda.in',
+  'BOB': 'https://www.bankofbaroda.in',
+  'Indian Bank': 'https://www.indianbank.in',
+  'Bank of India': 'https://www.bankofindia.co.in',
+  'BOI': 'https://www.bankofindia.co.in',
   'Institute of Banking Personnel Selection': 'https://ibps.in',
   'IBPS': 'https://ibps.in',
   'Reserve Bank of India': 'https://rbi.org.in',
@@ -389,14 +402,29 @@ async function run() {
         let correctedUrl = null;
         let method = '';
         
-        // Step 1: Check direct organization dictionary using word boundaries
+        // Step 1: Check direct organization dictionary (exact match first)
+        const orgLower = org.toLowerCase().trim();
         for (const [key, val] of Object.entries(directOrgPortals)) {
-          const regex = new RegExp('\\b' + escapeRegex(key) + '\\b', 'i');
-          if (regex.test(org)) {
+          if (key.toLowerCase().trim() === orgLower) {
             correctedUrl = val;
-            method = 'DIRECT_DICT';
+            method = 'DIRECT_DICT_EXACT';
             resolvedViaDict++;
             break;
+          }
+        }
+
+        // Step 2: Check partial match using word boundaries (longest key first)
+        if (!correctedUrl) {
+          const sortedKeys = Object.keys(directOrgPortals).sort((a, b) => b.length - a.length);
+          for (const key of sortedKeys) {
+            const val = directOrgPortals[key];
+            const regex = new RegExp('\\b' + escapeRegex(key) + '\\b', 'i');
+            if (regex.test(org)) {
+              correctedUrl = val;
+              method = 'DIRECT_DICT_PARTIAL';
+              resolvedViaDict++;
+              break;
+            }
           }
         }
         

@@ -11,7 +11,7 @@ const sb = createClient(
 // ── KNOWN GENERIC / PLACEHOLDER PATTERNS ──
 const GENERIC_DOMAINS = [
   'india.gov.in', 'careers.india.gov.in', 'apprenticeshipindia.org',
-  'metro.gov.in', 'mha.gov.in', 'andaman.gov.in'
+  'metro.gov.in', 'mha.gov.in', 'andaman.gov.in', 'indianbanksassociation.org'
 ];
 
 // Legitimate domains that contain 'india.gov.in' as substring but are NOT generic

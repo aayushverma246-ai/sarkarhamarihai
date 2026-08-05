@@ -124,7 +124,8 @@ function mergeExams(existing, incoming) {
 
   const genericDomains = [
     'india.gov.in', 'careers.india.gov.in', 'apprenticeshipindia.org',
-    'metro.gov.in', 'mha.gov.in', 'dnh.gov.in', 'andaman.gov.in'
+    'metro.gov.in', 'mha.gov.in', 'dnh.gov.in', 'andaman.gov.in',
+    'indianbanksassociation.org'
   ];
 
   const isGeneric = (url) => {
