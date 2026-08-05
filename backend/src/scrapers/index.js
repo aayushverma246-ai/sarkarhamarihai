@@ -315,5 +315,12 @@ const judiciaryScraper = {
 module.exports = [
   require('./upsc'),
   require('./ssc'),
+  railwayScraper,
+  bankingScraper,
+  defenceScraper,
+  psuScraper,
+  ntaScraper,
+  statePscScraper,
+  centralGovtScraper,
+  judiciaryScraper,
 ];
-
