@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, getCachedUser } from '../api';
 import { useAppDispatch, useAppSelector } from '../store';
 import { selectCurrentUser, selectJobsState } from '../store/selectors';
-import { fetchAllJobsAction, fetchAppliedJobsAction, toggleLikeAction, toggleApplyAction, toggleReminderAction } from '../store/actions/jobActions';
+import { fetchAllJobsAction, toggleLikeAction, toggleApplyAction, toggleReminderAction } from '../store/actions/jobActions';
 import { Job } from '../types';
 import Navbar from '../components/Navbar';
 import JobCard from '../components/JobCard';

@@ -5,12 +5,27 @@ import { supabase } from '../utils/supabase';
 import { indianStates } from '../data/states';
 import Logo from '../assets/logo';
 import GovLoader from '../components/GovLoader';
+import { useAppDispatch } from '../store';
+import { guestLoginAction } from '../store/actions/authActions';
 
 export default function SignupPage() {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
+
+  const handleGuestLogin = () => {
+    dispatch(guestLoginAction())
+      .then(() => {
+        sessionStorage.setItem('sarkar_mobile_unlocked', 'true');
+        navigate('/dashboard');
+      })
+      .catch(() => {
+        sessionStorage.setItem('sarkar_mobile_unlocked', 'true');
+        navigate('/dashboard');
+      });
+  };
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -338,6 +353,14 @@ export default function SignupPage() {
               <path fill="none" d="M0 0h48v48H0z"/>
             </svg>
             Continue with Google
+          </button>
+
+          <button
+            onClick={handleGuestLogin}
+            disabled={loading}
+            className="w-full py-3.5 bg-transparent text-gray-500 hover:text-gray-300 font-medium text-sm transition-all disabled:opacity-50 active:scale-[0.98] rounded-xl hover:bg-white/5"
+          >
+            Continue as Guest
           </button>
 
           <p className="mt-8 text-center text-sm text-gray-500 font-medium">

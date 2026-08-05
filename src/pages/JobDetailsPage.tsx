@@ -630,7 +630,7 @@ export default function JobDetailsPage() {
     setApplied(newStatus);
 
     try {
-      await api.toggleApplied(job.id);
+      await api.toggleApplied(job.id, newStatus);
       window.dispatchEvent(new Event('app:appliedToggled'));
     } catch (err) {
       console.error(err);

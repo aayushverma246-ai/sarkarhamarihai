@@ -23,8 +23,6 @@ export default function ProfilePage() {
     qualification_type: 'Graduation', qualification_status: 'Pursuing',
     current_year: '', current_semester: '', expected_graduation_year: '',
   });
-  const [billing, setBilling] = useState<any>(null);
-
   useEffect(() => {
     if (!cached) { navigate('/login'); return; }
     const load = async () => {
@@ -32,15 +30,13 @@ export default function ProfilePage() {
       try {
         // Fetch user profile and billing status in parallel
         let me: any = null;
-        let billData: any = null;
 
         try {
-          const [meRes, billRes] = await Promise.all([
+          const [meRes] = await Promise.all([
             api.getMe(),
             api.getBillingStatus().catch(() => null)
           ]);
           me = meRes;
-          billData = billRes;
         } catch (meErr: any) {
           // Only redirect on explicit auth failure, not on network errors
           if (meErr?.message?.includes('Session expired') || meErr?.message?.includes('401')) {
@@ -51,7 +47,6 @@ export default function ProfilePage() {
 
         const resolvedUser = (me && me.email) ? me : cached;
         setUser(resolvedUser);
-        setBilling(billData);
         if (me && me.email) setCachedUser(resolvedUser);
         setForm({
           full_name: resolvedUser.full_name || '',

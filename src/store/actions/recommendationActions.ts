@@ -65,8 +65,7 @@ export const fetchRecommendationsAction = (
             }
         }
 
-        const likedJobs = getState().jobs.likedJobs || [];
-        const likedIds = new Set(likedJobs.map((j: any) => j.id));
+
 
         // Sort DESC by similarity, then LIVE first
         mergedList.sort((a, b) => {

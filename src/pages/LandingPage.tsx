@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Star, ArrowRight, Calendar, BookOpen, AlertCircle } from 'lucide-react';
+import { Star, ArrowRight, Calendar, BookOpen } from 'lucide-react';
 import Logo from '../assets/logo';
 import Footer from '../components/Footer';
 
@@ -16,18 +16,8 @@ export default function LandingPage() {
     // FAQ state variable
     const [faqOpen, setFaqOpen] = useState<number | null>(null);
 
-    // Mobile check & Navigation drawer
-    const [isMobile, setIsMobile] = useState(false);
+    // Navigation drawer
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-    useEffect(() => {
-        const checkMobile = () => {
-            setIsMobile(window.innerWidth < 1024);
-        };
-        checkMobile();
-        window.addEventListener('resize', checkMobile);
-        return () => window.removeEventListener('resize', checkMobile);
-    }, []);
 
     // Throttled Scroll State via top-anchor IntersectionObserver (No scroll listeners)
     const [isScrolled, setIsScrolled] = useState(false);
@@ -98,18 +88,7 @@ export default function LandingPage() {
         return () => clearInterval(timer);
     }, []);
 
-    const fadeInUp = {
-        hidden: { opacity: 0, y: 30 },
-        visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] } }
-    };
 
-    const staggerContainer = {
-        hidden: { opacity: 0 },
-        visible: {
-            opacity: 1,
-            transition: { staggerChildren: 0.15 }
-        }
-    };
 
     return (
         <div className="min-h-screen bg-[#050505] text-white font-sans overflow-hidden selection:bg-[#FF4500] selection:text-white relative">
