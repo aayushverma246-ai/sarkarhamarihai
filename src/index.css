@@ -1,0 +1,976 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+@import "tailwindcss";
+
+/* Nothing OS inspired utility styles */
+.font-space {
+  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif !important;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace !important;
+}
+
+.nothing-border {
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0px !important;
+}
+
+.nothing-border-red {
+  border: 1px solid #dc2626 !important;
+  border-radius: 0px !important;
+}
+
+.nothing-glow-red {
+  box-shadow: 0 0 16px rgba(220, 38, 38, 0.25) !important;
+}
+
+.nothing-glow-red-spread {
+  box-shadow: 0 0 32px 4px rgba(220, 38, 38, 0.15) !important;
+}
+
+.key-press-active:active {
+  transform: scale(0.9) !important;
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  transition: transform 0.05s ease-out !important;
+}
+
+@keyframes biometricScan {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.3;
+    border-color: rgba(220, 38, 38, 0.2);
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.9;
+    border-color: rgba(220, 38, 38, 0.8);
+    box-shadow: 0 0 24px rgba(220, 38, 38, 0.4);
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0.3;
+    border-color: rgba(220, 38, 38, 0.2);
+  }
+}
+
+.biometric-scan-pulse {
+  animation: biometricScan 2.5s ease-in-out infinite;
+}
+
+html,
+body,
+#root {
+  background-color: #0a0a0a;
+  color: #e5e5e5;
+  min-height: 100vh;
+  width: 100%;
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+  /* NO safe-area padding here — it creates an ugly gap.
+     Safe areas are handled by individual components (navbar, bottom bars). */
+}
+
+/* Capacitor native mobile overrides */
+body.capacitor-app {
+  /* Disable overscroll rubber-band effect */
+  overscroll-behavior: none;
+  /* Prevent long-press context menus */
+  -webkit-touch-callout: none;
+  /* Disable text selection on UI elements (keep on content) */
+  -webkit-user-select: none;
+  user-select: none;
+  /* Remove any margin/padding for edge-to-edge */
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Re-enable text selection on content areas */
+body.capacitor-app p,
+body.capacitor-app span,
+body.capacitor-app h1,
+body.capacitor-app h2,
+body.capacitor-app h3,
+body.capacitor-app h4,
+body.capacitor-app td,
+body.capacitor-app li {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ── Capacitor safe area: applied to specific elements only ── */
+/* Navbar gets top safe area padding */
+body.capacitor-app nav.cap-safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Bottom floating buttons/bars get bottom safe area */
+body.capacitor-app .cap-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Full-screen pages (login, splash) get all safe areas */
+body.capacitor-app .cap-safe-all {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* ── Mobile-native touch feedback & Snappy Tap Latency (0ms Delay) ── */
+body.capacitor-app button,
+body.capacitor-app a,
+body.capacitor-app .card-hover,
+body.capacitor-app [role="button"],
+body.capacitor-app input,
+body.capacitor-app select {
+  touch-action: manipulation !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+/* ── Content Visibility & Lazy Layout calculation ── */
+/* Defer rendering of off-screen list cards to instantly double scroll speed */
+.card-hover {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 150px;
+}
+
+/* ── High-Performance GPU Acceleration Layers ── */
+/* Forces mobile GPU compositing only where strictly beneficial without VRAM thrashing */
+.gpu-accelerated,
+nav,
+.cap-safe-bottom {
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+  will-change: transform;
+}
+
+/* Disable hover effects on touch devices (prevents sticky hover) */
+@media (hover: none) {
+  .card-hover:hover {
+    transform: none !important;
+  }
+}
+
+/* Prevent horizontal scroll bugs on mobile */
+.dashboard-content, .tab-panel {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: clip;
+}
+
+/* â”€â”€ Animations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/* Precision spring curve â€“ feels physical and snappy */
+:root {
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --swift: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --snap: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+    max-height: 0;
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 320px;
+  }
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.93);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Realistic two-beat heart rhythm */
+@keyframes heartLive {
+  0% {
+    transform: scale(1);
+  }
+
+  10% {
+    transform: scale(1.22);
+  }
+
+  20% {
+    transform: scale(1.05);
+  }
+
+  30% {
+    transform: scale(1.18);
+  }
+
+  45% {
+    transform: scale(1);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* One-shot pop when you click the Save button */
+@keyframes heartbeat {
+  0% {
+    transform: scale(1);
+  }
+
+  25% {
+    transform: scale(1.35);
+  }
+
+  50% {
+    transform: scale(0.9);
+  }
+
+  75% {
+    transform: scale(1.15);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Glow pulse for notification badge */
+@keyframes pulseGlow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 14px 3px rgba(220, 38, 38, 0.18);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* Bell ringing effect */
+@keyframes ring {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(15deg); }
+  50% { transform: rotate(-10deg); }
+  75% { transform: rotate(5deg); }
+}
+
+/* â”€â”€ Utility Classes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s ease-out both;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.35s ease-out both;
+}
+
+.animate-cardIn {
+  animation: cardIn 0.3s ease-out both;
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.2s ease-out both;
+}
+
+.animate-slideDown {
+  animation: slideDown 0.25s ease-out both;
+  overflow: hidden;
+}
+
+/* One-shot pump when user clicks Save */
+.animate-heartbeat {
+  animation: heartbeat 0.4s var(--spring);
+}
+
+/* Continuous realistic heartbeat for the Saved tab icon */
+.animate-heart-live {
+  animation: heartLive 1.4s ease-in-out infinite;
+  transform-origin: center;
+}
+
+/* Page-level transitions */
+.page-enter {
+  animation: pageEnter 0.22s var(--snap);
+}
+
+.dashboard-content {
+  animation: fadeIn 0.18s var(--swift);
+}
+
+.tab-panel {
+  animation: slideUp 0.15s var(--snap);
+}
+
+/* Card hover â€” snappy spring lift */
+.card-hover {
+  transition: transform 0.13s var(--spring), box-shadow 0.13s var(--swift), border-color 0.13s var(--swift);
+  will-change: transform;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+}
+
+.card-hover:active {
+  transform: translateY(0) scale(0.993);
+  transition-duration: 0.07s;
+}
+
+/* Button press â€” instant-feel */
+.btn-press {
+  transition: transform 0.1s var(--spring), opacity 0.1s linear;
+  will-change: transform;
+}
+
+
+.btn-press:active {
+  transform: scale(0.97);
+}
+
+/* Smooth notification badge pulse */
+.notif-badge {
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+/* GPU acceleration hints for frequently animated elements */
+.gpu-accelerated {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+/* Smooth scroll behavior */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #dc2626;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #ef4444;
+}
+
+/* Selection */
+::selection {
+  background: rgba(220, 38, 38, 0.3);
+  color: #fff;
+}
+
+/* --- View Transitions API --- */
+/* Default smooth cross-fade for page navigations */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.2s;
+}
+
+/* Isolate the custom Theme Toggle circular ripple so it doesn't cross-fade */
+html.theme-transitioning::view-transition-old(root),
+html.theme-transitioning::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+  display: block;
+}
+
+html.theme-transitioning::view-transition-new(root) {
+  z-index: 9999;
+}
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   LIGHT MODE â€” Premium Clean Theme
+   Matches the dark mode's quality and visual hierarchy.
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+/* â”€â”€ 1. Base canvas & typography â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+html.light-mode body,
+html.light-mode #root {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+/* â”€â”€ 2. Scrollbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+html.light-mode ::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+
+html.light-mode ::-webkit-scrollbar-thumb {
+  background: #dc2626;
+}
+
+html.light-mode ::selection {
+  background: rgba(220, 38, 38, 0.18);
+  color: #000;
+}
+
+/* â”€â”€ 3. Navbar â€” frosted white glass â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   In dark: bg-[#080808] border-[#0f0f0f]
+   In light: white with a slate border + subtle shadow        */
+html.light-mode nav {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+  border-bottom-color: #e2e8f0 !important;
+  box-shadow: 0 1px 0 0 rgba(0, 0, 0, 0.06) !important;
+  backdrop-filter: blur(12px) saturate(160%) !important;
+}
+
+/* â”€â”€ 4. Page backgrounds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+html.light-mode .bg-\[\#080808\] {
+  background-color: #f1f5f9 !important;
+}
+
+html.light-mode .bg-\[\#0a0a0a\],
+html.light-mode .bg-\[\#0b0b0b\],
+html.light-mode .bg-\[\#0d0d0d\],
+html.light-mode .bg-\[\#0e0e0e\] {
+  background-color: #ffffff !important;
+}
+
+html.light-mode .bg-\[\#090909\],
+html.light-mode .bg-\[\#101010\],
+html.light-mode .bg-\[\#111\],
+html.light-mode .bg-\[\#111111\],
+html.light-mode .bg-\[\#141414\],
+html.light-mode .bg-\[\#151515\] {
+  background-color: #f8fafc !important;
+}
+
+/* â”€â”€ 5. Hover backgrounds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+html.light-mode .hover\:bg-\[\#141414\]:hover,
+html.light-mode .hover\:bg-\[\#101010\]:hover,
+html.light-mode .hover\:bg-\[\#111\]:hover,
+html.light-mode .hover\:bg-\[\#151515\]:hover,
+html.light-mode .hover\:bg-\[\#1a1a1a\]:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* â”€â”€ 6. Borders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+html.light-mode .border-\[\#0f0f0f\],
+html.light-mode .border-\[\#141414\],
+html.light-mode .border-\[\#151515\],
+html.light-mode .border-\[\#161616\] {
+  border-color: #e2e8f0 !important;
+}
+
+html.light-mode .border-\[\#1a1a1a\],
+html.light-mode .border-\[\#1e1e1e\],
+html.light-mode .border-\[\#222\],
+html.light-mode .border-\[\#232323\],
+html.light-mode .border-\[\#252525\] {
+  border-color: #cbd5e1 !important;
+}
+
+html.light-mode .hover\:border-\[\#252525\]:hover,
+html.light-mode .hover\:border-\[\#2a2a2a\]:hover,
+html.light-mode .hover\:border-\[\#333\]:hover {
+  border-color: #94a3b8 !important;
+}
+
+/* â”€â”€ 7. Card & surface shadows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+html.light-mode .rounded-xl {
+  box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.07), 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+
+html.light-mode .rounded-xl:hover {
+  box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+html.light-mode .rounded-2xl {
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+/* â”€â”€ 8. Text hierarchy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+html.light-mode .text-gray-50,
+html.light-mode .text-gray-100,
+html.light-mode .text-gray-200 {
+  color: #0f172a !important;
+  font-weight: 500;
+}
+
+html.light-mode .text-gray-300 {
+  color: #1e293b !important;
+}
+
+html.light-mode .text-gray-400 {
+  color: #334155 !important;
+}
+
+html.light-mode .text-gray-500 {
+  color: #475569 !important;
+}
+
+html.light-mode .text-gray-600,
+html.light-mode .text-gray-700,
+html.light-mode .text-gray-800 {
+  color: #64748b !important;
+}
+
+html.light-mode .text-gray-900 {
+  color: #0f172a !important;
+}
+
+html.light-mode .text-white:not(button):not(button *):not(.bg-red-800 *):not(.bg-emerald-700 *):not(span) {
+  color: #0f172a !important;
+}
+
+html.light-mode .hover\:text-white:hover:not(button):not(button *):not(.bg-red-800 *):not(.bg-emerald-700 *):not(span) {
+  color: #0f172a !important;
+}
+
+html.light-mode .hover\:text-gray-200:hover {
+  color: #020617 !important;
+}
+
+html.light-mode .hover\:text-gray-300:hover {
+  color: #0f172a !important;
+}
+
+html.light-mode .hover\:text-gray-400:hover {
+  color: #1e293b !important;
+}
+
+/* Placeholder text */
+html.light-mode .placeholder-gray-600::placeholder,
+html.light-mode .placeholder-gray-700::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* â”€â”€ 9. Input fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+html.light-mode input[type="text"],
+html.light-mode input[type="email"],
+html.light-mode input[type="password"],
+html.light-mode input[type="number"],
+html.light-mode select,
+html.light-mode textarea {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html.light-mode input:focus,
+html.light-mode select:focus,
+html.light-mode textarea:focus {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12) !important;
+}
+
+/* â”€â”€ 10. Status badge colours â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+html.light-mode .text-emerald-400 {
+  color: #059669 !important;
+}
+
+html.light-mode .bg-emerald-900\/15 {
+  background-color: #d1fae5 !important;
+  border-color: #6ee7b7 !important;
+}
+
+html.light-mode .text-amber-400 {
+  color: #b45309 !important;
+}
+
+html.light-mode .bg-amber-900\/15 {
+  background-color: #fef3c7 !important;
+  border-color: #fcd34d !important;
+}
+
+html.light-mode .text-orange-400,
+html.light-mode .text-orange-600 {
+  color: #c2410c !important;
+}
+
+html.light-mode .text-orange-700 {
+  color: #9a3412 !important;
+}
+
+html.light-mode .bg-orange-900\/15 {
+  background-color: #ffedd5 !important;
+  border-color: #fdba74 !important;
+}
+
+html.light-mode .text-blue-400 {
+  color: #1d4ed8 !important;
+}
+
+html.light-mode .bg-blue-900\/20,
+html.light-mode .bg-blue-950\/5 {
+  background-color: #dbeafe !important;
+  border-color: #93c5fd !important;
+}
+
+html.light-mode .text-red-400 {
+  color: #dc2626 !important;
+}
+
+html.light-mode .bg-red-900\/20 {
+  background-color: #fee2e2 !important;
+  border-color: #fca5a5 !important;
+}
+
+html.light-mode .text-purple-400 {
+  color: #7c3aed !important;
+}
+
+html.light-mode .bg-purple-900\/40 {
+  background-color: #ede9fe !important;
+  border-color: #c4b5fd !important;
+}
+
+html.light-mode .bg-purple-900\/30 {
+  background-color: #f5f3ff !important;
+  border-color: #ddd6fe !important;
+}
+
+html.light-mode .text-pink-400 {
+  color: #be185d !important;
+}
+
+/* â”€â”€ 11. Accent & interactive elements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* Active tab underline stays red â€” already correct */
+/* Active stat card borders stay correct */
+
+/* Red glow on saved/liked badge â€” lighter for light bg */
+html.light-mode .shadow-\[0_0_16px_rgba\(220\,38\,38\,0\.12\)\] {
+  box-shadow: 0 0 10px rgba(220, 38, 38, 0.12) !important;
+}
+
+/* Green "Apply" button â€” already correct (it's a real colour class) */
+
+/* â”€â”€ 12. Dividers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+html.light-mode .divide-y>*+* {
+  border-color: #e2e8f0 !important;
+}
+
+html.light-mode .divide-\[\#111\]>*+* {
+  border-color: #e2e8f0 !important;
+}
+
+html.light-mode .divide-\[\#141414\]>*+* {
+  border-color: #e2e8f0 !important;
+}
+
+/* â”€â”€ 13. Profile / info rows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+html.light-mode .bg-\[\#090909\].rounded-md {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* â”€â”€ 14. Logo invert for light mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€ 14. Logo Fix for light mode (NO INVERSION to prevent pixelation) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* Flawless Dual-Logo Strategy: Show original pristine logo in light mode, optimized transparent logo in dark mode */
+html:not(.light-mode) .light-logo {
+  display: none !important;
+}
+
+html.light-mode .dark-logo {
+  display: none !important;
+}
+
+/* â”€â”€ 15. Notification badge glow (light-safe) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+html.light-mode .notif-badge {
+  animation: pulseGlowLight 2s ease-in-out infinite;
+}
+
+@keyframes pulseGlowLight {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 8px 2px rgba(220, 38, 38, 0.2);
+  }
+}
+
+
+
+html.light-mode ::selection {
+  background: rgba(220, 38, 38, 0.15);
+  color: #000;
+}
+
+/* ==========================================================================
+   LIGHT MODE — Robust Clean Theme Override System
+   ========================================================================== */
+
+/* Canvas/Page wrappers: premium light slate background */
+html.light-mode,
+html.light-mode body,
+html.light-mode #root,
+html.light-mode [class*="bg-[#050505]"],
+html.light-mode [class*="bg-[#080808]"],
+html.light-mode [class*="bg-[#060608]"],
+html.light-mode [class*="bg-[#08080c]"] {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+/* Card and Container surfaces: clean crisp white */
+html.light-mode [class*="bg-[#0a0a0a]"],
+html.light-mode [class*="bg-[#0b0b0b]"],
+html.light-mode [class*="bg-[#0c0c0c]"],
+html.light-mode [class*="bg-[#0d0d0d]"],
+html.light-mode [class*="bg-[#0e0e0e]"],
+html.light-mode [class*="bg-[#101010]"],
+html.light-mode [class*="bg-[#111]"],
+html.light-mode [class*="bg-[#111111]"],
+html.light-mode [class*="bg-[#141414]"],
+html.light-mode [class*="bg-[#151515]"],
+html.light-mode [class*="bg-[#191919]"],
+html.light-mode [class*="bg-[#1a1a1a]"],
+html.light-mode [class*="bg-[#1c1c1c]"],
+html.light-mode [class*="bg-[#202020]"],
+html.light-mode [class*="bg-[#222]"],
+html.light-mode .light-card {
+  background-color: #ffffff !important;
+}
+
+/* Sub-panels and inner sections */
+html.light-mode [class*="bg-[#242424]"],
+html.light-mode [class*="bg-[#252525]"],
+html.light-mode [class*="bg-[#333]"] {
+  background-color: #f1f5f9 !important;
+}
+
+/* Glassmorphism elements */
+html.light-mode .bg-\[\#0e0e12\]\/95 { background-color: rgba(255, 255, 255, 0.95) !important; }
+html.light-mode .bg-\[\#121217\]\/40 { background-color: rgba(255, 255, 255, 0.4) !important; }
+html.light-mode .bg-\[\#0b0b0f\]\/80 { background-color: rgba(255, 255, 255, 0.8) !important; }
+
+/* Force clean gray borders */
+html.light-mode [class*="border-[#"],
+html.light-mode [class*="border-white/"],
+html.light-mode .border-white\/10,
+html.light-mode .border-white\/5,
+html.light-mode .light-border {
+  border-color: #cbd5e1 !important;
+}
+
+html.light-mode .light-border-subtle {
+  border-color: #f1f5f9 !important;
+}
+
+/* Hover background changes */
+html.light-mode [class*="hover:bg-[#"]:hover,
+html.light-mode [class*="hover:bg-white"]:hover,
+html.light-mode .hover\:bg-\[\#141414\]:hover,
+html.light-mode .hover\:bg-\[\#101010\]:hover,
+html.light-mode .hover\:bg-\[\#111\]:hover,
+html.light-mode .hover\:bg-\[\#151515\]:hover,
+html.light-mode .hover\:bg-\[\#1a1a1a\]:hover,
+html.light-mode .hover\:bg-\[\#222\]:hover,
+html.light-mode .hover\:bg-\[\#333\]:hover,
+html.light-mode .hover\:bg-\[\#1c1c1c\]:hover {
+  background-color: #f8fafc !important;
+}
+
+/* Direct input overrides */
+html.light-mode input[type="text"],
+html.light-mode input[type="email"],
+html.light-mode input[type="password"],
+html.light-mode input[type="number"],
+html.light-mode select,
+html.light-mode textarea {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html.light-mode input:focus,
+html.light-mode select:focus,
+html.light-mode textarea:focus {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
+}
+
+/* Dynamic text hierarchy and contrast fixes */
+html.light-mode [class*="text-gray-"],
+html.light-mode [class*="text-slate-1"],
+html.light-mode [class*="text-slate-2"],
+html.light-mode [class*="text-slate-3"],
+html.light-mode [class*="text-zinc-"],
+html.light-mode [class*="text-neutral-"] {
+  color: #0f172a !important;
+}
+
+/* Make sure text elements that default to white look crisp and dark */
+html.light-mode .text-white,
+html.light-mode .text-gray-100,
+html.light-mode .text-gray-200,
+html.light-mode .text-gray-300,
+html.light-mode h1,
+html.light-mode h2,
+html.light-mode h3,
+html.light-mode h4,
+html.light-mode h5,
+html.light-mode h6,
+html.light-mode .light-text {
+  color: #0f172a !important;
+}
+
+/* Secondary descriptions */
+html.light-mode .text-gray-400,
+html.light-mode .text-gray-500,
+html.light-mode .text-gray-600,
+html.light-mode .light-text-secondary {
+  color: #475569 !important;
+}
+
+/* Accent status badges & texts */
+html.light-mode .text-emerald-400 { color: #059669 !important; }
+html.light-mode .text-amber-400 { color: #d97706 !important; }
+html.light-mode .text-orange-400,
+html.light-mode .text-orange-600 { color: #ea580c !important; }
+html.light-mode .text-orange-700 { color: #c2410c !important; }
+html.light-mode .text-blue-400 { color: #2563eb !important; }
+html.light-mode .text-red-400 { color: #dc2626 !important; }
+html.light-mode .text-purple-400 { color: #9333ea !important; }
+
+html.light-mode .bg-emerald-900\/15 {
+  background-color: #d1fae5 !important;
+  border-color: #a7f3d0 !important;
+}
+html.light-mode .bg-amber-900\/15 {
+  background-color: #fef3c7 !important;
+  border-color: #fde68a !important;
+}
+html.light-mode .bg-orange-900\/15 {
+  background-color: #ffedd5 !important;
+  border-color: #fed7aa !important;
+}
+html.light-mode .bg-blue-900\/20,
+html.light-mode .bg-blue-950\/5 {
+  background-color: #dbeafe !important;
+  border-color: #bfdbfe !important;
+}
+html.light-mode .bg-red-900\/20 {
+  background-color: #fee2e2 !important;
+  border-color: #fecaca !important;
+}
+html.light-mode .bg-purple-900\/40 {
+  background-color: #f3e8ff !important;
+  border-color: #e9d5ff !important;
+}
+
+/* White text protection (keep button labels white on red/green/blue backings) */
+html.light-mode button .text-white,
+html.light-mode button.bg-red-600,
+html.light-mode button.bg-red-800,
+html.light-mode [class*="bg-red-"],
+html.light-mode [class*="bg-emerald-"],
+html.light-mode [class*="bg-blue-"],
+html.light-mode [class*="bg-gradient-"] {
+  color: #ffffff !important;
+}
+
+html.light-mode button .text-white *,
+html.light-mode button.bg-red-600 *,
+html.light-mode button.bg-red-800 * {
+  color: #ffffff !important;
+}
+
+/* Placeholders */
+html.light-mode ::placeholder {
+  color: #64748b !important;
+}
+
+/* Skeletons */
+html.light-mode .animate-pulse > div,
+html.light-mode .animate-pulse,
+html.light-mode .light-skeleton {
+  background-color: #e2e8f0 !important;
+  --tw-pulse-color: rgba(0,0,0,0.06);
+}
