@@ -209,18 +209,40 @@ function escapeRegex(string) {
 
 function cleanMalformedUrl(url) {
   if (!url || typeof url !== 'string') return '';
-  let cleaned = url.trim();
-  cleaned = cleaned.replace(/&amp;/g, '&');
+  
+  // Pre-process to fix spaces immediately after the protocol (e.g. "https:// Pareekshabhavan...")
+  let preProcessed = url.trim().replace(/^(https?:\/\/)\s+/, '$1');
+  
+  // Extract URL(s) using regex if it looks conversational
+  const urlRegex = /https?:\/\/[^\s"'()]+/g;
+  const matches = preProcessed.match(urlRegex);
+  
+  let cleaned = preProcessed;
+  if (matches && matches.length > 0) {
+    const hasConversationalText = preProcessed.includes(' ') && /[a-zA-Z]{3,}/.test(preProcessed.replace(/https?:\/\/[^\s]+/g, ''));
+    if (hasConversationalText) {
+      // Pick the last matched URL
+      cleaned = matches[matches.length - 1];
+    }
+  }
+
+  // Trim trailing punctuation commonly found at the end of sentences
+  cleaned = cleaned.trim().replace(/[.,;:!]+$/, '');
+  
+  // Remove any remaining whitespace inside the URL
   cleaned = cleaned.replace(/[\s\r\n\t]/g, '');
+  cleaned = cleaned.replace(/&amp;/g, '&');
+  
   return cleaned;
 }
+
+const { resolveLink, isGenericUrl } = require('../backend/src/engines/link-resolver');
 
 function isGenericOrPlaceholder(url, orgName) {
   if (!url || typeof url !== 'string') return true;
   const trimmed = url.trim().toLowerCase();
   
-  const isGenericDomain = genericDomains.some(domain => trimmed.includes(domain));
-  if (isGenericDomain) return true;
+  if (isGenericUrl(trimmed)) return true;
   
   if (trimmed.includes(' ') || trimmed.includes('&') || trimmed.includes('%')) return true;
   if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return true;
@@ -415,30 +437,13 @@ async function run() {
         let correctedUrl = null;
         let method = '';
         
-        // Step 1: Check direct organization dictionary (exact match first)
-        const orgLower = org.toLowerCase().trim();
-        for (const [key, val] of Object.entries(directOrgPortals)) {
-          if (key.toLowerCase().trim() === orgLower) {
-            correctedUrl = val;
-            method = 'DIRECT_DICT_EXACT';
-            resolvedViaDict++;
-            break;
-          }
-        }
-
-        // Step 2: Check partial match using word boundaries (longest key first)
-        if (!correctedUrl) {
-          const sortedKeys = Object.keys(directOrgPortals).sort((a, b) => b.length - a.length);
-          for (const key of sortedKeys) {
-            const val = directOrgPortals[key];
-            const regex = new RegExp('\\b' + escapeRegex(key) + '\\b', 'i');
-            if (regex.test(org)) {
-              correctedUrl = val;
-              method = 'DIRECT_DICT_PARTIAL';
-              resolvedViaDict++;
-              break;
-            }
-          }
+        // Step 1: Use link-resolver to resolve the link
+        const stateFallback = getFallbackStatePortal(org) || '';
+        const lookup = resolveLink(org, details.exampleJob, stateFallback);
+        if (lookup) {
+          correctedUrl = lookup;
+          method = 'LINK_RESOLVER';
+          resolvedViaDict++;
         }
         
         // Step 2: Call Llama 3.1 8b for custom local organizations

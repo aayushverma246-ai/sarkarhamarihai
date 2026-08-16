@@ -214,12 +214,11 @@ async function healAllRecords() {
 
     while (true) {
         batchNum++;
-        console.log(`[Healer] Fetching batch #${batchNum} (querying records with 15000-80000 placeholder)...`);
+        console.log(`[Healer] Fetching batch #${batchNum} (querying records with 15000-80000 placeholder or generic links)...`);
         const { data: records, error } = await sb.from('jobs')
             .select('id, job_name, organization, job_category, application_start_date, application_end_date, salary_min, salary_max, selection_process, official_application_link, official_notification_link, official_website_link, discovery_source, state')
-            .eq('salary_min', 15000)
-            .eq('salary_max', 80000)
-            .range(0, batchSize - 1);
+            .order('id')
+            .range((batchNum - 1) * batchSize, batchNum * batchSize - 1);
 
         if (error) {
             console.error('[Healer] Fetch error:', error.message);
@@ -228,6 +227,8 @@ async function healAllRecords() {
         if (!records || records.length === 0) break;
 
         const updates = [];
+        const { resolveLink, isGenericUrl } = require('./link-resolver');
+
         for (const rec of records) {
             const patch = {};
             let changed = false;
@@ -240,27 +241,21 @@ async function healAllRecords() {
             }
             const effectiveState = patch.state || rec.state;
 
-            const fixedAppLink = fixUrl(rec.official_application_link, effectiveState);
-            if (fixedAppLink !== rec.official_application_link) {
-                patch.official_application_link = fixedAppLink;
-                changed = true;
-                totalUrlFixes++;
-            }
-            const fixedNotifLink = fixUrl(rec.official_notification_link, effectiveState);
-            if (fixedNotifLink !== rec.official_notification_link) {
-                patch.official_notification_link = fixedNotifLink;
-                changed = true;
-            }
-            const fixedWebLink = fixUrl(rec.official_website_link, effectiveState);
-            if (fixedWebLink !== rec.official_website_link) {
-                patch.official_website_link = fixedWebLink;
-                changed = true;
-            }
-
-            const orgSite = getOrgWebsite(rec.job_name, rec.organization);
-            if (orgSite && rec.official_website_link !== orgSite) {
-                patch.official_website_link = orgSite;
-                changed = true;
+            // Heal generic links using centralized link-resolver
+            for (const field of ['official_website_link', 'official_application_link', 'official_notification_link']) {
+                const url = rec[field];
+                if (!url || isGenericUrl(url)) {
+                    const lookup = resolveLink(rec.organization, rec.job_name, effectiveState);
+                    if (lookup) {
+                        patch[field] = lookup;
+                        changed = true;
+                        totalUrlFixes++;
+                    } else if (url && isGenericUrl(url)) {
+                        patch[field] = '';
+                        changed = true;
+                        totalUrlFixes++;
+                    }
+                }
             }
 
             const cat = rec.job_category;
@@ -285,8 +280,6 @@ async function healAllRecords() {
             if (changed) {
                 updates.push({ id: rec.id, ...patch });
                 totalFixed++;
-            } else {
-                updates.push({ id: rec.id, discovery_source: 'healed', last_verified_at: patch.last_verified_at });
             }
         }
 

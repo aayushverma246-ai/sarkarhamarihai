@@ -52,36 +52,16 @@ module.exports = async (req, res) => {
         }
     }
 
-    // Seed endpoint - populates database with jobs (LAZY LOAD)
+    // Seed endpoint — DISABLED in production to prevent external crons from
+    // re-seeding the database. Seeding is only done via local CLI scripts.
     if (url.pathname === '/api/seed') {
-        const secret = url.searchParams.get('secret') || req.headers['x-seed-secret'];
-        if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1')) {
-            return res.status(401).json({ error: 'Unauthorized - provide ?secret=YOUR_CRON_SECRET' });
-        }
-        try {
-            console.log('Starting database seed via API...');
-            if (!dbInitialized) {
-                await initDb(true);
-                dbInitialized = true;
-            }
-            // Lazy load seed module only when needed
-            const { seedDatabase } = require('../backend/src/seed');
-            await seedDatabase();
-            const { getDb } = require('../backend/src/db');
-            const db = getDb();
-            const result = await db.execute('SELECT COUNT(*) as cnt FROM jobs');
-            const jobCount = result.rows[0]?.cnt || 0;
-            return res.json({ 
-                success: true, 
-                message: 'Database seeded successfully',
-                jobCount,
-                ts: new Date().toISOString()
-            });
-        } catch (err) {
-            console.error('Seed error:', err);
-            return res.status(500).json({ error: 'Seed failed', details: err.message, stack: err.stack });
-        }
+        return res.status(403).json({
+            error: 'Seed endpoint disabled in production',
+            message: 'Database seeding is managed via local CLI scripts only. Use `npm run seed` locally.',
+            timestamp: new Date().toISOString()
+        });
     }
+
 
     // Lightweight data fix endpoint — runs SQL directly, no seed module needed
     if (url.pathname === '/api/fix-data') {

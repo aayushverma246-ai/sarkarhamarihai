@@ -172,6 +172,7 @@ async function main() {
   }
 
   // Step 3: Apply updates
+  let successPg = false;
   if (SUPABASE_DB_URL) {
     console.log('🔗 Using pg pool for fast bulk updates...');
     const pool = new Pool({
@@ -183,11 +184,16 @@ async function main() {
     try {
       await updateViaPg(pool, updates);
       console.log(`\n✅ DONE — Updated ${updates.length} records via pg pool.`);
+      successPg = true;
+    } catch (err) {
+      console.warn(`⚠️ PG pool failed (${err.message}). Falling back to REST API...`);
     } finally {
-      await pool.end();
+      try { await pool.end(); } catch (_) {}
     }
-  } else {
-    console.log('🔗 No SUPABASE_DB_URL — using REST API (slower but functional)...');
+  }
+
+  if (!successPg) {
+    console.log('🔗 Using REST API (slower but functional)...');
     
     // Group by category for batched REST updates
     const byCategory = new Map();

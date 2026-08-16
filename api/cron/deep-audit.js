@@ -266,13 +266,13 @@ module.exports = async (req, res) => {
         }
       }
 
-      // ── 2h. DUPLICATE DETECTION ──
-      const dedupKey = `${(job.job_name || '').toLowerCase().trim()}|${(job.organization || '').toLowerCase().trim()}|${effectiveEnd}`;
-      if (seenKeys.has(dedupKey)) {
-        toDelete.push(job.id);
-        continue;
-      }
-      seenKeys.set(dedupKey, job.id);
+      // ── 2h. DUPLICATE DETECTION — DISABLED ──
+      // Previously this deleted records with matching name|org|end_date,
+      // but it incorrectly flagged legitimate district-level exams as duplicates.
+      // Deduplication is now handled exclusively at seed time.
+      // const dedupKey = `${(job.job_name || '').toLowerCase().trim()}|${(job.organization || '').toLowerCase().trim()}|${effectiveEnd}`;
+      // if (seenKeys.has(dedupKey)) { toDelete.push(job.id); continue; }
+      // seenKeys.set(dedupKey, job.id);
 
       // ── 2i. CRITICAL: Missing essential fields ──
       if (!job.job_name || !job.organization) {
@@ -308,32 +308,15 @@ module.exports = async (req, res) => {
       );
     }
 
-    // ── PHASE 4: REMOVE DUPLICATES ──
-    report.fixes.duplicatesRemoved = toDelete.length;
-    for (let i = 0; i < toDelete.length; i += 50) {
-      if ((Date.now() - startTime) > MAX_MS * 0.9) break;
-      const batch = toDelete.slice(i, i + 50);
-      const { error } = await sb.from('jobs').delete().in('id', batch);
-      if (error) report.errors.push(`Delete batch: ${error.message}`);
-    }
+    // ── PHASE 4: DUPLICATE REMOVAL — DISABLED ──
+    // Duplicate removal is now handled at seed time to prevent accidental
+    // deletion of legitimate district-level exams by cron jobs.
+    report.fixes.duplicatesRemoved = 0;
 
-    // ── PHASE 5: ARCHIVE OLD CLOSED JOBS (> 90 days past end date) ──
-    const archiveCutoff = pastDate(90);
-    const { data: oldJobs } = await sb.from('jobs')
-      .select('id')
-      .eq('form_status', 'CLOSED')
-      .lt('application_end_date', archiveCutoff)
-      .limit(200);
-    
-    if (oldJobs && oldJobs.length > 0) {
-      // Don't delete — just mark as archived to reduce noise
-      const archiveIds = oldJobs.map(j => j.id);
-      for (let i = 0; i < archiveIds.length; i += 50) {
-        const batch = archiveIds.slice(i, i + 50);
-        await sb.from('jobs').update({ form_status: 'ARCHIVED' }).in('id', batch);
-      }
-      report.fixes.expiredArchived = oldJobs.length;
-    }
+    // ── PHASE 5: ARCHIVE OLD CLOSED JOBS — DISABLED ──
+    // Archiving was reducing visible job count on dashboard.
+    // Jobs remain with their CLOSED status; frontend already filters by status.
+    report.fixes.expiredArchived = 0;
 
     // ── PHASE 5.5: SYNCHRONIZE TIMESTAMP FOR ALL SCANNED JOBS ──
     if (allJobs.length > 0 && (Date.now() - startTime) < MAX_MS * 0.95) {
@@ -398,7 +381,7 @@ function computeStatus(startDate, endDate, today) {
   const todayMs = new Date(today).getTime();
   const daysSinceClosed = (todayMs - endMs) / (1000 * 60 * 60 * 24);
   if (daysSinceClosed <= 30) return 'RECENTLY_CLOSED';
-  if (daysSinceClosed > 90) return 'ARCHIVED';
+  // Keep as CLOSED — never auto-archive, that reduces visible job count
   return 'CLOSED';
 }
 

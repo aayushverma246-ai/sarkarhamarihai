@@ -207,7 +207,7 @@ function escapeRegex(string) {
   return string.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
 }
 
-// Llama 3.1 8b link resolution
+// Llama 3.1 8b link resolution with robust retry and backoff on 429 errors
 async function getRealUrlFromLlama(orgName, jobNameExample) {
   const prompt = `Identify the official recruitment portal, application homepage, or main website URL for the Indian organization: "${orgName}" (which conducts the exam: "${jobNameExample}").
 Respond ONLY in JSON format:
@@ -220,29 +220,43 @@ Rules:
 - Ensure the URL is clean (no spaces, no raw "&" without correct URL encoding, no trailing dots).
 - Return ONLY the JSON object. No extra text, no formatting marks.`;
 
-  try {
-    const response = await axios.post(NVIDIA_URL, {
-      model: LLAMA_MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.1,
-      max_tokens: 150
-    }, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${NVIDIA_KEY}`
-      },
-      timeout: 20000
-    });
-    
-    const text = response.data.choices[0].message.content.trim();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
-    const parsed = JSON.parse(jsonMatch[0]);
-    if (parsed && parsed.url && parsed.url.startsWith('http')) {
-      return parsed.url.trim();
+  let retries = 5;
+  let delay = 1000;
+
+  while (retries > 0) {
+    try {
+      const response = await axios.post(NVIDIA_URL, {
+        model: LLAMA_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        max_tokens: 150
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${NVIDIA_KEY}`
+        },
+        timeout: 20000
+      });
+      
+      const text = response.data.choices[0].message.content.trim();
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return null;
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed && parsed.url && parsed.url.startsWith('http')) {
+        return parsed.url.trim();
+      }
+      return null;
+    } catch (err) {
+      if (err.response && err.response.status === 429) {
+        retries--;
+        console.warn(`  [Llama Rate Limited (429)] for "${orgName}". Retrying in ${delay}ms... (${retries} attempts left)`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2.5; // Exponential backoff with multiplier
+        continue;
+      }
+      console.error(`  [Llama Lookup Failed] for "${orgName}": ${err.message}`);
+      break;
     }
-  } catch (err) {
-    console.error(`  [Llama Lookup Failed] for "${orgName}": ${err.message}`);
   }
   return null;
 }
@@ -333,7 +347,7 @@ async function run() {
     let resolvedViaLlama = 0;
     let resolvedViaClearedFallback = 0;
     
-    const BATCH_SIZE = 40;
+    const BATCH_SIZE = 5;
     for (let i = 0; i < uniqueOrgs.length; i += BATCH_SIZE) {
       const chunk = uniqueOrgs.slice(i, i + BATCH_SIZE);
       
@@ -422,7 +436,7 @@ async function run() {
       }));
       
       // Delay briefly between batches
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
     
     console.log(`\n=== Audit Summary ===`);

@@ -53,6 +53,39 @@ class BaseScraper {
     const defaultEnd = new Date(); defaultEnd.setDate(defaultEnd.getDate() + 60);
     const fmtDate = (d) => d.toISOString().split('T')[0];
 
+    const { resolveLink, isGenericUrl } = require('../engines/link-resolver');
+    let website = fields.official_website_link || '';
+    let apply = fields.official_application_link || '';
+    let notif = fields.official_notification_link || '';
+
+    // If website is generic or empty, resolve it
+    if (!website || isGenericUrl(website)) {
+      const lookup = resolveLink(fields.organization, fields.job_name, fields.state);
+      if (lookup) {
+        website = lookup;
+      } else {
+        website = website && !isGenericUrl(website) ? website : '';
+      }
+    }
+    // If apply is generic or empty, resolve it, fallback to website
+    if (!apply || isGenericUrl(apply)) {
+      const lookup = resolveLink(fields.organization, fields.job_name, fields.state);
+      if (lookup) {
+        apply = lookup;
+      } else {
+        apply = apply && !isGenericUrl(apply) ? apply : website;
+      }
+    }
+    // If notif is generic or empty, resolve it, fallback to website
+    if (!notif || isGenericUrl(notif)) {
+      const lookup = resolveLink(fields.organization, fields.job_name, fields.state);
+      if (lookup) {
+        notif = lookup;
+      } else {
+        notif = notif && !isGenericUrl(notif) ? notif : website;
+      }
+    }
+
     return {
       id,
       job_name: fields.job_name || '',
@@ -66,9 +99,9 @@ class BaseScraper {
       salary_min: fields.salary_min || 0,
       salary_max: fields.salary_max || 0,
       job_category: fields.job_category || 'Central Government',
-      official_website_link: fields.official_website_link || '',
-      official_application_link: fields.official_application_link || '',
-      official_notification_link: fields.official_notification_link || '',
+      official_website_link: website,
+      official_application_link: apply,
+      official_notification_link: notif,
       syllabus: fields.syllabus || '',
       selection_process: fields.selection_process || '',
       form_status: fields.form_status || 'UPCOMING',

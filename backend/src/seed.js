@@ -245,6 +245,18 @@ function J(name, org, qual, fy, minA, maxA, s, e, sMin, sMax, cat, link, hi = ''
 
   const status = computeFormStatus(finalStart, finalEnd);
 
+  // Resolve links dynamically using link-resolver
+  const { resolveLink, isGenericUrl } = require('./engines/link-resolver');
+  let resolvedLink = link;
+  if (!resolvedLink || isGenericUrl(resolvedLink)) {
+    const lookup = resolveLink(org, name, state);
+    if (lookup) {
+      resolvedLink = lookup;
+    } else {
+      resolvedLink = resolvedLink && !isGenericUrl(resolvedLink) ? resolvedLink : '';
+    }
+  }
+
   jobs.push({
     id: hash,
     job_name: finalName, organization: org,
@@ -254,9 +266,9 @@ function J(name, org, qual, fy, minA, maxA, s, e, sMin, sMax, cat, link, hi = ''
     application_start_date: finalStart, application_end_date: finalEnd,
     salary_min: sMin, salary_max: sMax,
     job_category: finalCat,
-    official_application_link: link || 'https://india.gov.in',
-    official_notification_link: link || 'https://india.gov.in',
-    official_website_link: link || 'https://india.gov.in',
+    official_application_link: resolvedLink,
+    official_notification_link: resolvedLink,
+    official_website_link: resolvedLink,
     exam_name_hi: hi,
     exam_name_ta: ta,
     exam_name_bn: bn,
@@ -692,7 +704,7 @@ function getStatePortalUrl(stateName) {
     'Andhra Pradesh': 'https://ap.gov.in'
   };
   if (mapping[stateName]) return mapping[stateName];
-  return `https://${stateName.toLowerCase().replace(/\s/g, '').replace(/[^a-z0-9]/g, '')}.gov.in`;
+  return `https://${stateName.toLowerCase().replace(/\s/g, '').replace(/[^a-z0-9]/g, '').replace(/[^a-z0-9]/g, '')}.gov.in`;
 }
 
 STATES.forEach(({ c, n }, i) => {
@@ -1030,12 +1042,13 @@ allCantt.forEach((city, i) => {
 const capf = ['BSF', 'CRPF', 'CISF', 'ITBP', 'SSB', 'Assam Rifles'];
 const trades = ['Cook', 'Water Carrier', 'Washerman', 'Barber', 'Sweeper', 'Cobbler', 'Tailor', 'Carpenter', 'Painter', 'Plumber', 'Electrician', 'Draftsman', 'Pioneer', 'Bugler', 'Mali'];
 capf.forEach((force, i) => {
+  const forceUrl = `https://${force.toLowerCase().replace(/\s/g, '').replace(/[^a-z0-9]/g, '')}.gov.in`;
   trades.forEach((trade, j) => {
     let [s, e] = tl(i * trades.length + j);
-    J(`${force} Constable (Tradesman) - ${trade} 2026`, `${force} / MHA`, 'Class 10', false, 18, 23, s, e, 21700, 69100, 'Defence', `https://${force.toLowerCase()}.gov.in`, '', '', SP_PARA);
+    J(`${force} Constable (Tradesman) - ${trade} 2026`, `${force} / MHA`, 'Class 10', false, 18, 23, s, e, 21700, 69100, 'Defence', forceUrl, '', '', SP_PARA);
   });
-  let [s, e] = tl(i); J(`${force} Head Constable (Ministerial) / Clerk 2026`, `${force} / MHA`, 'Class 12', false, 18, 25, s, e, 25500, 81100, 'Defence', `https://${force.toLowerCase()}.gov.in`, '', '', SP_PARA);
-  [s, e] = tl(i); J(`${force} ASI (Stenographer) 2026`, `${force} / MHA`, 'Class 12', false, 18, 25, s, e, 29200, 92300, 'Defence', `https://${force.toLowerCase()}.gov.in`, '', '', SP_PARA);
+  let [s, e] = tl(i); J(`${force} Head Constable (Ministerial) / Clerk 2026`, `${force} / MHA`, 'Class 12', false, 18, 25, s, e, 25500, 81100, 'Defence', forceUrl, '', '', SP_PARA);
+  [s, e] = tl(i); J(`${force} ASI (Stenographer) 2026`, `${force} / MHA`, 'Class 12', false, 18, 25, s, e, 29200, 92300, 'Defence', forceUrl, '', '', SP_PARA);
 });
 
 // 3. Indian Railways Exact Granularity
@@ -1087,7 +1100,7 @@ const granularStatePosts = [
 STATES.forEach(({ n }, i) => {
   granularStatePosts.forEach(([title, cat, qual, minS, maxS], j) => {
     let [s, e] = tl(i * granularStatePosts.length + j);
-    J(`${n} - ${title} 2026`, `${n} State Government`, qual, false, 18, 40, s, e, minS, maxS, cat === 'Judiciary' ? 'Law' : cat, `https://${n.toLowerCase().replace(/\s/g, '')}.gov.in`, '', '', title.includes('Court') ? SP_JUDICIARY : SP_SSC_OTHER);
+    J(`${n} - ${title} 2026`, `${n} State Government`, qual, false, 18, 40, s, e, minS, maxS, cat === 'Judiciary' ? 'Law' : cat, `https://${n.toLowerCase().replace(/\s/g, '').replace(/[^a-z0-9]/g, '')}.gov.in`, '', '', title.includes('Court') ? SP_JUDICIARY : SP_SSC_OTHER);
   });
 });
 
@@ -1158,22 +1171,84 @@ broRoles.forEach((role, i) => {
 // Removed Multi-State Test Exam and placeholder data as per strict data policy
 
 // 12. EXHAUSTIVE EXPANSION: All Micro-level districts, panchayats, and municipal bodies 
+const STATE_DISTRICTS = {
+  'Andhra Pradesh': ['Visakhapatnam', 'Vijayawada', 'Guntur', 'Nellore', 'Kurnool', 'Chittoor', 'Kadapa', 'Anantapur', 'Eluru', 'Kakinada', 'Ongole', 'Tirupati', 'Kadapah', 'Srikakulam', 'Vizianagaram', 'West Godavari', 'East Godavari'],
+  'Arunachal Pradesh': ['Itanagar', 'Tawang', 'Changlang', 'Tirap', 'Papum Pare', 'West Kameng', 'East Siang', 'Lohit'],
+  'Assam': ['Guwahati', 'Dibrugarh', 'Silchar', 'Jorhat', 'Tezpur', 'Nagaon', 'Bongaigaon', 'Tinsukia', 'Karimganj', 'Sibsagar', 'Barpeta', 'Cachar', 'Darrang', 'Goalpara', 'Kamrup'],
+  'Bihar': ['Patna', 'Gaya', 'Muzaffarpur', 'Bhagalpur', 'Darbhanga', 'Purnia', 'Arrah', 'Begusarai', 'Katihar', 'Munger', 'Saharsa', 'Sasaram', 'Motihari', 'Saran', 'Bhojpur', 'Nalanda', 'Vaishali', 'Siwan', 'Rohtas'],
+  'Chhattisgarh': ['Raipur', 'Bilaspur', 'Durg', 'Bhilai', 'Korba', 'Rajnandgaon', 'Jagdalpur', 'Ambikapur', 'Dhamtari', 'Bastar', 'Kanker', 'Jashpur'],
+  'Goa': ['North Goa', 'South Goa', 'Panaji', 'Margao', 'Mapusa', 'Ponda'],
+  'Gujarat': ['Ahmedabad', 'Surat', 'Vadodara', 'Rajkot', 'Gandhinagar', 'Bhavnagar', 'Jamnagar', 'Junagadh', 'Anand', 'Navsari', 'Morbi', 'Valsad', 'Amreli', 'Bharuch', 'Mehsana', 'Patan', 'Sabarkantha', 'Surendranagar'],
+  'Haryana': ['Gurugram', 'Faridabad', 'Panipat', 'Ambala', 'Rohtak', 'Hisar', 'Karnal', 'Sonipat', 'Panchkula', 'Yamunanagar', 'Jind', 'Kaithal', 'Kurukshetra', 'Rewari', 'Sirsa'],
+  'Himachal Pradesh': ['Shimla', 'Dharamshala', 'Solan', 'Mandi', 'Kangra', 'Kullu', 'Hamirpur', 'Bilaspur', 'Chamba', 'Una'],
+  'Jharkhand': ['Ranchi', 'Jamshedpur', 'Dhanbad', 'Bokaro', 'Hazaribagh', 'Deoghar', 'Giridih', 'Dumka', 'Ramgarh', 'Phusro'],
+  'Karnataka': ['Bengaluru', 'Mysuru', 'Hubli-Dharwad', 'Mangaluru', 'Belagavi', 'Davanagere', 'Ballari', 'Tumakuru', 'Shivamogga', 'Kalaburagi', 'Bagalkot', 'Bidar', 'Chamarajanagar', 'Chikkaballapur', 'Chikkamagaluru', 'Chitradurga'],
+  'Kerala': ['Thiruvananthapuram', 'Kochi', 'Kozhikode', 'Thrissur', 'Ernakulam', 'Kollam', 'Alappuzha', 'Palakkad', 'Malappuram', 'Kannur', 'Kottayam', 'Kasaragod', 'Idukki', 'Wayanad', 'Pathanamthitta'],
+  'Madhya Pradesh': ['Indore', 'Bhopal', 'Jabalpur', 'Gwalior', 'Ujjain', 'Sagar', 'Dewas', 'Satna', 'Ratlam', 'Rewa', 'Murwara', 'Singrauli', 'Chhindwara', 'Guna', 'Khandwa', 'Khargone', 'Mandsaur', 'Shivpuri'],
+  'Maharashtra': ['Mumbai', 'Pune', 'Nagpur', 'Thane', 'Nashik', 'Aurangabad', 'Solapur', 'Amravati', 'Navi Mumbai', 'Kolhapur', 'Akola', 'Jalgaon', 'Nanded', 'Ahmednagar', 'Beed', 'Bhandara', 'Chandrapur', 'Dhule', 'Gadchiroli', 'Gondia'],
+  'Manipur': ['Imphal', 'Thoubal', 'Churachandpur', 'Ukhrul', 'Senapati', 'Chandel'],
+  'Meghalaya': ['Shillong', 'Tura', 'Jowai', 'Nongpoh', 'Baghmara', 'Williamnagar'],
+  'Mizoram': ['Aizawl', 'Lunglei', 'Champhai', 'Kolasib', 'Serchhip'],
+  'Nagaland': ['Kohima', 'Dimapur', 'Mokokchung', 'Tuensang', 'Wokha', 'Zunheboto'],
+  'Odisha': ['Bhubaneswar', 'Cuttack', 'Rourkela', 'Berhampur', 'Sambalpur', 'Puri', 'Balasore', 'Bhadrak', 'Baripada', 'Jharsuguda', 'Angul', 'Balangir', 'Bargarh', 'Ganjam', 'Kalahandi', 'Koraput'],
+  'Punjab': ['Ludhiana', 'Amritsar', 'Jalandhar', 'Patiala', 'Mohali', 'Bathinda', 'Pathankot', 'Hoshiarpur', 'Moga', 'Abohar', 'Fazilka', 'Firozpur', 'Gurdaspur', 'Kapurthala', 'Rupnagar'],
+  'Rajasthan': ['Jaipur', 'Jodhpur', 'Kota', 'Bikaner', 'Ajmer', 'Udaipur', 'Bhilwara', 'Alwar', 'Sikar', 'Sri Ganganagar', 'Bharatpur', 'Pali', 'Barmer', 'Churu', 'Hanumangarh', 'Jaisalmer', 'Jalor'],
+  'Sikkim': ['Gangtok', 'Namchi', 'Mangan', 'Geyzing'],
+  'Tamil Nadu': ['Chennai', 'Coimbatore', 'Madurai', 'Trichy', 'Salem', 'Tirunelveli', 'Tiruppur', 'Vellore', 'Erode', 'Thoothukudi', 'Nagercoil', 'Thanjavur', 'Cuddalore', 'Dharmapuri', 'Kanchipuram', 'Karur', 'Nagapattinam', 'Namakkal'],
+  'Telangana': ['Hyderabad', 'Warangal', 'Nizamabad', 'Karimnagar', 'Khammam', 'Ramagundam', 'Mahbubnagar', 'Nalgonda', 'Adilabad', 'Jagtial', 'Jangaon', 'Kamareddy', 'Mahabubabad', 'Mancherial'],
+  'Tripura': ['Agartala', 'Dharmanagar', 'Udaipur', 'Kailasahar', 'Belonia'],
+  'Uttar Pradesh': ['Lucknow', 'Kanpur', 'Ghaziabad', 'Agra', 'Varanasi', 'Noida', 'Meerut', 'Prayagraj', 'Bareilly', 'Aligarh', 'Moradabad', 'Saharanpur', 'Gorakhpur', 'Ayodhya', 'Basti', 'Deoria', 'Etawah', 'Faizabad', 'Firozabad', 'Jaunpur', 'Jhansi'],
+  'Uttarakhand': ['Dehradun', 'Haridwar', 'Haldwani', 'Roorkee', 'Kashipur', 'Rudrapur', 'Rishikesh'],
+  'West Bengal': ['Kolkata', 'Howrah', 'Siliguri', 'Asansol', 'Durgapur', 'Kharagpur', 'Bardhaman', 'Malda', 'Baharampur', 'Habra', 'Bankura', 'Birbhum', 'Cooch Behar', 'Darjeeling', 'Hooghly', 'Jalpaiguri', 'Nadia'],
+  'Andaman & Nicobar Islands': ['Port Blair'],
+  'Chandigarh': ['Chandigarh'],
+  'Delhi': ['New Delhi', 'North Delhi', 'South Delhi', 'East Delhi', 'West Delhi'],
+  'Jammu & Kashmir': ['Srinagar', 'Jammu', 'Anantnag', 'Baramulla', 'Kathua'],
+  'Ladakh': ['Leh', 'Kargil'],
+  'Lakshadweep': ['Kavaratti'],
+  'Puducherry': ['Puducherry', 'Karaikal', 'Mahe', 'Yanam'],
+  'Dadra & Nagar Haveli and Daman & Diu': ['Silvassa', 'Daman', 'Diu']
+};
+
 const microRoles = [
-  'District Court Clerk', 'District Court Peon', 'District Hospital Nurse',
-  'Anganwadi Worker', 'ASHA Health Worker', 'Gram Panchayat Secretary',
-  'Panchayat Rozgar Sevak', 'Block Development Officer Assistant',
-  'Municipal Corporation Tax Inspector', 'Municipal Safai Karamchari',
-  'Talathi / Patwari', 'Zilla Parishad Teacher', 'Zilla Parishad Engineer'
+  'District Court Clerk', 
+  'District Court Peon', 
+  'District Court Sweeper / Safai Karamchari',
+  'District Court Chowkidar / Watchman',
+  'District Hospital Nurse',
+  'District Hospital Ward Boy / Attendant',
+  'District Hospital Sweeper / Safai Karamchari',
+  'Anganwadi Worker', 
+  'Anganwadi Helper',
+  'ASHA Health Worker', 
+  'Gram Panchayat Secretary',
+  'Gram Panchayat Sweeper',
+  'Gram Panchayat Chowkidar',
+  'Panchayat Rozgar Sevak', 
+  'Block Development Officer Assistant',
+  'Block Office Peon / Attendant',
+  'Block Office Sweeper / Safai Karamchari',
+  'Municipal Corporation Tax Inspector', 
+  'Municipal Safai Karamchari / Sweeper',
+  'Municipal Corporation Mali / Gardener',
+  'Municipal Corporation Chowkidar / Watchman',
+  'Talathi / Patwari', 
+  'Zilla Parishad Teacher', 
+  'Zilla Parishad Engineer',
+  'Zilla Parishad Peon / Attendant',
+  'Zilla Parishad Sweeper / Safai Karamchari',
+  'District Collectorate Driver',
+  'District Collectorate Mali / Gardener'
 ];
 
 STATES.forEach(({ n, c }, i) => {
-  // Add ~22 generalized districts per state to simulate exact 766+ Pan-India Districts
-  for (let d = 1; d <= 22; d++) {
+  const districts = STATE_DISTRICTS[n] || [n];
+  districts.forEach((dist, dIdx) => {
     microRoles.forEach((role, j) => {
-      let [st, ed] = tl(i * d + j);
-      J(`${n} District ${d} - ${role} 2026`, `${n} Local / District Admin`, 'Class 10', false, 18, 40, st, ed, 15000, 80000, 'State Government', `https://${n.toLowerCase().replace(/\\s/g, '')}.gov.in`, '', '', SP_SSC_OTHER);
+      let [st, ed] = tl(i * (dIdx + 1) + j);
+      J(`${dist} District - ${role} 2026`, `${dist} District Administration`, /Teacher|Engineer|Assistant/i.test(role) ? 'Graduation' : (/Clerk|Nurse|Secretary/i.test(role) ? 'Class 12' : 'Class 10'), false, 18, 40, st, ed, 15000, 80000, /Nurse|Worker/i.test(role) ? 'Healthcare' : (/Clerk/i.test(role) ? 'State Government' : (/Engineer/i.test(role) ? 'Engineering' : 'State Government')), `https://${n.toLowerCase().replace(/\s/g, '').replace(/[^a-z0-9]/g, '')}.gov.in`, '', '', role.includes('Court') ? SP_JUDICIARY : SP_SSC_OTHER, '', '', n);
     });
-  }
+  });
 });
 
 // 13. ULTRA-GRANULAR POST BREAKDOWN (Railway ALP, SSC CGL individual posts, State Police ranks)
@@ -1196,7 +1271,7 @@ granularSSCCGL.forEach((role, i) => {
 STATES.forEach(({ n, c }, i) => {
   granularPolice.forEach((role, j) => {
     let [st, ed] = tl(i * granularPolice.length + j);
-    J(`${n} State Police - ${role} 2026`, `${n} Police Department`, role.includes('DSP') || role.includes('SI') ? 'Graduation' : (role.includes('Head') ? 'Class 12' : 'Class 10'), false, 18, 28, st, ed, 21700, 112400, 'State Government', `https://${n.toLowerCase().replace(/\\s/g, '')}.gov.in`, '', '', role.includes('DSP') || role.includes('SI') ? SP_POLICE : SP_PARA);
+    J(`${n} State Police - ${role} 2026`, `${n} Police Department`, role.includes('DSP') || role.includes('SI') ? 'Graduation' : (role.includes('Head') ? 'Class 12' : 'Class 10'), false, 18, 28, st, ed, 21700, 112400, 'State Government', `https://${n.toLowerCase().replace(/\s/g, '').replace(/[^a-z0-9]/g, '')}.gov.in`, '', '', role.includes('DSP') || role.includes('SI') ? SP_POLICE : SP_PARA);
   });
 });
 
@@ -1370,7 +1445,7 @@ async function seedDatabase() {
   const db = getDb();
 
   // Version-based reseed: bump this whenever seed data changes
-  const SEED_VERSION = 25;
+  const SEED_VERSION = 26;
 
   try { await db.execute('CREATE TABLE IF NOT EXISTS seed_meta (key TEXT PRIMARY KEY, value TEXT)'); } catch (_) { }
   let currentVersion = 0;
@@ -1563,10 +1638,10 @@ async function seedBatch(offset, limit) {
 
 async function seedFinalize() {
   const db = getDb();
-  await db.execute({ sql: "INSERT OR REPLACE INTO seed_meta (key, value) VALUES ('seed_version', ?)", args: ['22'] });
+  await db.execute({ sql: "INSERT OR REPLACE INTO seed_meta (key, value) VALUES ('seed_version', ?)", args: ['26'] });
   const count = Number((await db.execute('SELECT COUNT(*) as cnt FROM jobs')).rows[0].cnt);
-  console.log(`  [seed-finalize] Version set to 22. Total jobs in DB: ${count}`);
-  return { version: 22, totalJobs: count };
+  console.log(`  [seed-finalize] Version set to 26. Total jobs in DB: ${count}`);
+  return { version: 26, totalJobs: count };
 }
 
 module.exports = { seedDatabase, seedInit, seedBatch, seedFinalize, getJobCount: () => jobs.length, jobs };

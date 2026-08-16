@@ -17,6 +17,8 @@ const GENERIC_DOMAINS = [
 // Legitimate domains that contain 'india.gov.in' as substring but are NOT generic
 const WHITELISTED_DOMAINS = [
   'epfindia.gov.in', 'airindia.gov.in', 'coalindia.in',
+  'nbccindia.gov.in', 'surveyofindia.gov.in', 'incometaxindia.gov.in',
+  'censusindia.gov.in', 'investindia.gov.in'
 ];
 
 const PLACEHOLDER_SALARY_PAIRS = [

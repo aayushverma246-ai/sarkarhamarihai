@@ -20,7 +20,7 @@ if (!apiKey) {
     process.exit(1);
 }
 
-const cronSecret = process.env.CRON_SECRET || 'Mnc6Ql9cqg84dOevfjxDvsbN9p9dCPVMlEL25eAB5kE=';
+const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
 
 const jobsToSetup = [
     {

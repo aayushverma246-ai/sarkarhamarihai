@@ -39,13 +39,22 @@ const normalizeOrg = (org: string): string => {
 };
 
 // Generate unique fingerprint key for job
+// Uses the database id as the primary key to prevent false deduplication
+// of legitimate district-level exams with similar names/orgs.
 const getJobFingerprint = (job: Job): string => {
+    // If the job has a unique DB id, use it as the definitive fingerprint.
+    // The backend already handles deduplication at seed time — the frontend
+    // should never second-guess unique records by normalizing names.
+    if (job.id) return job.id;
+
+    // Fallback for jobs without an id (shouldn't happen in practice)
     const name = normalizeString(job.job_name || '');
     const org = normalizeOrg(job.organization || '');
     const yearMatch = (job.job_name || '').match(/20\d{2}/);
     const year = yearMatch ? yearMatch[0] : new Date().getFullYear().toString();
     return `${name}|${org}|${year}`;
 };
+
 
 // Deduplicate jobs list
 const deduplicateJobs = (jobs: Job[]): Job[] => {

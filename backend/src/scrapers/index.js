@@ -298,11 +298,16 @@ const judiciaryScraper = {
       'Patna High Court', 'MP High Court', 'Telangana High Court',
     ];
     const posts = ['Clerk', 'Stenographer', 'Peon/Attendant', 'Junior Judicial Assistant'];
+    const { resolveLink } = require('../engines/link-resolver');
     for (const court of courts) {
+      const resolvedLink = resolveLink(court, `${court} Clerk`, 'All India');
       for (const post of posts) {
         exams.push(s.buildExam({
           job_name: `${court} ${post} ${new Date().getFullYear()}`, organization: court,
-          job_category: 'Judiciary', official_website_link: 'https://main.sci.gov.in',
+          job_category: 'Judiciary',
+          official_website_link: resolvedLink,
+          official_application_link: resolvedLink,
+          official_notification_link: resolvedLink,
           qualification_required: /Clerk|Steno|Junior/.test(post) ? '12th Pass / Graduation' : '10th Pass',
           selection_process: 'Written Exam → Typing/Skill Test → Interview', state: 'All India',
         }));

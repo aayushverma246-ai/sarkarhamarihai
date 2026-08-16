@@ -62,6 +62,18 @@ router.get('/incremental', authCheck, async (req, res) => {
   }
 });
 
+// GET /api/verifier/deep-scrape — Trigger deep scraping verification
+router.get('/deep-scrape', authCheck, async (req, res) => {
+  try {
+    const engine = getEngine();
+    const limit = parseInt(req.query.limit) || 10;
+    const report = await engine.runScrapingVerification(limit);
+    res.json({ success: true, report });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/verifier/sync — Trigger delta sync with scraper data
 router.get('/sync', authCheck, async (req, res) => {
   try {
