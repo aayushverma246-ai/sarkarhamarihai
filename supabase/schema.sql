@@ -1,6 +1,5 @@
 -- ============================================================
 -- SarkarHamariHai — Supabase PostgreSQL Schema
--- Migrated from Turso (SQLite/libSQL)
 -- ============================================================
 
 -- Enable UUID generation
