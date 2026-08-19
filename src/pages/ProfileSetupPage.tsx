@@ -17,7 +17,7 @@ export default function ProfileSetupPage() {
     age: '',
     category: 'General',
     state: 'Delhi',
-    qualification_type: 'Graduation',
+    qualification_type: 'Graduation (BA/B.Sc/B.Com)',
     qualification_status: 'Completed',
     current_year: '',
     current_semester: '',
@@ -207,8 +207,13 @@ export default function ProfileSetupPage() {
                 >
                   <option className="bg-[#0a0a0a]" value="Class 10">Class 10</option>
                   <option className="bg-[#0a0a0a]" value="Class 12">Class 12</option>
-                  <option className="bg-[#0a0a0a]" value="Graduation">Graduation</option>
-                  <option className="bg-[#0a0a0a]" value="Post Graduation">Post Graduation</option>
+                  <option className="bg-[#0a0a0a]" value="Diploma">Diploma</option>
+                  <option className="bg-[#0a0a0a]" value="Graduation (BA/B.Sc/B.Com)">Graduation (BA/B.Sc/B.Com)</option>
+                  <option className="bg-[#0a0a0a]" value="Graduation (B.Tech/B.E.)">Graduation (B.Tech/B.E.)</option>
+                  <option className="bg-[#0a0a0a]" value="Graduation (MBBS/Medical)">Graduation (MBBS/Medical)</option>
+                  <option className="bg-[#0a0a0a]" value="Graduation (B.Pharm)">Graduation (B.Pharm)</option>
+                  <option className="bg-[#0a0a0a]" value="Post Graduation (General)">Post Graduation (General)</option>
+                  <option className="bg-[#0a0a0a]" value="Post Graduation (M.Tech/Technical)">Post Graduation (M.Tech/Technical)</option>
                   <option className="bg-[#0a0a0a]" value="PhD">PhD</option>
                 </select>
               </div>

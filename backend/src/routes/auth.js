@@ -47,7 +47,18 @@ function validateUserProfile(data, isUpdate = false) {
 
     // 5. Qualification Type Validation
     if (!isUpdate || qualification_type !== undefined) {
-        const validQualifications = ['Class 10', 'Class 12', 'Diploma', 'Graduation', 'Post Graduation', 'PhD'];
+        const validQualifications = [
+            'Class 10', 'Class 12', 'Diploma',
+            'Graduation',
+            'Graduation (BA/B.Sc/B.Com)',
+            'Graduation (B.Tech/B.E.)',
+            'Graduation (MBBS/Medical)',
+            'Graduation (B.Pharm)',
+            'Post Graduation',
+            'Post Graduation (General)',
+            'Post Graduation (M.Tech/Technical)',
+            'PhD'
+        ];
         if (!qualification_type || !validQualifications.includes(qualification_type)) {
             return 'Please select a valid qualification level.';
         }

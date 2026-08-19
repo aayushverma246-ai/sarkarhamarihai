@@ -20,7 +20,7 @@ export default function ProfilePage() {
   const [error, setError] = useState('');
   const [form, setForm] = useState({
     full_name: '', age: '', category: 'General', state: 'Delhi',
-    qualification_type: 'Graduation', qualification_status: 'Pursuing',
+    qualification_type: 'Graduation (BA/B.Sc/B.Com)', qualification_status: 'Pursuing',
     current_year: '', current_semester: '', expected_graduation_year: '',
   });
   useEffect(() => {
@@ -174,7 +174,16 @@ export default function ProfilePage() {
                     <div>
                       <label className="block text-sm text-gray-400 mb-1.5">Qualification</label>
                       <select value={form.qualification_type} onChange={e => update('qualification_type', e.target.value)} className={inputClass}>
-                        {['Class 10', 'Class 12', 'Graduation', 'Post Graduation', 'PhD'].map(q => <option key={q} value={q}>{translateDynamicData(q, language, 'qualification')}</option>)}
+                        {[
+                          'Class 10', 'Class 12', 'Diploma',
+                          'Graduation (BA/B.Sc/B.Com)',
+                          'Graduation (B.Tech/B.E.)',
+                          'Graduation (MBBS/Medical)',
+                          'Graduation (B.Pharm)',
+                          'Post Graduation (General)',
+                          'Post Graduation (M.Tech/Technical)',
+                          'PhD'
+                        ].map(q => <option key={q} value={q}>{translateDynamicData(q, language, 'qualification')}</option>)}
                       </select>
                     </div>
                     <div>
