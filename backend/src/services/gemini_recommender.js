@@ -577,8 +577,15 @@ function meetsAge(user, job) {
   if (!user.age || user.age === 0) return true;
 
   const minAge = job.minimum_age ? Number(job.minimum_age) : 0;
-  const maxAge = job.maximum_age ? Number(job.maximum_age) : 100;
+  let maxAge = job.maximum_age ? Number(job.maximum_age) : 100;
   const userAge = Number(user.age);
+
+  // Apply government age relaxation logic based on user category
+  if (user.category === 'OBC') {
+    maxAge += 3;
+  } else if (user.category === 'SC' || user.category === 'ST') {
+    maxAge += 5;
+  }
 
   return userAge >= minAge && userAge <= maxAge;
 }
