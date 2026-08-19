@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>India's smartest government job & exam aggregator.</strong><br/>
-  Real data. Real official links. Zero placeholders.
+  Real data. Real official links.
 </p>
 
 <p align="center">
