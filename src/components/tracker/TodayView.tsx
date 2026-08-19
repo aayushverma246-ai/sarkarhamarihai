@@ -34,11 +34,21 @@ export default function TodayView({ user, onUpdateStats }: { user: any, stats: a
 
                 if (targetsData && targetsData.length > 0) {
                     setHasActiveTargets(true);
-                    const targetNames = targetsData.map((t: any) => t.exam_name).filter(Boolean);
-                    if (targetNames.length > 0) {
-                        setSubjects(targetNames);
+                    const allSubjects: string[] = [];
+                    targetsData.forEach((t: any) => {
+                        if (t.subjects && Array.isArray(t.subjects)) {
+                            t.subjects.forEach((s: string) => {
+                                if (!allSubjects.some(existing => existing.toLowerCase() === s.toLowerCase())) {
+                                    allSubjects.push(s);
+                                }
+                            });
+                        }
+                    });
+                    if (allSubjects.length > 0) {
+                        setSubjects(allSubjects);
                     } else {
-                        setSubjects([]);
+                        const targetNames = targetsData.map((t: any) => t.exam_name).filter(Boolean);
+                        setSubjects(targetNames);
                     }
                 } else {
                     setHasActiveTargets(false);

@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>India's smartest government job & exam aggregator.</strong><br/>
-  Real data. Real links. Zero placeholders.
+  Real data. Real official links. Zero placeholders.
 </p>
 
 <p align="center">
@@ -26,27 +26,42 @@
 
 ## What is this?
 
-SarkarHamariHai scrapes, cleans, and organizes government job listings from across India — UPSC, SSC, state PSCs, railways, courts, banking — into one searchable dashboard. Every link points to an official government portal. Every salary, date, and eligibility field is verified by automated engines that run daily.
-
-It's built for students and job seekers who are tired of sketchy aggregator sites full of ads and fake data.
+SarkarHamariHai is a secure, high-performance aggregator for competitive exams and government careers across India (covering UPSC, SSC, Railways, Banking, Defense, Teaching, and State PSCs). It aggregates verified listing details, filters out generic redirect links, and helps aspirants focus on preparation through custom-tailored syllabus mappings, study trackers, and daily schedulers.
 
 ---
 
-## Features
+## Core Features
 
-| Feature | Description |
-|---|---|
-| **AI Recommendations** | Google Gemini matches your profile to relevant exams using semantic vector search |
-| **Self-Healing Data** | Automated engines scan the database daily — fix broken links, normalize salaries, validate categories |
-| **200+ Official Portals** | Centralized link resolver maps every scraped URL to its correct government domain |
-| **Multi-Language** | Full UI support for English, Hindi (हिन्दी), and Marathi (मराठी) |
-| **Application Tracker** | Track which exams you've applied to, set reminders for deadlines |
-| **Study Planner** | AI-generated daily study plans with progress tracking |
-| **Real-Time Updates** | Cron jobs sync new listings every hour from official sources |
+### 1. AI Syllabus Synergy Matcher
+- **Curriculum Comparison:** Runs semantic overlap analyses comparing your applied exam targets against potential companion exams.
+- **Harmony Breakdown:** Identifies concept alignment percentages, listing shared chapters, missing modules, transition difficulty gaps (Low/Medium/High), and estimated additional study time required.
+- **Transition Roadmap:** Suggests week-by-week preparation paths for compatible exams to help you optimize study strategies.
+
+### 2. AI Daily Study Planner & Scheduler
+- **Time-Slot Allocation:** Dynamically schedules your day between wake and sleep times based on target study hours.
+- **Subject-Level Resolution:** Reads target exams and automatically resolves generic exam titles into actual topics (e.g., *History*, *Geography*, *Polity*, *Quantitative Aptitude*) for study blocks.
+- **Evening Debriefs:** Delivers direct daily coaching reviews and encouragement based on completed study sessions.
+
+### 3. Self-Healing Data Pipeline
+- **Sanitization:** Cleans data daily to replace placeholder salaries, normalize start/end dates, format job titles, and resolve duplicate postings.
+- **Stable Pagination:** Utilizes cursor-style pagination in data cleaning scripts to prevent row skips during updates.
+
+### 4. Official Domain Link Resolver
+- **Extension Verification:** References over 200 official central and state government domain patterns (e.g., `*.nic.in`, `*.gov.in`) to verify scraped sources.
+- **Ad/Phishing Filter:** Prevents link rot and generic redirects, mapping pages directly to verified PDFs, official websites, or portals.
+
+### 5. Progress & Readiness Analytics
+- **Readiness Score:** Computes overall preparation benchmarks using a weighted formula (40% syllabus completion, 25% weekly study consistency, 20% average productivity, and 15% streak bonus).
+- **Streak & Percentiles:** Tracks continuous study chains and calculates weekly ranking/percentiles against benchmark targets.
+- **Clearance Probability:** Calculates likelihood metrics for matching targets using multivariate logistic regression approximations (factoring in streaks, syllabus coverage, mock ratio, and exam countdowns).
+
+### 6. Localized Multi-Language Interface
+- Supports translation maps across **11 Indian languages**:
+  - English, Hindi (हिन्दी), Tamil (தமிழ்), Telugu (తెలుగు), Bengali (বাংলা), Marathi (मराठी), Kannada (ಕನ್ನಡ), Malayalam (മലയാളം), Gujarati (ગુજરાતી), Punjabi (ਪੰਜਾਬੀ), and Odia (ଓଡ଼ିଆ).
 
 ---
 
-## Architecture
+## Technical Architecture
 
 ```mermaid
 graph TD
@@ -62,98 +77,91 @@ graph TD
 
 ---
 
-## Tech Stack
+## Technology Stack
 
 - **Frontend** — React 19, Vite, Tailwind CSS v4, Framer Motion, Redux Toolkit
-- **Backend** — Node.js, Express, Vercel Serverless Functions
-- **Database** — PostgreSQL via Supabase
-- **AI** — Google Gemini SDK, Vertex AI
-- **Scheduling** — Cron-Job.org
+- **Backend** — Node.js (CommonJS), Express, Vercel Serverless Functions
+- **Database** — PostgreSQL via Supabase DB Adapter (pg TCP pool with REST fallback)
+- **AI Core** — Google GenAI SDK (`@google/genai` Gemini 2.5), Vertex AI, Nvidia GLM 5.2 Fallback
+- **Scheduling** — Cron-Job.org / Vercel Serverless Crons
+
+---
+
+## Directory Structure
+
+```
+├── api/              Vercel serverless endpoints + cron handlers
+├── backend/
+│   ├── src/
+│   │   ├── engines/  Link resolver, data healer, eligibility engine, sync core
+│   │   ├── routes/   Express API routes (tracker, auth, jobs, syllabus, etc.)
+│   │   ├── services/ Gemini AI, translation helper, database config
+│   │   └── scrapers/ UPSC, SSC scrapers extending base classes
+│   └── scripts/      Database maintenance utilities
+├── src/
+│   ├── components/   React UI modules & Tracker views
+│   ├── pages/        Dashboard, LoginPage, TrackerPage, and details routes
+│   ├── store/        Redux slices (auth, UI states)
+│   ├── i18n/         Multi-language dictionary and context providers
+│   └── utils/        Supabase wrappers, translation converters
+├── scripts/          Verification, healer, and audit scripts
+├── supabase/         PostgreSQL schema, indices, and database migrations
+└── public/           Assets and logo resources
+```
 
 ---
 
 ## Getting Started
 
-### 1. Clone and install
-
+### 1. Installation
+Clone the repository and install the project dependencies:
 ```bash
 git clone https://github.com/aayushverma246-ai/sarkarhamarihai.git
 cd sarkarhamarihai
 npm install
 ```
 
-### 2. Set up environment variables
-
+### 2. Environment Variables
+Create a local environment file:
 ```bash
-cp backend/.env.example .env
+cp .env.example .env
 ```
+Provide the required configurations in `.env`:
+- **Supabase credentials** (URL, anon key, service role key, DB password)
+- **JWT secrets**
+- **Gemini API key** (`GEMINI_API_KEY_NEW`)
 
-Fill in your Supabase credentials, JWT secret, and Gemini API key.
-
-> [!WARNING]
-> Never commit `.env` files. They're already in `.gitignore`.
-
-### 3. Seed the database
-
+### 3. Database Initialization
+Seed the databases with initial mock exams and schemas:
 ```bash
 npm run seed
 ```
 
-### 4. Start development
-
+### 4. Running Development Servers
+Spin up both the Vite client server and Node Express backend server in parallel:
 ```bash
 npm run dev
 ```
+- Frontend client runs at `http://localhost:5173`
+- Backend API runs at `http://localhost:3001`
 
-Frontend runs at `http://localhost:5173`, backend API at `http://localhost:3001`.
-
----
-
-## Data Integrity
-
-This project takes data quality seriously. Three systems work together:
-
-**Link Resolver** (`backend/src/engines/link-resolver.js`) — 200+ mappings that convert scraped URLs to verified government portal domains.
-
-**Deterministic Healer** (`/api/cron/healer`) — Runs daily. Removes placeholder salaries, validates state assignments, normalizes date formats. Uses stable pagination to avoid skipping rows during updates.
-
-**Verification Suite** — Run `npm run migrate` to perform a full audit of every record in the database.
-
----
-
-## Project Structure
-
-```
-├── api/              Vercel serverless endpoints + cron handlers
-├── backend/
-│   ├── src/
-│   │   ├── engines/  Link resolver, healer, validator, scraper core
-│   │   ├── routes/   Express API routes
-│   │   ├── services/ Gemini AI, translation, normalization
-│   │   └── scrapers/ UPSC, SSC scrapers
-│   └── scripts/      Database maintenance utilities
-├── src/
-│   ├── components/   React UI components
-│   ├── pages/        Route pages
-│   ├── store/        Redux state management
-│   ├── i18n/         Translations
-│   └── utils/        Supabase client, helpers
-├── scripts/          Verification and healing scripts
-├── supabase/         Database schema and migrations
-└── public/           Static assets
+### 5. Running Code & Data Auditing
+Perform a comprehensive integrity and structure audit against all active database records:
+```bash
+npm run migrate
 ```
 
 ---
 
 ## Contributing
 
-1. Fork the repo
-2. Create a feature branch (`git checkout -b my-feature`)
-3. Commit your changes
-4. Push and open a pull request
+1. Fork this repository.
+2. Create a specific feature branch (`git checkout -b my-feature`).
+3. Commit your changes.
+4. Push the branch and open a Pull Request.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.

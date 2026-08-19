@@ -8,6 +8,76 @@ function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 }
 
+async function getSubjectsForExam(examName, db) {
+    if (!examName) return [];
+    try {
+        const lowerName = examName.toLowerCase();
+        
+        // 1. Direct check in jobs table if we can find a matching job with a syllabus we can parse
+        const jobQuery = await db.execute({
+            sql: "SELECT syllabus, structured_syllabus_json FROM jobs WHERE LOWER(job_name) = ? LIMIT 1",
+            args: [lowerName]
+        });
+        
+        if (jobQuery.rows && jobQuery.rows.length > 0) {
+            const job = jobQuery.rows[0];
+            // If we have structured syllabus json, try parsing it
+            if (job.structured_syllabus_json) {
+                try {
+                    const parsed = JSON.parse(job.structured_syllabus_json);
+                    if (Array.isArray(parsed)) {
+                        const subjects = parsed.map(item => item.subject || item.name).filter(Boolean);
+                        if (subjects.length > 0) return subjects;
+                    }
+                } catch (e) {
+                    // Ignore and fall through
+                }
+            }
+            
+            // Try parsing subjects from standard syllabus text if possible
+            if (job.syllabus) {
+                const commonSubjects = [
+                    "History", "Geography", "Polity", "Economics", "Science", "Current Affairs", 
+                    "Mathematics", "Quantitative Aptitude", "Reasoning", "English", "General Awareness",
+                    "Aptitude", "General Knowledge", "General Studies", "GK", "Pedagogy", "Law",
+                    "Computer", "Aptitude", "Intelligence", "Language"
+                ];
+                const matched = commonSubjects.filter(sub => 
+                    new RegExp(`\\b${sub}\\b`, 'i').test(job.syllabus)
+                );
+                if (matched.length > 0) return matched;
+            }
+        }
+
+        // 2. Custom override for UPSC to have premium subjects instead of generic "PSC" subjects
+        if (lowerName.includes('upsc') || lowerName.includes('civil services') || lowerName.includes('ias') || lowerName.includes('ips')) {
+            return ["History", "Geography", "Polity", "Economics", "Science", "Current Affairs"];
+        }
+        
+        // 3. Fallback to exam_syllabus patterns in the database
+        const syllabusQuery = await db.execute("SELECT name_pattern, subjects FROM exam_syllabus");
+        const rows = syllabusQuery.rows || [];
+        for (const row of rows) {
+            if (row.name_pattern && lowerName.includes(row.name_pattern.toLowerCase())) {
+                try {
+                    const parsed = JSON.parse(row.subjects);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        return parsed;
+                    }
+                } catch (e) {
+                    // Ignore
+                }
+            }
+        }
+        
+        // Generic fallback if nothing matches
+        return ["General Studies", "Current Affairs"];
+    } catch (err) {
+        console.error("Error in getSubjectsForExam:", err);
+        return ["General Studies"];
+    }
+}
+
 // --- TARGETS (MULTI-EXAM) ---
 router.get('/targets', auth, async (req, res) => {
     try {
@@ -34,6 +104,8 @@ router.get('/targets', auth, async (req, res) => {
                     });
                 }
             }
+            // Populate actual subjects for preparation instead of exam name!
+            t.subjects = await getSubjectsForExam(t.exam_name, db);
         }
         
         return res.json(targets);
@@ -110,8 +182,8 @@ router.post('/plan/generate', auth, async (req, res) => {
         }
 
         await db.execute({
-            sql: `INSERT INTO tracker_plans (id, user_id, date, wake_time, sleep_time, planned_hours, status) VALUES (?, ?, ?, ?, ?, ?, 'planned')`,
-            args: [planId, userId, today, wake_time, sleep_time, planned_hours]
+            sql: `INSERT INTO tracker_plans (id, user_id, date, wake_time, sleep_time, planned_hours, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            args: [planId, userId, today, wake_time, sleep_time, planned_hours, 'planned']
         });
 
         let sessions = [];
@@ -151,8 +223,8 @@ router.post('/plan/generate', auth, async (req, res) => {
                 targetId = examNameToId[s.exam_name];
             }
             await db.execute({
-                sql: `INSERT INTO tracker_sessions (id, plan_id, exam_target_id, start_time, end_time, session_type, title, is_completed) VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-                args: [generateId(), planId, targetId, s.start_time, s.end_time, s.session_type, s.title]
+                sql: `INSERT INTO tracker_sessions (id, plan_id, exam_target_id, start_time, end_time, session_type, title, is_completed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                args: [generateId(), planId, targetId, s.start_time, s.end_time, s.session_type, s.title, 0]
             });
         }
 
@@ -249,8 +321,8 @@ router.post('/plan/evaluate', auth, async (req, res) => {
         const productivityScore = Math.floor(percent * 100);
 
         await db.execute({
-            sql: `UPDATE tracker_plans SET completed_hours = ?, productivity_score = ?, status = 'completed' WHERE id = ?`,
-            args: [computedCompletedHours, productivityScore, plan.id]
+            sql: `UPDATE tracker_plans SET completed_hours = ?, productivity_score = ?, status = ? WHERE id = ?`,
+            args: [computedCompletedHours, productivityScore, 'completed', plan.id]
         });
 
         // Update stats
@@ -461,8 +533,8 @@ router.get('/stats', auth, async (req, res) => {
             if (diffDays > 1) {
                 activeStreak = 0;
                 await db.execute({
-                    sql: "UPDATE tracker_user_stats SET current_streak = 0 WHERE user_id = ?",
-                    args: [userId]
+                    sql: "UPDATE tracker_user_stats SET current_streak = ? WHERE user_id = ?",
+                    args: [0, userId]
                 });
                 stats.current_streak = 0;
             }
@@ -471,8 +543,8 @@ router.get('/stats', auth, async (req, res) => {
             if (activeStreak > 0) {
                 activeStreak = 0;
                 await db.execute({
-                    sql: "UPDATE tracker_user_stats SET current_streak = 0 WHERE user_id = ?",
-                    args: [userId]
+                    sql: "UPDATE tracker_user_stats SET current_streak = ? WHERE user_id = ?",
+                    args: [0, userId]
                 });
                 stats.current_streak = 0;
             }
