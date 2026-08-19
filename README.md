@@ -32,31 +32,36 @@ SarkarHamariHai is a secure, high-performance aggregator for competitive exams a
 
 ## Core Features
 
-### 1. AI Syllabus Synergy Matcher
-- **Curriculum Comparison:** Runs semantic overlap analyses comparing your applied exam targets against potential companion exams.
-- **Harmony Breakdown:** Identifies concept alignment percentages, listing shared chapters, missing modules, transition difficulty gaps (Low/Medium/High), and estimated additional study time required.
-- **Transition Roadmap:** Suggests week-by-week preparation paths for compatible exams to help you optimize study strategies.
+### 1. Large-Scale Exam Database
+- **Comprehensive Indexing:** Holds and organizes 17,000+ scraped, audited, and categorized active and historical government job notifications from across India (covering UPSC, SSC, Railways, Banking, Defense, Teaching, and all State PSCs).
+- **Verified Metadata:** Daily cleaning operations eliminate dummy placeholder salaries, invalid locations, and date errors, ensuring all metadata corresponds to real government notifications.
 
-### 2. AI Daily Study Planner & Scheduler
-- **Time-Slot Allocation:** Dynamically schedules your day between wake and sleep times based on target study hours.
-- **Subject-Level Resolution:** Reads target exams and automatically resolves generic exam titles into actual topics (e.g., *History*, *Geography*, *Polity*, *Quantitative Aptitude*) for study blocks.
-- **Evening Debriefs:** Delivers direct daily coaching reviews and encouragement based on completed study sessions.
+### 2. Live Application Tracking
+- **Target Tracking Dashboard:** Aspirants can configure custom exam targets, track deadlines with live countdowns, log detailed syllabus completion percentages, and visualize metrics.
+- **Dynamic Prep Analytics:** Computes overall preparation benchmarks (Readiness Score) using a weighted formula (40% syllabus completion, 25% weekly study consistency, 20% average productivity, and 15% streak bonus).
 
-### 3. Self-Healing Data Pipeline
-- **Sanitization:** Cleans data daily to replace placeholder salaries, normalize start/end dates, format job titles, and resolve duplicate postings.
-- **Stable Pagination:** Utilizes cursor-style pagination in data cleaning scripts to prevent row skips during updates.
+### 3. AI Recommendation System (Syllabus Compatibility Engine)
+- **Curriculum Synergy Matching:** Leverages Google Gemini semantic analysis to map chapter-level overlaps between applied exams and companion targets, calculating concept alignment percentages and identifying study gaps.
+- **Automated Transition Roadmaps:** Auto-generates a week-by-week study plan to prepare for missing topics with minimal incremental study.
 
-### 4. Official Domain Link Resolver
-- **Extension Verification:** References over 200 official central and state government domain patterns (e.g., `*.nic.in`, `*.gov.in`) to verify scraped sources.
-- **Ad/Phishing Filter:** Prevents link rot and generic redirects, mapping pages directly to verified PDFs, official websites, or portals.
+### 4. Live Push Notifications & Alerts
+- **Real-Time Deadline Alerts:** Real-time push alerts warn candidates about upcoming deadlines, form openings, and status updates for saved and targeted exams.
+- **Saved Target Alerts:** Triggers alerts when notifications change or exams you have saved transition to live application status.
 
-### 5. Progress & Readiness Analytics
-- **Readiness Score:** Computes overall preparation benchmarks using a weighted formula (40% syllabus completion, 25% weekly study consistency, 20% average productivity, and 15% streak bonus).
-- **Streak & Percentiles:** Tracks continuous study chains and calculates weekly ranking/percentiles against benchmark targets.
-- **Clearance Probability:** Calculates likelihood metrics for matching targets using multivariate logistic regression approximations (factoring in streaks, syllabus coverage, mock ratio, and exam countdowns).
+### 5. Zero-Placeholder AI Daily Study Planner
+- **Routines Scheduler:** Schedules daily routines based on study hour targets and wake/sleep times. 
+- **Subject-Level Resolution:** Automatically resolves targeted exams to their underlying subjects (e.g., *History*, *Geography*, *Polity*, *Quantitative Aptitude*) instead of dummy placeholder text, ensuring daily schedulers are filled with actual actionable study blocks.
 
-### 6. Localized Multi-Language Interface
-- Supports translation maps across **11 Indian languages**:
+### 6. Official Domain Link Resolver
+- **Extension Verification:** References over 200 legitimate central and state government domain patterns (e.g., `*.nic.in`, `*.gov.in`) to verify scraped sources.
+- **Spam & Ad Filter:** Filters out commercial spam/ad networks, redirecting candidates directly to official PDFs, websites, and application portals.
+
+### 7. AI Performance Analytics & Debriefs
+- **Evening Debriefs:** Logs completed sessions, checks streaks, evaluates productivity scores, and delivers daily reviews.
+- **Probability Forecasting:** Calculates clearance likelihood metrics for matching targets using multivariate logistic regression approximations (factoring in streaks, syllabus coverage, mock ratio, and exam countdowns).
+
+### 8. Localized Multi-Language Interface
+- Supports full translation maps across **11 major Indian languages**:
   - English, Hindi (हिन्दी), Tamil (தமிழ்), Telugu (తెలుగు), Bengali (বাংলা), Marathi (मराठी), Kannada (ಕನ್ನಡ), Malayalam (മലയാളം), Gujarati (ગુજરાતી), Punjabi (ਪੰਜਾਬੀ), and Odia (ଓଡ଼ିଆ).
 
 ---
