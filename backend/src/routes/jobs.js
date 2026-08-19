@@ -193,7 +193,10 @@ function getQualificationLevel(qualStr) {
     const normalized = qualStr.toLowerCase();
     if (normalized.includes('phd') || normalized.includes('doctorate')) return 5;
     if (normalized.includes('post grad') || normalized.includes('postgrad') || normalized.includes('master') || normalized.includes('m.tech') || normalized.includes('m.sc') || normalized.includes('mba') || normalized.includes('m.com') || normalized.includes('m.ca')) return 4;
-    if (normalized.includes('graduat') || normalized.includes('degree') || normalized.includes('b.tech') || normalized.includes('b.e.') || normalized.includes('b.sc') || normalized.includes('b.com') || normalized.includes('b.a') || normalized.includes('bachelor')) return 3;
+    if (normalized.includes('graduat') || normalized.includes('degree') || normalized.includes('b.tech') || 
+        normalized.includes('b.e.') || normalized.includes('b.sc') || normalized.includes('b.com') || 
+        normalized.includes('b.a') || normalized.includes('bachelor') || normalized.includes('pharm') || 
+        normalized.includes('mbbs') || normalized.includes('ca')) return 3;
     if (normalized.includes('diploma')) return 2.5;
     if (normalized.includes('12th') || normalized.includes('class 12') || normalized.includes('hsc') || normalized.includes('intermediate') || normalized.includes('senior secondary')) return 2;
     if (normalized.includes('10th') || normalized.includes('class 10') || normalized.includes('ssc') || normalized.includes('matric') || normalized.includes('high school')) return 1;

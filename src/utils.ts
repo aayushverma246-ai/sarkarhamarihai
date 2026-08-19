@@ -62,19 +62,25 @@ export function meetsAge(user: any, job: Job): boolean {
     return userAge >= minAge && userAge <= maxAge;
 }
 
-const qualificationOrder: Record<string, number> = { 
-    'Class 10': 1, 
-    'Class 12': 2, 
-    'Diploma': 2.5,
-    'Graduation': 3, 
-    'Post Graduation': 4, 
-    'PhD': 5 
-};
+export function getQualificationLevel(qualStr: string | undefined | null): number {
+    if (!qualStr) return 0;
+    const normalized = qualStr.toLowerCase();
+    if (normalized.includes('phd') || normalized.includes('doctorate')) return 5;
+    if (normalized.includes('post grad') || normalized.includes('postgrad') || normalized.includes('master') || normalized.includes('m.tech') || normalized.includes('m.sc') || normalized.includes('mba') || normalized.includes('m.com') || normalized.includes('m.ca')) return 4;
+    if (normalized.includes('graduat') || normalized.includes('degree') || normalized.includes('b.tech') || 
+        normalized.includes('b.e.') || normalized.includes('b.sc') || normalized.includes('b.com') || 
+        normalized.includes('b.a') || normalized.includes('bachelor') || normalized.includes('pharm') || 
+        normalized.includes('mbbs') || normalized.includes('ca')) return 3;
+    if (normalized.includes('diploma')) return 2.5;
+    if (normalized.includes('12th') || normalized.includes('class 12') || normalized.includes('hsc') || normalized.includes('intermediate') || normalized.includes('senior secondary')) return 2;
+    if (normalized.includes('10th') || normalized.includes('class 10') || normalized.includes('ssc') || normalized.includes('matric') || normalized.includes('high school')) return 1;
+    return 0;
+}
 
 export function meetsQualification(user: any, job: Job): boolean {
     if (!user || !user.qualification_type) return false;
-    const userLevel = qualificationOrder[user.qualification_type] || 0;
-    const jobLevel = qualificationOrder[job.qualification_required] || 0;
+    const userLevel = getQualificationLevel(user.qualification_type);
+    const jobLevel = getQualificationLevel(job.qualification_required);
     
     if (userLevel === 0) return false;
     if (jobLevel === 0) return true; // Job missing required qualification (assume basic)
