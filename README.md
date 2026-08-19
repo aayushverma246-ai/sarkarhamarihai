@@ -30,39 +30,43 @@ SarkarHamariHai is a secure, high-performance aggregator for competitive exams a
 
 ---
 
-## Core Features
+## Core Product Features
 
-### 1. Large-Scale Exam Database
-- **Comprehensive Indexing:** Holds and organizes 17,000+ scraped, audited, and categorized active and historical government job notifications from across India (covering UPSC, SSC, Railways, Banking, Defense, Teaching, and all State PSCs).
-- **Verified Metadata:** Daily cleaning operations eliminate dummy placeholder salaries, invalid locations, and date errors, ensuring all metadata corresponds to real government notifications.
+### 1. Large-Scale Exam Catalog
+- **17,000+ Indexed Records:** Houses a comprehensive database of competitive government exams from official sources, categorized into 15 canonical sectors.
+- **On-the-Fly Category Correction:** Re-classifies tagging errors using smart regex overrides (e.g. correctly re-tagging State PSC civil service exams from UPSC, classifying Teaching/Police/Engineering/Healthcare/Judiciary based on title keywords).
+- **Inferred Regional State Mapping:** Automatically extracts regional state identifiers from titles/organizations, overriding general "All India" tags on state-specific posts.
 
-### 2. Live Application Tracking
-- **Target Tracking Dashboard:** Aspirants can configure custom exam targets, track deadlines with live countdowns, log detailed syllabus completion percentages, and visualize metrics.
-- **Dynamic Prep Analytics:** Computes overall preparation benchmarks (Readiness Score) using a weighted formula (40% syllabus completion, 25% weekly study consistency, 20% average productivity, and 15% streak bonus).
+### 2. AI Recommendation System (Syllabus Compatibility Engine)
+- **High-Fidelity Hybrid Matcher:** Scores syllabus overlaps by combining keyword matching (20%), subject mapping (30%), semantic embedding similarity vectors (30%), and Gemini structural analysis (50%).
+- **Circuit Breaker System:** Prevents rate-limit lockouts by falling back to standard category blueprints (UPSC, SSC, Banking, Railways, etc.) during transient API or quota errors.
+- **Granular Gap Analysis:** Computes matching/missing subjects, difficulty comparisons (Easier/Similar/Harder), and additional study time estimations.
+- **Pre-Filtering Constraints:** Filters out highly technical roles (e.g., specific engineering or nursing posts) for candidates with general backgrounds.
 
-### 3. AI Recommendation System (Syllabus Compatibility Engine)
-- **Curriculum Synergy Matching:** Leverages Google Gemini semantic analysis to map chapter-level overlaps between applied exams and companion targets, calculating concept alignment percentages and identifying study gaps.
-- **Automated Transition Roadmaps:** Auto-generates a week-by-week study plan to prepare for missing topics with minimal incremental study.
+### 3. Personal AI Master Roadmaps (PremiumRoadmapV9)
+- **Phase-by-Phase Preparation Plans:** Generates structural study schedules divided into 4 preparation phases (Foundation, Core Mastery, Speed & Accuracy, and Final Polish).
+- **Feasibility Assessment:** Analyzes remaining days, study hours, and academic credentials to classify preparation feasibility (Highly Feasible, Achievable, Challenging, or Risky).
+- **Actionable Daily & Weekly Strategies:** Recommends morning/afternoon/evening schedules, spaced repetition cycles (Active Recall), mock test frequencies, and specific revision plans.
 
-### 4. Live Push Notifications & Alerts
-- **Real-Time Deadline Alerts:** Real-time push alerts warn candidates about upcoming deadlines, form openings, and status updates for saved and targeted exams.
-- **Saved Target Alerts:** Triggers alerts when notifications change or exams you have saved transition to live application status.
+### 4. Zero-Placeholder Daily Study Planner & Scheduler
+- **Subject-Level Resolution:** pre-populates daily planners with actual core subjects (e.g., *History*, *Geography*, *Quantitative Aptitude*) instead of generic dummy text placeholders (e.g., "Subject 1", "Subject 2").
+- **Time-Slot Allocation:** Dynamically schedules study blocks based on sleep/wake hours and target study time inputs.
+- **Evening AI Coach & Streaks:** Logs study logs, tracks consecutive streaks, and delivers motivational debriefs.
 
-### 5. Zero-Placeholder AI Daily Study Planner
-- **Routines Scheduler:** Schedules daily routines based on study hour targets and wake/sleep times. 
-- **Subject-Level Resolution:** Automatically resolves targeted exams to their underlying subjects (e.g., *History*, *Geography*, *Polity*, *Quantitative Aptitude*) instead of dummy placeholder text, ensuring daily schedulers are filled with actual actionable study blocks.
+### 5. Automated Notification Hub & Live Tracking
+- **Live Alerts:** Real-time push alerts warn candidates about upcoming deadlines, form openings, and status updates for saved and targeted exams.
+- **Exam Target Reminders:** Sends alerts when notifications change or exams you have saved transition to live application status.
 
 ### 6. Official Domain Link Resolver
-- **Extension Verification:** References over 200 legitimate central and state government domain patterns (e.g., `*.nic.in`, `*.gov.in`) to verify scraped sources.
-- **Spam & Ad Filter:** Filters out commercial spam/ad networks, redirecting candidates directly to official PDFs, websites, and application portals.
+- **Ad & Clickbait Filter:** Scans and resolves links against over 200 legitimate state/central government domain patterns (e.g. `*.gov.in`, `*.nic.in`).
+- **Direct Redirection:** Maps source links directly to verified PDF notifications, websites, and application portals.
 
-### 7. AI Performance Analytics & Debriefs
-- **Evening Debriefs:** Logs completed sessions, checks streaks, evaluates productivity scores, and delivers daily reviews.
-- **Probability Forecasting:** Calculates clearance likelihood metrics for matching targets using multivariate logistic regression approximations (factoring in streaks, syllabus coverage, mock ratio, and exam countdowns).
+### 7. Performance Optimized Data Transport (`/all-minimal`)
+- **Lightweight Serializer:** Compresses massive dataset payloads by serializing data into index arrays, dropping JSON response sizes by over 75% for fast client-side loading and filtering.
 
 ### 8. Localized Multi-Language Interface
 - Supports full translation maps across **11 major Indian languages**:
-  - English, Hindi (हिन्दी), Tamil (தமிழ்), Telugu (తెలుగు), Bengali (বাংলা), Marathi (मराठी), Kannada (ಕನ್ನಡ), Malayalam (മലയാളം), Gujarati (ગુજરાતી), Punjabi (ਪੰਜਾਬੀ), and Odia (ଓଡ଼ିଆ).
+  - English, Hindi (हिन्दी), Tamil (தமிழ்), Telugu (తెలుగు), Bengali (বাংলা), Marathi (मराठी), Kannada (ಕನ್ನಡ), Malayalam (മലയാളം), Gujarati (ગુજરાતી), Punjabi (ਪੰਜਾਬੀ), and Odia (ଓଡ଼िଆ).
 
 ---
 
@@ -98,9 +102,9 @@ graph TD
 ├── api/              Vercel serverless endpoints + cron handlers
 ├── backend/
 │   ├── src/
-│   │   ├── engines/  Link resolver, data healer, eligibility engine, sync core
-│   │   ├── routes/   Express API routes (tracker, auth, jobs, syllabus, etc.)
-│   │   ├── services/ Gemini AI, translation helper, database config
+│   │   ├── engines/  Link resolver, data healer, eligibility engine, sync core, verification engine
+│   │   ├── routes/   Express API routes (tracker, auth, jobs, syllabus, apply, roadmap, verifier, audit)
+│   │   ├── services/ Gemini AI, translation helper, database config, recommender service
 │   │   └── scrapers/ UPSC, SSC scrapers extending base classes
 │   └── scripts/      Database maintenance utilities
 ├── src/
