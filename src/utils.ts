@@ -27,23 +27,45 @@ export function meetsStateCriteria(user: any, job: Job): boolean {
     return false;
 }
 
-export function meetsTechnicalCriteria(job: Job): boolean {
+export function meetsTechnicalCriteria(user: any, job: Job): boolean {
     if (!job) return false;
     const textToSearch = ((job.job_name || '') + ' ' + (job.organization || '')).toLowerCase();
-    // Exclude highly specific technical roles that require non-general degrees.
     const isHighlyTechnical = /(?:junior engineer|assistant engineer|ae\/je|\bae\b|\bje\b|b\.tech|\bbtech\b|m\.tech|\bmtech\b|diploma in|\biti\b|nursing|medical officer|\bmbbs\b)/i.test(textToSearch);
-    return !isHighlyTechnical;
+    
+    if (!isHighlyTechnical) return true;
+    if (!user || !user.qualification_type) return false;
+    
+    const userQual = user.qualification_type.toLowerCase();
+    return userQual.includes('b.tech') || 
+           userQual.includes('b.e.') || 
+           userQual.includes('m.tech') || 
+           userQual.includes('diploma') ||
+           userQual.includes('nursing') ||
+           userQual.includes('medical') ||
+           userQual.includes('iti');
 }
 
 export function meetsAge(user: any, job: Job): boolean {
     if (!user || !user.age || user.age === 0) return false;
     if (!job.minimum_age || !job.maximum_age) return true; // Default if job missing limits
-    return Number(user.age) >= Number(job.minimum_age) && Number(user.age) <= Number(job.maximum_age);
+    
+    const minAge = Number(job.minimum_age);
+    let maxAge = Number(job.maximum_age);
+    const userAge = Number(user.age);
+    
+    if (user.category === 'OBC') {
+        maxAge += 3;
+    } else if (user.category === 'SC' || user.category === 'ST') {
+        maxAge += 5;
+    }
+    
+    return userAge >= minAge && userAge <= maxAge;
 }
 
 const qualificationOrder: Record<string, number> = { 
     'Class 10': 1, 
     'Class 12': 2, 
+    'Diploma': 2.5,
     'Graduation': 3, 
     'Post Graduation': 4, 
     'PhD': 5 

@@ -123,17 +123,17 @@ const computeEligibility = (validJobs: Job[], resolvedUser: any) => {
 
     for (const j of validJobs) {
         if (hasCompleteProfile) {
-            const isEligible = meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j) && meetsTechnicalCriteria(j);
+            const isEligible = meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j) && meetsTechnicalCriteria(resolvedUser, j);
             if (isEligible) strictlyEligible.push(j);
         }
-        if ((j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(j)) {
+        if ((j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(resolvedUser, j)) {
             broadlyEligible.push(j);
         }
         if (hasCompleteProfile) {
-            const isPartial = (meetsQualification(resolvedUser, j) || meetsAge(resolvedUser, j)) && !(meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j)) && meetsTechnicalCriteria(j);
+            const isPartial = (meetsQualification(resolvedUser, j) || meetsAge(resolvedUser, j)) && !(meetsQualification(resolvedUser, j) && meetsAge(resolvedUser, j)) && meetsTechnicalCriteria(resolvedUser, j);
             if (isPartial) strictPartial.push(j);
         }
-        if (j.form_status === 'UPCOMING' && meetsTechnicalCriteria(j)) {
+        if (j.form_status === 'UPCOMING' && meetsTechnicalCriteria(resolvedUser, j)) {
             broadlyUpcoming.push(j);
         }
     }

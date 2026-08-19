@@ -265,19 +265,35 @@ function meetsStateCriteria(user, job) {
     return false;
 }
 
-function meetsTechnicalCriteria(job) {
-    const textToSearch = (job.job_name + ' ' + job.organization);
-    const isHighlyTechnical = /(?:junior engineer|assistant engineer|ae\/je|\bAE\b|\bJE\b|b\.tech|\bbtech\b|m\.tech|\bmtech\b|diploma in|\bITI\b|nursing|medical officer|\bMBBS\b)/i.test(textToSearch);
-    return !isHighlyTechnical;
+function meetsTechnicalCriteria(user, job) {
+    const textToSearch = ((job.job_name || '') + ' ' + (job.organization || '')).toLowerCase();
+    const isHighlyTechnical = /(?:junior engineer|assistant engineer|ae\/je|\bae\b|\bje\b|b\.tech|\bbtech\b|m\.tech|\bmtech\b|diploma in|\biti\b|nursing|medical officer|\bmbbs\b)/i.test(textToSearch);
+    
+    if (!isHighlyTechnical) return true;
+    if (!user || !user.qualification_type) return false;
+    
+    const userQual = user.qualification_type.toLowerCase();
+    return userQual.includes('b.tech') || 
+           userQual.includes('b.e.') || 
+           userQual.includes('m.tech') || 
+           userQual.includes('diploma') ||
+           userQual.includes('nursing') ||
+           userQual.includes('medical') ||
+           userQual.includes('iti');
 }
 
 function meetsAge(user, job) {
-    // If user has not specified their age, do not hard-block recommendations
     if (!user.age || user.age === 0) return true;
 
     const minAge = job.minimum_age ? Number(job.minimum_age) : 0;
-    const maxAge = job.maximum_age ? Number(job.maximum_age) : 100;
+    let maxAge = job.maximum_age ? Number(job.maximum_age) : 100;
     const userAge = Number(user.age);
+
+    if (user.category === 'OBC') {
+        maxAge += 3;
+    } else if (user.category === 'SC' || user.category === 'ST') {
+        maxAge += 5;
+    }
 
     return userAge >= minAge && userAge <= maxAge;
 }
@@ -564,12 +580,12 @@ router.get('/eligible', auth, async (req, res) => {
             if (!isJobVerified(j)) continue; // Strictly filter out unverified/placeholder exams
 
             if (hasCompleteProfile) {
-                if (meetsQualification(user, j) && meetsAge(user, j) && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j)) {
+                if (meetsQualification(user, j) && meetsAge(user, j) && meetsTechnicalCriteria(user, j) && meetsStateCriteria(user, j)) {
                     allEligible.push(j);
                 }
             }
             // Broad fallback only used for incomplete profiles
-            if (!hasCompleteProfile && (j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j)) {
+            if (!hasCompleteProfile && (j.form_status === 'LIVE' || j.form_status === 'UPCOMING') && meetsTechnicalCriteria(user, j) && meetsStateCriteria(user, j)) {
                 broadlyEligible.push(j);
             }
         }
@@ -628,11 +644,11 @@ router.get('/partial', auth, async (req, res) => {
 
             if (hasCompleteProfile) {
                 // Partial means they meet qualification OR age, but NOT both.
-                const isPartial = (meetsQualification(user, j) || meetsAge(user, j)) && !(meetsQualification(user, j) && meetsAge(user, j)) && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j);
+                const isPartial = (meetsQualification(user, j) || meetsAge(user, j)) && !(meetsQualification(user, j) && meetsAge(user, j)) && meetsTechnicalCriteria(user, j) && meetsStateCriteria(user, j);
                 if (isPartial) allPartial.push(j);
             }
             // Fallback only for incomplete profiles
-            if (!hasCompleteProfile && j.form_status === 'UPCOMING' && meetsTechnicalCriteria(j) && meetsStateCriteria(user, j)) {
+            if (!hasCompleteProfile && j.form_status === 'UPCOMING' && meetsTechnicalCriteria(user, j) && meetsStateCriteria(user, j)) {
                 fallbackJobs.push(j);
             }
         }
