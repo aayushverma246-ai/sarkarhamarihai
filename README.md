@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  🌐 <strong><a href="https://sarkarhamarihai.vercel.app">sarkarhamarihai.app</a></strong>
+  🌐 <strong><a href="https://sarkarhamarihai.vercel.app">sarkarhamarihai</a></strong>
 </p>
 
 <p align="center">
