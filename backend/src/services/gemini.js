@@ -57,7 +57,7 @@ if (NVIDIA_API_KEY) {
  * Calls NVIDIA LLaMA 3.1 8B via OpenAI-compatible API as a fallback when Gemini fails.
  * Returns an object with a .text() method for backward compatibility with Gemini responses.
  */
-async function callNvidiaGlm52(prompt, responseMimeType = null, timeoutMs = 20000) {
+async function callNvidiaLlama31(prompt, responseMimeType = null, timeoutMs = 20000) {
   if (!NVIDIA_API_KEY) {
     throw new Error('NVIDIA_API_KEY not configured — cannot use LLaMA 3.1 8B fallback');
   }
@@ -119,12 +119,7 @@ function tripCircuitBreaker(durationMs = 30000) {
   }
 }
 
-/**
- * Dynamic trial checker (kept for backward compatibility):
- */
-async function isWithinVertexTrial() {
-  return true;
-}
+
 
 /**
  * Dynamic content generator using the new @google/genai SDK.
@@ -180,7 +175,7 @@ async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs
       if ((isTransient || isKeyError) && NVIDIA_API_KEY) {
         console.warn(`[AI] Gemini failed (${err.message}). Falling back to NVIDIA LLaMA 3.1 8B...`);
         try {
-          return await callNvidiaGlm52(prompt, responseMimeType, Math.min(timeoutMs, 20000));
+          return await callNvidiaLlama31(prompt, responseMimeType, Math.min(timeoutMs, 20000));
         } catch (nvidiaErr) {
           console.error(`[AI] NVIDIA fallback also failed: ${nvidiaErr.message}`);
           throw err; // Throw the original Gemini error
@@ -194,7 +189,7 @@ async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs
   // ── No Gemini configured or unhealthy — try NVIDIA directly ──
   if (NVIDIA_API_KEY) {
     console.log('[AI] Gemini unavailable or unhealthy. Using NVIDIA LLaMA 3.1 8B directly.');
-    return await callNvidiaGlm52(prompt, responseMimeType, Math.min(timeoutMs, 20000));
+    return await callNvidiaLlama31(prompt, responseMimeType, Math.min(timeoutMs, 20000));
   }
 
   throw new Error("No AI provider configured or healthy. Please supply GEMINI_API_KEY_NEW or NVIDIA_API_KEY environment variable.");
@@ -942,7 +937,6 @@ module.exports = {
   getEmbeddingDynamic,
   normalizeSyllabus,
   estimateLiveData,
-  isWithinVertexTrial,
   isGeminiHealthy,
   tripCircuitBreaker
 };
