@@ -71,14 +71,17 @@ async function authMiddleware(req, res, next) {
 
     // Strategy 3: Fallback to legacy custom JWT (for existing guest accounts)
     if (!supabaseId) {
-        const legacyJwtSecret = process.env.JWT_SECRET || 'sarkarhamarhai_super_secret_jwt_key_2024_prod';
-        try {
-            const decoded = jwt.verify(token, legacyJwtSecret);
-            req.user = decoded; // { id, email, ... }
-            return next();
-        } catch (err) {
-            return res.status(401).json({ error: 'Invalid or expired token' });
+        const legacyJwtSecret = process.env.JWT_SECRET;
+        if (legacyJwtSecret) {
+            try {
+                const decoded = jwt.verify(token, legacyJwtSecret);
+                req.user = decoded; // { id, email, ... }
+                return next();
+            } catch (err) {
+                // Legacy token invalid — fall through to 401
+            }
         }
+        return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
     // ── Resolve actual database user ID ──

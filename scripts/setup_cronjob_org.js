@@ -20,7 +20,12 @@ if (!apiKey) {
     process.exit(1);
 }
 
-const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+const cronSecret = process.env.CRON_SECRET;
+if (!cronSecret) {
+    console.error('\n[Error] CRON_SECRET environment variable is not set!');
+    console.error('Set it with: export CRON_SECRET=your_secret_here\n');
+    process.exit(1);
+}
 
 const jobsToSetup = [
     {

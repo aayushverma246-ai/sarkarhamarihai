@@ -9,7 +9,8 @@ const { healAllRecords } = require('../../backend/src/engines/deterministic-heal
 module.exports = async (req, res) => {
   const secret = req.query?.secret || '';
   const authHeader = req.headers?.authorization || '';
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1')) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || (authHeader !== `Bearer ${cronSecret}` && secret !== cronSecret)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

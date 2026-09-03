@@ -23,7 +23,7 @@ async function getNormalizedSyllabus(rawText) {
         console.error('Normalization service error:', err.message);
     }
 
-    // Fallback: simple parsing if Vertex AI fails or returns invalid
+    // Fallback: simple parsing if Gemini AI fails or returns invalid
     return [{
         subject: "General",
         topics: [

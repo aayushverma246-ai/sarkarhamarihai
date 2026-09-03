@@ -6,7 +6,7 @@
  * 1. Gemini extracts structured syllabus from exam name/description when syllabus field is sparse
  * 2. Gemini compares source syllabus with candidate exams in batches
  * 3. Hybrid scoring: subject (0.40) + keyword (0.20) + semantic embedding (0.30) + category bonus (0.10), enhanced by Gemini AI (max of local vs Gemini score)
- * 4. Only exams with ≥70% overlap are shown
+ * 4. Only exams with ≥70% overlap are shown (≥30% when user explicitly searches)
  * 5. Rich detailed analysis for each match
  * 
  * Caching: in-memory + Supabase
@@ -1279,7 +1279,7 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     return (order[b.form_status] || 0) - (order[a.form_status] || 0);
   });
 
-  console.log(`[AI v2] Found ${scored.length} exams with ≥70% overlap`);
+  console.log(`[AI v2] Found ${scored.length} exams above threshold (≥70% standard, ≥30% search)`);
 
   // Cap the persistent scored list to the top 50 most relevant matching exams to prevent database cache bloat
   const limitedScored = scored.slice(0, 50);

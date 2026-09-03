@@ -55,7 +55,7 @@ app.get('/api/cron/daily', dailyTask);
 // Seed endpoint - triggers database population
 app.get('/api/seed', async (req, res) => {
     const secret = req.query.secret || req.headers['x-seed-secret'];
-    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1')) {
+    if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     try {
@@ -80,7 +80,7 @@ app.get('/api/seed', async (req, res) => {
 // Call with ?step=1, ?step=2, etc. to process in phases
 app.get('/api/fix-categories', async (req, res) => {
     const secret = req.query.secret || req.headers['x-seed-secret'];
-    if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1')) {
+    if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     const step = parseInt(req.query.step) || 1;

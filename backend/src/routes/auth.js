@@ -104,7 +104,7 @@ function signToken(user) {
     const { password_hash, ...safeProps } = user;
     return jwt.sign(
         safeProps,
-        process.env.JWT_SECRET || 'sarkarhamarhai_super_secret_jwt_key_2024_prod',
+        process.env.JWT_SECRET || (() => { throw new Error('JWT_SECRET environment variable is required'); })(),
         { expiresIn: '30d' }
     );
 }

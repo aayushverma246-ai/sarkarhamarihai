@@ -152,7 +152,7 @@ RULES:
     let parsedText = '';
 
     try {
-        result.logs.push(`[Scraper] Querying Vertex AI/NVIDIA content generation...`);
+        result.logs.push(`[Scraper] Querying Gemini/NVIDIA content generation...`);
         const response = await generateContentDynamic(prompt, "application/json", 15000);
         parsedText = response.text();
     } catch (err) {

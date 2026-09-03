@@ -256,10 +256,11 @@ const sendNotifications = async (db) => {
 };
 
 const statusHandler = async (req, res) => {
-    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) return res.status(500).json({ error: 'CRON_SECRET not configured' });
     const authHeader = req.headers.authorization || '';
     const secret = req.query.secret || authHeader.replace('Bearer ', '');
-    if (secret !== cronSecret && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    if (secret !== cronSecret) return res.status(401).json({ error: 'Unauthorized' });
     try {
         const db = getDb();
         const updated = await withRetry(() => updateStatuses(db));
@@ -271,10 +272,11 @@ const statusHandler = async (req, res) => {
 };
 
 const notifyHandler = async (req, res) => {
-    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) return res.status(500).json({ error: 'CRON_SECRET not configured' });
     const authHeader = req.headers.authorization || '';
     const secret = req.query.secret || authHeader.replace('Bearer ', '');
-    if (secret !== cronSecret && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    if (secret !== cronSecret) return res.status(401).json({ error: 'Unauthorized' });
     try {
         const db = getDb();
         const sent = await withRetry(() => sendNotifications(db));
@@ -286,10 +288,11 @@ const notifyHandler = async (req, res) => {
 };
 
 const dailyTask = async (req, res) => {
-    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) return res.status(500).json({ error: 'CRON_SECRET not configured' });
     const authHeader = req.headers.authorization || '';
     const secret = req.query.secret || authHeader.replace('Bearer ', '');
-    if (secret !== cronSecret && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    if (secret !== cronSecret) return res.status(401).json({ error: 'Unauthorized' });
     try {
         const db = getDb();
         const updated = await withRetry(() => updateStatuses(db));
@@ -303,10 +306,11 @@ const dailyTask = async (req, res) => {
 
 // 3. STATUS CHANGE NOTIFICATION — exams going LIVE, notify "Notify Me" & liked users
 const statusChangeNotify = async (req, res) => {
-    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) return res.status(500).json({ error: 'CRON_SECRET not configured' });
     const authHeader = req.headers.authorization || '';
     const secret = req.query.secret || authHeader.replace('Bearer ', '');
-    if (secret !== cronSecret && req.query.force !== 'true') {
+    if (secret !== cronSecret) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     try {
@@ -389,10 +393,11 @@ const statusChangeNotify = async (req, res) => {
 
 // 4. FINAL CLOSE NOTIFICATION — daily for "Remind Daily" exams about to close
 const finalCloseNotify = async (req, res) => {
-    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) return res.status(500).json({ error: 'CRON_SECRET not configured' });
     const authHeader = req.headers.authorization || '';
     const secret = req.query.secret || authHeader.replace('Bearer ', '');
-    if (secret !== cronSecret && req.query.force !== 'true') {
+    if (secret !== cronSecret) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
     try {
@@ -479,12 +484,13 @@ const finalCloseNotify = async (req, res) => {
 
 // 5. HOURLY SYNC SYSTEM — Central platform sync -> Database merge -> Safe Diff
 const hourlySync = async (req, res) => {
-    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) return res.status(500).json({ error: 'CRON_SECRET not configured' });
     const authHeader = req.headers.authorization || '';
     const secret = req.query.secret || authHeader.replace('Bearer ', '');
 
     // Vercel cron sends Authorization: Bearer <CRON_SECRET>
-    if (secret !== cronSecret && req.query.force !== 'true') {
+    if (secret !== cronSecret) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -574,7 +580,8 @@ const cronHealthHandler = async (req, res) => {
 
 // 7. LOGS — /cron/logs (last 50 execution entries)
 const cronLogsHandler = async (req, res) => {
-    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) return res.status(500).json({ error: 'CRON_SECRET not configured' });
     const authHeader = req.headers.authorization || '';
     const secret = req.query.secret || authHeader.replace('Bearer ', '');
     if (secret !== cronSecret) return res.status(401).json({ error: 'Unauthorized' });
@@ -591,10 +598,11 @@ const cronLogsHandler = async (req, res) => {
 };
 
 const verifyHandler = async (req, res) => {
-    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) return res.status(500).json({ error: 'CRON_SECRET not configured' });
     const authHeader = req.headers.authorization || '';
     const secret = req.query.secret || authHeader.replace('Bearer ', '');
-    if (secret !== cronSecret && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    if (secret !== cronSecret) return res.status(401).json({ error: 'Unauthorized' });
     try {
         const { VerificationEngine } = require('../engines/verification-engine');
         const db = getDb();
@@ -607,10 +615,11 @@ const verifyHandler = async (req, res) => {
 };
 
 const discoveryHandler = async (req, res) => {
-    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) return res.status(500).json({ error: 'CRON_SECRET not configured' });
     const authHeader = req.headers.authorization || '';
     const secret = req.query.secret || authHeader.replace('Bearer ', '');
-    if (secret !== cronSecret && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    if (secret !== cronSecret) return res.status(401).json({ error: 'Unauthorized' });
     try {
         const { discoverMissingJobs } = require('../engines/discovery');
         const missingMatrix = await discoverMissingJobs();
@@ -621,10 +630,11 @@ const discoveryHandler = async (req, res) => {
 };
 
 const healerHandler = async (req, res) => {
-    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) return res.status(500).json({ error: 'CRON_SECRET not configured' });
     const authHeader = req.headers.authorization || '';
     const secret = req.query.secret || authHeader.replace('Bearer ', '');
-    if (secret !== cronSecret && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    if (secret !== cronSecret) return res.status(401).json({ error: 'Unauthorized' });
     try {
         const { healAllRecords } = require('../engines/deterministic-healer');
         const report = await healAllRecords();

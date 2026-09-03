@@ -32,13 +32,15 @@ const auth = require('../middleware/auth');
 
 // Secure hybrid verifier auth middleware
 async function secureVerifierAuth(req, res, next) {
-  const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+  const cronSecret = process.env.CRON_SECRET;
   const authHeader = req.headers.authorization || '';
 
   // 1. Check if it's using the CRON_SECRET (either in query or header)
-  const secret = req.query.secret || (authHeader.startsWith('Bearer ') && authHeader.split(' ')[1] === cronSecret ? cronSecret : '');
-  if (secret === cronSecret) {
-    return next();
+  if (cronSecret) {
+    const secret = req.query.secret || (authHeader.startsWith('Bearer ') && authHeader.split(' ')[1] === cronSecret ? cronSecret : '');
+    if (secret === cronSecret) {
+      return next();
+    }
   }
 
   // 2. Otherwise, check if it's a valid admin session using the standard auth middleware

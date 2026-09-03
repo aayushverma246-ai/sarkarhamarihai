@@ -66,7 +66,7 @@ module.exports = async (req, res) => {
     // Lightweight data fix endpoint — runs SQL directly, no seed module needed
     if (url.pathname === '/api/fix-data') {
         const secret = url.searchParams.get('secret') || req.headers['x-seed-secret'];
-        if (secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1')) {
+        if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
         if (!dbInitialized) {
@@ -207,7 +207,7 @@ module.exports = async (req, res) => {
         if (pathname === '/api/cron/status') {
             const secret = parsed.searchParams.get('secret') || '';
             const authHeader = req.headers?.authorization || '';
-            if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1')) {
+            if (!process.env.CRON_SECRET || (authHeader !== `Bearer ${process.env.CRON_SECRET}` && secret !== process.env.CRON_SECRET)) {
                 return res.status(401).json({ error: 'Unauthorized' });
             }
             try {
@@ -218,7 +218,7 @@ module.exports = async (req, res) => {
         if (pathname === '/api/cron/notifications') {
             const secret = parsed.searchParams.get('secret') || '';
             const authHeader = req.headers?.authorization || '';
-            if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && secret !== (process.env.CRON_SECRET || 'sarkar_cron_key_v1')) {
+            if (!process.env.CRON_SECRET || (authHeader !== `Bearer ${process.env.CRON_SECRET}` && secret !== process.env.CRON_SECRET)) {
                 return res.status(401).json({ error: 'Unauthorized' });
             }
             try {

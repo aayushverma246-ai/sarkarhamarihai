@@ -3,7 +3,7 @@
  *
  * This service implements a production-grade AI layer:
  *  - Primary: Google GenAI SDK (@google/genai) with Gemini API key.
- *  - Fallback: GCP Vertex AI Enterprise SDK (for Cloud Run / GKE with IAM).
+ *  - Fallback: NVIDIA LLaMA 3.1 8B via OpenAI-compatible API.
  *  - Automatically handles rate limits (429s), network issues, and API key sanitization.
  */
 'use strict';

@@ -54,7 +54,7 @@ SarkarHamariHai is a secure, high-performance aggregator for competitive exams a
 - **Evening AI Coach & Streaks:** Logs study logs, tracks consecutive streaks, and delivers motivational debriefs.
 
 ### 5. Automated Notification Hub & Live Tracking
-- **Live Alerts:** Real-time push alerts warn candidates about upcoming deadlines, form openings, and status updates for saved and targeted exams.
+- **Live Alerts:** In-app alerts warn candidates about upcoming deadlines, form openings, and status updates for saved and targeted exams.
 - **Exam Target Reminders:** Sends alerts when notifications change or exams you have saved transition to live application status.
 
 ### 6. Official Domain Link Resolver
@@ -91,7 +91,7 @@ graph TD
 - **Frontend** — React 19, Vite, Tailwind CSS v4, Framer Motion, Redux Toolkit
 - **Backend** — Node.js (CommonJS), Express, Vercel Serverless Functions
 - **Database** — PostgreSQL via Supabase DB Adapter (pg TCP pool with REST fallback)
-- **AI Core** — Google GenAI SDK (`@google/genai` Gemini 2.5), Vertex AI, NVIDIA LLaMA 3.1 8B Fallback
+- **AI Core** — Google GenAI SDK (`@google/genai` Gemini 2.5), NVIDIA LLaMA 3.1 8B Fallback
 - **Scheduling** — Cron-Job.org / Vercel Serverless Crons
 
 ---
