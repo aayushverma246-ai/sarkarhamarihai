@@ -16,10 +16,15 @@ async function authMiddleware(req, res, next) {
     }
     const token = authHeader.split(' ')[1];
 
-    // Allow mock guest tokens through (offline mode)
+    // Allow mock guest tokens through ONLY in non-production development mode with explicit flag
     if (token.startsWith('mock_guest_token_')) {
-        req.user = { id: 'offline_guest_' + token.split('_').pop(), email: 'guest@sarkar.app' };
-        return next();
+        const isDev = process.env.NODE_ENV !== 'production';
+        const allowMock = process.env.ALLOW_OFFLINE_MOCK_AUTH === 'true';
+        if (isDev && allowMock) {
+            req.user = { id: 'offline_guest_' + token.split('_').pop(), email: 'guest@sarkar.app' };
+            return next();
+        }
+        return res.status(401).json({ error: 'Mock guest tokens are disabled in production' });
     }
 
     let supabaseId = null;

@@ -357,7 +357,8 @@ router.post('/guest', async (req, res) => {
         // 2. If missing, create immediately
         if (!user) {
             const id = 'guest_user_' + Date.now();
-            const password_hash = await bcrypt.hash('guestpass2026', 10);
+            const randomPassword = require('crypto').randomBytes(32).toString('hex');
+            const password_hash = await bcrypt.hash(randomPassword, 10);
             await db.execute({
                 sql: `INSERT INTO users (id, email, password_hash, full_name, age, category, state,
                     qualification_type, qualification_status, current_year, current_semester, expected_graduation_year)

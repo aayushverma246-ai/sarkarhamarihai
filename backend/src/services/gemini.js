@@ -36,7 +36,7 @@ let genAI = null;
 if (apiKey) {
   try {
     genAI = new GoogleGenAI({ apiKey });
-    console.log(`[AI] Google GenAI SDK initialized with key: ${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)} (Model: ${MODEL_NAME})`);
+    console.log(`[AI] Gemini provider configured (Model: ${MODEL_NAME})`);
   } catch (err) {
     console.error('[AI] Failed to initialize GoogleGenAI SDK:', err.message);
   }
@@ -50,7 +50,7 @@ const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || '';
 const NVIDIA_MODEL = 'meta/llama-3.1-8b-instruct';
 
 if (NVIDIA_API_KEY) {
-  console.log(`[AI] NVIDIA LLaMA 3.1 8B fallback configured (Key: ${NVIDIA_API_KEY.substring(0, 12)}...)`);
+  console.log('[AI] NVIDIA LLaMA 3.1 8B fallback configured');
 }
 
 /**
@@ -162,8 +162,7 @@ async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs
       const isKeyError = errMsg.includes('api key not valid') || errMsg.includes('api_key_invalid') || errMsg.includes('invalid api key');
 
       if (isKeyError) {
-        console.error('[AI] CRITICAL: Google API key is INVALID. Check GEMINI_API_KEY_NEW environment variable.');
-        console.error('[AI] Current key prefix:', apiKey ? apiKey.substring(0, 10) + '...' : 'NONE');
+        console.error('[AI] CRITICAL: Google API key is INVALID or unauthorized. Check GEMINI_API_KEY_NEW environment variable.');
       }
 
       // Trip circuit breaker on rate limit / resource exhaustion

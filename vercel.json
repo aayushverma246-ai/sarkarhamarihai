@@ -120,6 +120,14 @@
             "includeFiles": "{backend/src/**,.env,backend/.env}",
             "maxDuration": 90
         },
+        "api/cron/daily.js": {
+            "includeFiles": "{backend/src/**,.env,backend/.env}",
+            "maxDuration": 90
+        },
+        "api/cron/verify.js": {
+            "includeFiles": "{backend/src/**,.env,backend/.env}",
+            "maxDuration": 90
+        },
         "api/setup-tables.js": {
             "includeFiles": "{backend/src/**,.env,backend/.env}",
             "maxDuration": 60

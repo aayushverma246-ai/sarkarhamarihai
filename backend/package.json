@@ -12,7 +12,9 @@
     },
     "dependencies": {
         "@google-cloud/translate": "^9.4.1",
+        "@google/genai": "^2.15.0",
         "@google/generative-ai": "^0.24.1",
+        "@supabase/supabase-js": "^2.104.1",
         "axios": "^1.14.0",
         "bcryptjs": "^3.0.3",
         "cors": "^2.8.5",

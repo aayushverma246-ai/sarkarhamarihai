@@ -492,8 +492,8 @@ function computeLocalScore(sourceStructured, candidateStructured, semanticSim, s
   if (semScore > 0) {
     raw = Math.min(1.0, 0.40 * subjectScore + 0.20 * keywordScore + 0.30 * semScore + catBonus);
   } else {
-    // Local fallback weighting: distribute unused 30% semScore weight
-    raw = Math.min(1.0, 0.60 * subjectScore + 0.40 * keywordScore + catBonus);
+    // Local fallback weighting: distribute 30% semScore maintaining 2:1 subject-to-keyword ratio (60% subject, 30% keyword, 10% category = 100% max)
+    raw = Math.min(1.0, 0.60 * subjectScore + 0.30 * keywordScore + catBonus);
   }
   const pct = Math.round(raw * 100);
 
@@ -1401,4 +1401,4 @@ async function invalidateRecommendationsCache(userId) {
   }
 }
 
-module.exports = { getRecommendations, structureSyllabus, computeGapAnalysis, cosineSimilarity, extractSyllabusWithGemini, invalidateRecommendationsCache, isJobVerified };
+module.exports = { getRecommendations, structureSyllabus, computeGapAnalysis, cosineSimilarity, extractSyllabusWithGemini, invalidateRecommendationsCache, isJobVerified, computeLocalScore };
