@@ -44,22 +44,22 @@ if (apiKey) {
   console.warn('[AI] WARNING: No valid GEMINI_API_KEY_NEW found. AI features will be unavailable.');
 }
 
-// ── NVIDIA GLM 5.2 Fallback Provider ──────────────────────────────────────────
+// ── NVIDIA LLaMA 3.1 8B Fallback Provider ────────────────────────────────────
 const NVIDIA_API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || '';
 const NVIDIA_MODEL = 'meta/llama-3.1-8b-instruct';
 
 if (NVIDIA_API_KEY) {
-  console.log(`[AI] NVIDIA GLM 5.2 fallback configured (Key: ${NVIDIA_API_KEY.substring(0, 12)}...)`);
+  console.log(`[AI] NVIDIA LLaMA 3.1 8B fallback configured (Key: ${NVIDIA_API_KEY.substring(0, 12)}...)`);
 }
 
 /**
- * Calls NVIDIA GLM 5.2 via OpenAI-compatible API as a fallback when Gemini fails.
+ * Calls NVIDIA LLaMA 3.1 8B via OpenAI-compatible API as a fallback when Gemini fails.
  * Returns an object with a .text() method for backward compatibility with Gemini responses.
  */
 async function callNvidiaGlm52(prompt, responseMimeType = null, timeoutMs = 20000) {
   if (!NVIDIA_API_KEY) {
-    throw new Error('NVIDIA_API_KEY not configured — cannot use GLM 5.2 fallback');
+    throw new Error('NVIDIA_API_KEY not configured — cannot use LLaMA 3.1 8B fallback');
   }
 
   const isJsonMode = responseMimeType === 'application/json';
@@ -87,14 +87,14 @@ async function callNvidiaGlm52(prompt, responseMimeType = null, timeoutMs = 2000
 
     const text = response.data?.choices?.[0]?.message?.content || '';
     if (!text) {
-      throw new Error('NVIDIA GLM 5.2 returned empty response');
+      throw new Error('NVIDIA LLaMA 3.1 8B returned empty response');
     }
 
-    console.log(`[AI Fallback: NVIDIA GLM 5.2] Success — ${text.length} chars`);
+    console.log(`[AI Fallback: NVIDIA LLaMA 3.1 8B] Success — ${text.length} chars`);
     return { text: () => text };
   } catch (err) {
     const status = err.response?.status;
-    console.error(`[AI Fallback: NVIDIA GLM 5.2] Failed (HTTP ${status || 'N/A'}): ${err.message}`);
+    console.error(`[AI Fallback: NVIDIA LLaMA 3.1 8B] Failed (HTTP ${status || 'N/A'}): ${err.message}`);
     throw err;
   }
 }
@@ -176,9 +176,9 @@ async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs
         tripCircuitBreaker(30000);
       }
 
-      // ── Fallback to NVIDIA GLM 5.2 on transient/quota/key errors ──
+      // ── Fallback to NVIDIA LLaMA 3.1 8B on transient/quota/key errors ──
       if ((isTransient || isKeyError) && NVIDIA_API_KEY) {
-        console.warn(`[AI] Gemini failed (${err.message}). Falling back to NVIDIA GLM 5.2...`);
+        console.warn(`[AI] Gemini failed (${err.message}). Falling back to NVIDIA LLaMA 3.1 8B...`);
         try {
           return await callNvidiaGlm52(prompt, responseMimeType, Math.min(timeoutMs, 20000));
         } catch (nvidiaErr) {
@@ -193,7 +193,7 @@ async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs
 
   // ── No Gemini configured or unhealthy — try NVIDIA directly ──
   if (NVIDIA_API_KEY) {
-    console.log('[AI] Gemini unavailable or unhealthy. Using NVIDIA GLM 5.2 directly.');
+    console.log('[AI] Gemini unavailable or unhealthy. Using NVIDIA LLaMA 3.1 8B directly.');
     return await callNvidiaGlm52(prompt, responseMimeType, Math.min(timeoutMs, 20000));
   }
 

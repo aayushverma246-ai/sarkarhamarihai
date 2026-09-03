@@ -5,7 +5,7 @@
  * ARCHITECTURE:
  * 1. Gemini extracts structured syllabus from exam name/description when syllabus field is sparse
  * 2. Gemini compares source syllabus with candidate exams in batches
- * 3. Hybrid scoring: keyword (0.2) + subject (0.3) + Gemini AI comparison (0.5)
+ * 3. Hybrid scoring: subject (0.40) + keyword (0.20) + semantic embedding (0.30) + category bonus (0.10), enhanced by Gemini AI (max of local vs Gemini score)
  * 4. Only exams with ≥70% overlap are shown
  * 5. Rich detailed analysis for each match
  * 

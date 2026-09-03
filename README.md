@@ -33,7 +33,7 @@ SarkarHamariHai is a secure, high-performance aggregator for competitive exams a
 ## Core Product Features
 
 ### 1. Large-Scale Exam Catalog
-- **17,000+ Indexed Records:** Houses a comprehensive database of competitive government exams from official sources, categorized into 25 canonical sectors.
+- **17,000+ Indexed Records:** Houses a comprehensive database of competitive government exams from official sources, categorized into 22 canonical sectors.
 - **On-the-Fly Category Correction:** Re-classifies tagging errors using smart regex overrides (e.g. correctly re-tagging State PSC civil service exams from UPSC, classifying Teaching/Police/Engineering/Healthcare/Judiciary based on title keywords).
 - **Inferred Regional State Mapping:** Automatically extracts regional state identifiers from titles/organizations, overriding general "All India" tags on state-specific posts.
 
@@ -91,7 +91,7 @@ graph TD
 - **Frontend** — React 19, Vite, Tailwind CSS v4, Framer Motion, Redux Toolkit
 - **Backend** — Node.js (CommonJS), Express, Vercel Serverless Functions
 - **Database** — PostgreSQL via Supabase DB Adapter (pg TCP pool with REST fallback)
-- **AI Core** — Google GenAI SDK (`@google/genai` Gemini 2.5), Vertex AI, Nvidia GLM 5.2 Fallback
+- **AI Core** — Google GenAI SDK (`@google/genai` Gemini 2.5), Vertex AI, NVIDIA LLaMA 3.1 8B Fallback
 - **Scheduling** — Cron-Job.org / Vercel Serverless Crons
 
 ---
