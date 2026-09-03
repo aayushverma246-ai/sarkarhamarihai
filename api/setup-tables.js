@@ -2,7 +2,8 @@
 // Uses Supabase Management API (db.sql endpoint)
 module.exports = async (req, res) => {
   const secret = req.query.secret;
-  if (secret !== 'sarkar_cron_key_v1') {
+  const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+  if (secret !== cronSecret) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
