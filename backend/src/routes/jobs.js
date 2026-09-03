@@ -16,176 +16,10 @@ function setCachedResult(key, data) {
     _serverCache[key] = { data, ts: Date.now() };
 }
 
+const { getTodayIST, computeFormStatus, inferStateFromName, withStatus, MINIMAL_COLUMNS, serializeMinimalJob } = require('../utils/job-serializer');
+
 function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
-}
-
-// Compute form_status from dates (using IST to avoid timezone flickering)
-// Pre-compute today's date string once for all jobs
-const getTodayIST = () => {
-    const today = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000;
-    const istDate = new Date(today.getTime() + istOffset);
-    return istDate.toISOString().split('T')[0];
-};
-
-function computeFormStatus(job, todayStr) {
-    const start = job.application_start_date;
-    const end = job.application_end_date;
-
-    if (todayStr < start) return 'UPCOMING';
-    if (todayStr <= end) return 'LIVE';
-
-    // Simple day difference calculation
-    const endParts = end.split('-').map(Number);
-    const todayParts = todayStr.split('-').map(Number);
-    const endDays = endParts[0] * 365 + endParts[1] * 30 + endParts[2];
-    const todayDays = todayParts[0] * 365 + todayParts[1] * 30 + todayParts[2];
-    const diffDays = todayDays - endDays;
-
-    if (diffDays <= 30) return 'RECENTLY_CLOSED';
-    return 'CLOSED';
-}
-
-// ── State name patterns for inferring state from job name ──
-const _STATE_NAME_PATTERNS = CANONICAL_STATES.map(s => ({
-    name: s,
-    re: new RegExp('\\b' + s.replace(/[&]/g, '\\&').replace(/\s+/g, '\\s+') + '\\b', 'i')
-}));
-// Add common abbreviations
-const _STATE_ABBR_MAP = {
-    'AP': 'Andhra Pradesh', 'AR': 'Arunachal Pradesh', 'AS': 'Assam',
-    'BR': 'Bihar', 'CG': 'Chhattisgarh', 'GA': 'Goa', 'GJ': 'Gujarat',
-    'HR': 'Haryana', 'HP': 'Himachal Pradesh', 'JH': 'Jharkhand',
-    'KA': 'Karnataka', 'KL': 'Kerala', 'MP': 'Madhya Pradesh',
-    'MH': 'Maharashtra', 'MN': 'Manipur', 'ML': 'Meghalaya',
-    'MZ': 'Mizoram', 'NL': 'Nagaland', 'OD': 'Odisha', 'PB': 'Punjab',
-    'RJ': 'Rajasthan', 'SK': 'Sikkim', 'TN': 'Tamil Nadu',
-    'TS': 'Telangana', 'TR': 'Tripura', 'UP': 'Uttar Pradesh',
-    'UK': 'Uttarakhand', 'WB': 'West Bengal', 'DL': 'Delhi',
-    'J&K': 'Jammu & Kashmir', 'JK': 'Jammu & Kashmir',
-};
-
-// State PSC organization patterns — these are always State PSCs, never UPSC
-const _STATE_PSC_ORG_RE = /\b(?:APPSC|APSC|BPSC|CGPSC|DSSSB|GPSC|HPSC|HPPSC|JPSC|KPSC|MPPSC|MPSC|NPSC|OPSC|PPSC|RPSC|SPSC|TNPSC|TSPSC|TPSC|UPPSC|UKPSC|WBPSC|JKPSC)\b/i;
-const _STATE_PSC_ORG_LONG_RE = /\bstate\s+public\s+service|public\s+service\s+commission\b/i;
-const _STATE_CIVIL_SERVICES_RE = /\bstate\s+civil\s+services?\b|\bstate\s+services?\b/i;
-
-/**
- * Infer state from job name. Returns canonical state name or null.
- */
-function inferStateFromName(jobName, org) {
-    const combined = ((jobName || '') + ' ' + (org || '')).toLowerCase();
-    for (const { name, re } of _STATE_NAME_PATTERNS) {
-        const lowerName = name.toLowerCase();
-        if (combined.includes(lowerName)) {
-            if (re.test(combined)) return name;
-        }
-    }
-    return null;
-}
-
-function withStatus(job, todayStr) {
-    const isVerified = Boolean(job.job_name && job.organization && job.official_application_link?.length > 5);
-    const lastUpdated = job.created_at || todayStr;
-
-    let parsedStates = [];
-    if (job.states && job.states !== '[]') {
-        try {
-            parsedStates = JSON.parse(job.states);
-        } catch (_) { }
-    }
-
-    const name = (job.job_name || '').toLowerCase();
-    const org = (job.organization || '');
-
-    // ── On-the-fly normalization so filters ALWAYS match canonical values ──
-    let normalizedCategory = job.job_category;
-    if (normalizedCategory) {
-        const canonical = normalizeCategory(normalizedCategory);
-        if (canonical) normalizedCategory = canonical;
-
-        // ── FIX: Reclassify UPSC-tagged state PSC exams ──
-        // State Civil Services exams (e.g. "Bihar State Civil Services 2026" by BPSC)
-        // were erroneously seeded as UPSC. Detect and fix them.
-        if (normalizedCategory === 'UPSC') {
-            const isStatePSCOrg = _STATE_PSC_ORG_RE.test(org) && !/\bUPSC\b|Union Public Service Commission/i.test(org);
-            const isStateCivilServices = _STATE_CIVIL_SERVICES_RE.test(name);
-            const hasStatePSCOrgLong = _STATE_PSC_ORG_LONG_RE.test(org) && !/\bUnion\b/i.test(org);
-
-            if (isStateCivilServices || (isStatePSCOrg && !name.startsWith('upsc ')) || hasStatePSCOrgLong) {
-                normalizedCategory = 'State PSCs';
-            }
-        }
-
-        // Smart re-categorization based on job name for state exams
-        // that were blanket-tagged as 'State Government' or 'State PSCs'
-        if (normalizedCategory === 'State Government' || normalizedCategory === 'State PSCs') {
-            if (/\bpsc\b|\bcivil services\b|\bstate services\b/.test(name)) {
-                normalizedCategory = 'State PSCs';
-            } else if (/\bpolice\b|\bconstable\b|\bsub inspector\b|\b(?:si)\b|\bhead constable\b|\bjail\b|\bprison\b|\bfire\s*(?:service|man)\b|\btraffic police\b|\barmed police\b|\bcyber\s*(?:crime|police)\b|\bhome guard\b|\bexcise\b/.test(name)) {
-                normalizedCategory = 'Police';
-            } else if (/\btet\b|\bteacher\b|\btgt\b|\bpgt\b|\bprimary teacher\b|\bschool\b|\beducation\b|\blab assistant\b/.test(name)) {
-                normalizedCategory = 'Teaching';
-            } else if (/\bforest\b|\bvan rakshak\b|\bwildlife\b|\bpollution\b/.test(name)) {
-                normalizedCategory = 'Forest & Environment';
-            } else if (/\bnhm\b|\bnursing\b|\bstaff nurse\b|\bcho\b|\banm\b|\bgnm\b|\bpharmacist\b|\bmedical officer\b|\bsurgeon\b|\bhospital\b|\bhealth\b/.test(name)) {
-                normalizedCategory = 'Healthcare';
-            } else if (/\bcourt\b|\bjudge\b|\bjudicial\b|\bsteno.*court\b|\bpeon.*court\b|\bbailiff\b/.test(name)) {
-                normalizedCategory = 'Judiciary';
-            } else if (/\belectricity\b|\bengineer\b|\bje\b|\bjunior engineer\b|\bwater board\b/.test(name)) {
-                normalizedCategory = 'Engineering';
-            } else if (/\bcooperative\b|\bbank clerk\b/.test(name)) {
-                normalizedCategory = 'Cooperative';
-            } else if (/\bagriculture\b|\bhorticulture\b|\bdairy\b|\bfisheries\b|\banimal husbandry\b|\bsericulture\b/.test(name)) {
-                normalizedCategory = 'Agriculture';
-            } else if (/\btransport\b|\bdriver\b|\bconductor\b|\brto\b|\bmotor vehicle\b|\broadways\b/.test(name)) {
-                normalizedCategory = 'State Government';
-            }
-            // else keep as State Government for generic state exams
-        }
-    }
-
-    let normalizedState = job.state;
-    if (normalizedState) {
-        const canonical = normalizeState(normalizedState);
-        if (canonical) normalizedState = canonical;
-    }
-
-    // ── FIX: Infer correct state for state-specific jobs tagged "All India" ──
-    // Jobs like "Andhra Pradesh - Gram Panchayat Data Entry Operator 2026" with
-    // org "Andhra Pradesh State Government" should NOT be state: "All India".
-    if (normalizedState === 'All India') {
-        // Check if the org clearly names a state (e.g. "Andhra Pradesh State Government")
-        const inferredFromOrg = inferStateFromName('', org);
-        const inferredFromName = inferStateFromName(job.job_name, '');
-
-        // Only override if the job is clearly state-specific (org contains a state name
-        // AND it's a state government/PSC org, not a national org with a state chapter)
-        if (inferredFromOrg && /state government|psc|state\s/i.test(org)) {
-            normalizedState = inferredFromOrg;
-        } else if (inferredFromName && normalizedCategory === 'State PSCs') {
-            // State PSC exams always belong to a specific state
-            normalizedState = inferredFromName;
-        }
-    }
-
-    // Normalize states array entries too
-    const normalizedStatesArr = parsedStates.map(s => {
-        const c = normalizeState(s);
-        return c || s;
-    });
-
-    return {
-        ...job,
-        job_category: normalizedCategory || job.job_category,
-        state: normalizedState || job.state,
-        states: normalizedStatesArr,
-        form_status: computeFormStatus(job, todayStr),
-        allows_final_year_students: !!job.allows_final_year_students,
-        is_verified: isVerified,
-        last_updated: lastUpdated
-    };
 }
 
 function getQualificationLevel(qualStr) {
@@ -397,8 +231,8 @@ router.get('/all-minimal', async (req, res) => {
             if (row.id && !seen.has(row.id)) { seen.add(row.id); unique.push(row); }
         }
 
-        // Columns definition to compress JSON payload (drops from 11.3MB to ~2.5MB)
-        const columns = ['id', 'job_name', 'organization', 'qualification_required', 'allows_final_year_students', 'minimum_age', 'maximum_age', 'job_category', 'state', 'states', 'application_start_date', 'application_end_date', 'vacancies', 'official_application_link', 'last_verified_at', 'created_at', 'form_status', 'is_verified', 'last_updated'];
+        // Columns definition used to reduce JSON payload size
+        const columns = MINIMAL_COLUMNS;
 
         const rows = unique.map(j => {
             const statusJob = withStatus(j, todayStr);
