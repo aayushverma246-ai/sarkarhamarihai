@@ -45,13 +45,7 @@ export default function DashboardPage() {
   const [criticalError, setCriticalError] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Startup-grade Auto Recovery Array
-  useEffect(() => {
-    if (criticalError) {
-      const timeoutId = setTimeout(() => window.location.reload(), 15000);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [criticalError]);
+
 
   // ── Scroll & State Persistence Helpers ──────────────────────
   const [restoredState] = useState(() => {
@@ -399,7 +393,6 @@ export default function DashboardPage() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
               Retry Connection
             </button>
-            <p className="text-xs text-red-500/70 font-medium">Auto-retrying in 15s...</p>
           </div>
         </div>
       </div>

@@ -28,19 +28,36 @@ function getScheduler() {
   return _scheduler;
 }
 
-// Auth middleware
-function authCheck(req, res, next) {
+const auth = require('../middleware/auth');
+
+// Secure hybrid verifier auth middleware
+async function secureVerifierAuth(req, res, next) {
   const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
   const authHeader = req.headers.authorization || '';
-  const secret = req.query.secret || authHeader.replace('Bearer ', '');
-  if (secret !== cronSecret && req.query.force !== 'true') {
-    return res.status(401).json({ error: 'Unauthorized — provide ?secret=YOUR_CRON_SECRET' });
+
+  // 1. Check if it's using the CRON_SECRET (either in query or header)
+  const secret = req.query.secret || (authHeader.startsWith('Bearer ') && authHeader.split(' ')[1] === cronSecret ? cronSecret : '');
+  if (secret === cronSecret) {
+    return next();
   }
-  next();
+
+  // 2. Otherwise, check if it's a valid admin session using the standard auth middleware
+  if (authHeader.startsWith('Bearer ')) {
+    try {
+      await auth(req, res, () => {});
+      if (req.user && req.user.email === 'aayushverma246@gmail.com') {
+        return next();
+      }
+    } catch (_) {
+      // Fall through to 401
+    }
+  }
+
+  return res.status(401).json({ error: 'Unauthorized — Admin access required' });
 }
 
 // GET /api/verifier/run — Trigger full verification cycle
-router.get('/run', authCheck, async (req, res) => {
+router.get('/run', secureVerifierAuth, async (req, res) => {
   try {
     const engine = getEngine();
     const report = await engine.runFullVerification();
@@ -51,7 +68,7 @@ router.get('/run', authCheck, async (req, res) => {
 });
 
 // GET /api/verifier/incremental — Trigger incremental verification
-router.get('/incremental', authCheck, async (req, res) => {
+router.get('/incremental', secureVerifierAuth, async (req, res) => {
   try {
     const engine = getEngine();
     const limit = parseInt(req.query.limit) || 200;
@@ -63,7 +80,7 @@ router.get('/incremental', authCheck, async (req, res) => {
 });
 
 // GET /api/verifier/deep-scrape — Trigger deep scraping verification
-router.get('/deep-scrape', authCheck, async (req, res) => {
+router.get('/deep-scrape', secureVerifierAuth, async (req, res) => {
   try {
     const engine = getEngine();
     const limit = parseInt(req.query.limit) || 10;
@@ -75,7 +92,7 @@ router.get('/deep-scrape', authCheck, async (req, res) => {
 });
 
 // GET /api/verifier/sync — Trigger delta sync with scraper data
-router.get('/sync', authCheck, async (req, res) => {
+router.get('/sync', secureVerifierAuth, async (req, res) => {
   try {
     const db = getDb();
     const syncEngine = new SyncEngine(db, { dryRun: req.query.dry === 'true' });
@@ -89,7 +106,7 @@ router.get('/sync', authCheck, async (req, res) => {
 });
 
 // GET /api/verifier/stale — Detect and fix stale records
-router.get('/stale', authCheck, async (req, res) => {
+router.get('/stale', secureVerifierAuth, async (req, res) => {
   try {
     const engine = getEngine();
     const limit = parseInt(req.query.limit) || 100;
@@ -101,7 +118,7 @@ router.get('/stale', authCheck, async (req, res) => {
 });
 
 // GET /api/verifier/status — Current verifier status + metrics
-router.get('/status', async (req, res) => {
+router.get('/status', secureVerifierAuth, async (req, res) => {
   try {
     const scheduler = getScheduler();
     res.json({
@@ -118,7 +135,7 @@ router.get('/status', async (req, res) => {
 });
 
 // GET /api/verifier/report — Latest daily summary
-router.get('/report', async (req, res) => {
+router.get('/report', secureVerifierAuth, async (req, res) => {
   try {
     const summary = generateDailySummary();
     res.json({ success: true, summary });
@@ -128,25 +145,25 @@ router.get('/report', async (req, res) => {
 });
 
 // GET /api/verifier/logs — Verification audit logs
-router.get('/logs', authCheck, async (req, res) => {
+router.get('/logs', secureVerifierAuth, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   res.json({ logs: getRecentLogs(limit), total: getRecentLogs(200).length });
 });
 
 // GET /api/verifier/mismatches — Recent mismatches
-router.get('/mismatches', authCheck, async (req, res) => {
+router.get('/mismatches', secureVerifierAuth, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 100, 500);
   res.json({ mismatches: getRecentMismatches(limit) });
 });
 
 // GET /api/verifier/alerts — Active alerts
-router.get('/alerts', async (req, res) => {
+router.get('/alerts', secureVerifierAuth, async (req, res) => {
   const unackOnly = req.query.unacknowledged === 'true';
   res.json({ alerts: getAlerts(unackOnly) });
 });
 
 // POST /api/verifier/alerts/:id/acknowledge — Acknowledge an alert
-router.post('/alerts/:id/acknowledge', authCheck, async (req, res) => {
+router.post('/alerts/:id/acknowledge', secureVerifierAuth, async (req, res) => {
   const ok = acknowledgeAlert(req.params.id);
   res.json({ success: ok });
 });
@@ -163,7 +180,7 @@ router.get('/health', async (req, res) => {
 });
 
 // GET /api/verifier/dashboard-data — Aggregated dashboard metrics
-router.get('/dashboard-data', async (req, res) => {
+router.get('/dashboard-data', secureVerifierAuth, async (req, res) => {
   try {
     const engine = getEngine();
     const data = await engine.getDashboardData();
@@ -179,21 +196,21 @@ router.get('/dashboard-data', async (req, res) => {
 });
 
 // GET /api/verifier/scheduler/start — Start the scheduler
-router.get('/scheduler/start', authCheck, async (req, res) => {
+router.get('/scheduler/start', secureVerifierAuth, async (req, res) => {
   const scheduler = getScheduler();
   scheduler.start();
   res.json({ success: true, message: 'Scheduler started', tasks: scheduler.getStatus() });
 });
 
 // GET /api/verifier/scheduler/stop — Stop the scheduler
-router.get('/scheduler/stop', authCheck, async (req, res) => {
+router.get('/scheduler/stop', secureVerifierAuth, async (req, res) => {
   const scheduler = getScheduler();
   scheduler.stop();
   res.json({ success: true, message: 'Scheduler stopped' });
 });
 
 // GET /api/verifier/scheduler/logs — Scheduler execution log
-router.get('/scheduler/logs', authCheck, async (req, res) => {
+router.get('/scheduler/logs', secureVerifierAuth, async (req, res) => {
   const scheduler = getScheduler();
   const limit = parseInt(req.query.limit) || 50;
   res.json({ logs: scheduler.getExecutionLog(limit) });

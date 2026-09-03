@@ -11,6 +11,7 @@ import RealtimeNotificationBanner from './components/RealtimeNotificationBanner'
 const LoginPage = React.lazy(() => import('./pages/LoginPage'));
 const SignupPage = React.lazy(() => import('./pages/SignupPage'));
 const AuthCallbackPage = React.lazy(() => import('./pages/AuthCallbackPage'));
+const ResetPasswordPage = React.lazy(() => import('./pages/ResetPasswordPage'));
 const PrivacyPage = React.lazy(() => import('./pages/PrivacyPage'));
 const TermsPage = React.lazy(() => import('./pages/TermsPage'));
 const DashboardPage = React.lazy(() => import('./pages/DashboardPage'));
@@ -155,6 +156,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
           {/* Keep landing page accessible via direct URL for web */}
@@ -166,7 +168,7 @@ export default function App() {
           <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
           <Route path="/jobs/:id" element={<ProtectedRoute><JobDetailsPage /></ProtectedRoute>} />
           <Route path="/tracker" element={<ProtectedRoute><TrackerPage /></ProtectedRoute>} />
-          <Route path="/verifier" element={<VerifierDashboard />} />
+          <Route path="/verifier" element={<AdminRoute><VerifierDashboard /></AdminRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

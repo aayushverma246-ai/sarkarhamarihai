@@ -590,12 +590,60 @@ const cronLogsHandler = async (req, res) => {
     });
 };
 
+const verifyHandler = async (req, res) => {
+    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const authHeader = req.headers.authorization || '';
+    const secret = req.query.secret || authHeader.replace('Bearer ', '');
+    if (secret !== cronSecret && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const { VerificationEngine } = require('../engines/verification-engine');
+        const db = getDb();
+        const engine = new VerificationEngine(db);
+        const report = await engine.runIncrementalVerification(200);
+        res.json({ success: true, report, timestamp: getISTTimestamp() });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+const discoveryHandler = async (req, res) => {
+    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const authHeader = req.headers.authorization || '';
+    const secret = req.query.secret || authHeader.replace('Bearer ', '');
+    if (secret !== cronSecret && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const { discoverMissingJobs } = require('../engines/discovery');
+        const missingMatrix = await discoverMissingJobs();
+        res.json({ success: true, count: missingMatrix.length, missingMatrix, timestamp: getISTTimestamp() });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+const healerHandler = async (req, res) => {
+    const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+    const authHeader = req.headers.authorization || '';
+    const secret = req.query.secret || authHeader.replace('Bearer ', '');
+    if (secret !== cronSecret && req.query.force !== 'true') return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const { healAllRecords } = require('../engines/deterministic-healer');
+        const report = await healAllRecords();
+        res.json({ success: true, report, timestamp: getISTTimestamp() });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
 router.get('/status', statusHandler);
 router.get('/notifications', notifyHandler);
 router.get('/daily', dailyTask);
 router.get('/status-change-notify', statusChangeNotify);
 router.get('/final-close-notify', finalCloseNotify);
 router.get('/hourly-sync', hourlySync);
+router.get('/hourly-update', hourlySync); // Alias to avoid 429/404 from cron-job.org
+router.get('/verify', verifyHandler);
+router.get('/discovery', discoveryHandler);
+router.get('/healer', healerHandler);
 router.get('/health', cronHealthHandler);
 router.get('/logs', cronLogsHandler);
 

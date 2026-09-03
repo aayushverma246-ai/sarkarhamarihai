@@ -1,7 +1,26 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { supabase } from '../utils/supabase';
 
 const API_BASE: string = (import.meta as any).env.VITE_API_URL || 'http://localhost:3001/api';
-const CRON_SECRET = (import.meta as any).env.VITE_CRON_SECRET || 'sarkar_cron_key_v1';
+
+async function fetchWithAuth(url: string, options: RequestInit = {}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  
+  const headers = {
+    ...options.headers,
+    'Content-Type': 'application/json',
+  } as Record<string, string>;
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  return fetch(url, {
+    ...options,
+    headers,
+  });
+}
 
 interface DashboardData {
   metrics: any;
@@ -40,7 +59,7 @@ export default function VerifierDashboard() {
 
   const fetchData = useCallback(async () => {
     try {
-      const r = await fetch(`${API_BASE}/verifier/dashboard-data`);
+      const r = await fetchWithAuth(`${API_BASE}/verifier/dashboard-data`);
       const d = await r.json();
       if (d.success !== false) setData(d);
       else setError(d.error || 'Failed to load');
@@ -59,10 +78,10 @@ export default function VerifierDashboard() {
     setActionResult(null);
     try {
       const url = endpoint.includes('scrape')
-        ? `${API_BASE}/audit/${endpoint}?secret=${CRON_SECRET}&force=true`
-        : `${API_BASE}/verifier/${endpoint}?secret=${CRON_SECRET}`;
+        ? `${API_BASE}/audit/${endpoint}`
+        : `${API_BASE}/verifier/${endpoint}`;
 
-      const r = await fetch(url);
+      const r = await fetchWithAuth(url);
       const d = await r.json();
       setActionResult({ label, ...d });
       fetchData();
@@ -78,7 +97,7 @@ export default function VerifierDashboard() {
     setActionLoading('Single Scrape');
     setActionResult(null);
     try {
-      const r = await fetch(`${API_BASE}/audit/scrape-job?id=${singleJobId.trim()}&secret=${CRON_SECRET}&force=true`);
+      const r = await fetchWithAuth(`${API_BASE}/audit/scrape-job?id=${singleJobId.trim()}`);
       const d = await r.json();
       setActionResult({ label: `Single Recalibrate (ID: ${singleJobId})`, ...d });
       fetchData();
@@ -105,11 +124,10 @@ export default function VerifierDashboard() {
       const query = new URLSearchParams({
         job_name: playgroundJob.jobName.trim(),
         organization: playgroundJob.org.trim(),
-        link: playgroundJob.link.trim(),
-        force: 'true'
+        link: playgroundJob.link.trim()
       });
 
-      const r = await fetch(`${API_BASE}/audit/scrape-job?${query.toString()}`);
+      const r = await fetchWithAuth(`${API_BASE}/audit/scrape-job?${query.toString()}`);
       const d = await r.json();
 
       if (d.success && d.data) {

@@ -63,6 +63,14 @@ export default function AuthCallbackPage() {
                 if (sessionError) throw sessionError;
                 if (!session) throw new Error('No session found. Please try logging in again.');
 
+                const isRecovery = (hash && hash.includes('type=recovery')) || (search && search.includes('type=recovery'));
+                if (isRecovery) {
+                    if (mounted) {
+                        navigate('/reset-password', { replace: true });
+                    }
+                    return;
+                }
+
                 // Check if there's pending profile data from signup
                 let pendingProfile = null;
                 try {

@@ -78,6 +78,9 @@ const directOrgPortals = {
   'Andhra Pradesh Public Service Commission': 'https://psc.ap.gov.in',
   'Puducherry Public Service Commission': 'https://psc.py.gov.in',
   'IREDA Limited': 'https://ireda.in',
+  'Airports Authority of India': 'https://www.aai.aero',
+  'Airports Authority of India (AAI)': 'https://www.aai.aero',
+  'AAI': 'https://www.aai.aero',
   'Assam Cooperative Bank': 'https://assambank.in',
   'Madhya Pradesh Education Board': 'https://mpbse.nic.in',
   'Telangana Police Department': 'https://tslprb.in',
@@ -282,23 +285,8 @@ function resolveLink(orgName, jobName, state) {
   const combined = `${j} ${o}`;
 
   // Special Check: Handle Railway Recruitment Board (RRB) zones dynamically
-  if (o.includes('rrb') || o.includes('railway recruitment board') || o.includes('indian railways')) {
-    const zones = {
-      'ahmedabad': 'ahmedabad', 'ajmer': 'ajmer', 'allahabad': 'allahabad', 'prayagraj': 'allahabad',
-      'bangalore': 'bengaluru', 'bengaluru': 'bengaluru', 'bhopal': 'bhopal',
-      'bhubaneswar': 'bhubaneswar', 'bilaspur': 'bilaspur', 'chandigarh': 'chandigarh',
-      'chennai': 'chennai', 'gorakhpur': 'gorakhpur', 'guwahati': 'guwahati',
-      'jammu': 'jammu', 'kolkata': 'kolkata', 'malda': 'malda',
-      'mumbai': 'mumbai', 'muzaffarpur': 'muzaffarpur', 'patna': 'patna',
-      'ranchi': 'ranchi', 'secunderabad': 'secunderabad', 'siliguri': 'siliguri',
-      'thiruvananthapuram': 'trivandrum', 'trivandrum': 'trivandrum'
-    };
-    for (const [zone, code] of Object.entries(zones)) {
-      if (o.includes(zone) || j.includes(zone)) {
-        return `https://rrb${code}.gov.in`;
-      }
-    }
-    return 'https://indianrailways.gov.in'; // Default fallback
+  if (o.includes('rrb') || o.includes('railway recruitment board') || o.includes('indian railways') || o.includes('railway')) {
+    return 'https://rrb.indianrailways.gov.in';
   }
 
   // 1. Check exact matches in directOrgPortals first

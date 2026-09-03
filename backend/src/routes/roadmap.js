@@ -563,13 +563,22 @@ router.post('/:id/roadmap', auth, async (req, res) => {
         }
 
         // Generate High-Quality Structured Premium AI Roadmap using Gemini
-        const { generatePremiumRoadmapV9 } = require('../services/gemini');
+        const { generatePremiumRoadmapV9, isGeminiHealthy, tripCircuitBreaker } = require('../services/gemini');
         let finalData;
-        try {
-            finalData = await generatePremiumRoadmapV9(userRow, jobRow, jobRow.syllabus || jobRow.job_name || '', targets);
-        } catch (err) {
-            console.warn(`[AI Roadmap] Generation failed, falling back to deterministic: ${err.message}`);
+        if (!isGeminiHealthy()) {
+            console.warn(`[AI Roadmap] Circuit breaker is active. Bypassing Gemini API and using deterministic fallback immediately.`);
             finalData = generateDeterministicRoadmap(userRow, jobRow);
+        } else {
+            try {
+                finalData = await generatePremiumRoadmapV9(userRow, jobRow, jobRow.syllabus || jobRow.job_name || '', targets);
+            } catch (err) {
+                console.warn(`[AI Roadmap] Generation failed, falling back to deterministic: ${err.message}`);
+                const msg = (err.message || '').toLowerCase();
+                if (msg.includes('429') || msg.includes('quota') || msg.includes('rate limit') || msg.includes('resource exhausted')) {
+                    tripCircuitBreaker(30000);
+                }
+                finalData = generateDeterministicRoadmap(userRow, jobRow);
+            }
         }
 
         const responseData = { id: uuidv4(), job_id: jobId, roadmap_content: finalData, is_ready: true, is_permanent: true };

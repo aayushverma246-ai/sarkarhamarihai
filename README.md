@@ -33,12 +33,12 @@ SarkarHamariHai is a secure, high-performance aggregator for competitive exams a
 ## Core Product Features
 
 ### 1. Large-Scale Exam Catalog
-- **17,000+ Indexed Records:** Houses a comprehensive database of competitive government exams from official sources, categorized into 15 canonical sectors.
+- **17,000+ Indexed Records:** Houses a comprehensive database of competitive government exams from official sources, categorized into 25 canonical sectors.
 - **On-the-Fly Category Correction:** Re-classifies tagging errors using smart regex overrides (e.g. correctly re-tagging State PSC civil service exams from UPSC, classifying Teaching/Police/Engineering/Healthcare/Judiciary based on title keywords).
 - **Inferred Regional State Mapping:** Automatically extracts regional state identifiers from titles/organizations, overriding general "All India" tags on state-specific posts.
 
 ### 2. AI Recommendation System (Syllabus Compatibility Engine)
-- **High-Fidelity Hybrid Matcher:** Scores syllabus overlaps by combining keyword matching (20%), subject mapping (30%), semantic embedding similarity vectors (30%), and Gemini structural analysis (50%).
+- **High-Fidelity Hybrid Matcher:** Scores syllabus overlaps using a multi-tiered pipeline: local keyword matching (20%), subject mapping (40%), semantic embedding vectors (30%), and category bonus (10%), enhanced by Gemini AI structural analysis.
 - **Circuit Breaker System:** Prevents rate-limit lockouts by falling back to standard category blueprints (UPSC, SSC, Banking, Railways, etc.) during transient API or quota errors.
 - **Granular Gap Analysis:** Computes matching/missing subjects, difficulty comparisons (Easier/Similar/Harder), and additional study time estimations.
 - **Pre-Filtering Constraints:** Filters out highly technical roles (e.g., specific engineering or nursing posts) for candidates with general backgrounds.

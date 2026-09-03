@@ -25,6 +25,7 @@ app.use('/api/tracker', require('./routes/tracker')); // Tracker feature routes
 app.use('/api/ai', require('./routes/ai')); // NEW AI rebuild route
 app.use('/api/exam', require('./routes/exam')); // NEW Exam dynamic stats routes
 app.use('/api/audit', require('./routes/audit')); // Data audit system
+app.use('/api/verifier', require('./routes/verifier')); // Dynamic Data Verifier System
 
 
 // Schema migrations are managed via independent scripts in production.

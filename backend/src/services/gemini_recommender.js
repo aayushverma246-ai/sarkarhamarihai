@@ -13,28 +13,9 @@
  * Rate control: concurrency limit, retry, dedup
  */
 const { createClient } = require('@supabase/supabase-js');
-const { generateContentDynamic, getEmbeddingDynamic } = require('./gemini');
+const { generateContentDynamic, getEmbeddingDynamic, isGeminiHealthy, tripCircuitBreaker } = require('./gemini');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-// ═══════════════════════════════════════════════════════════════
-// CIRCUIT BREAKER SYSTEM — Handles transient rate limiting (In-Memory Only)
-// ═══════════════════════════════════════════════════════════════
-let _circuitBreakerTrippedUntil = 0;
-
-function isGeminiHealthy() {
-  return Date.now() > _circuitBreakerTrippedUntil;
-}
-
-function tripCircuitBreaker(durationMs = 30000) {
-  // Cap max circuit breaker trip to 30 seconds to prevent prolonged lockouts
-  const cappedDuration = Math.min(durationMs, 30000);
-  const trippedUntil = Date.now() + cappedDuration;
-  if (trippedUntil > _circuitBreakerTrippedUntil) {
-    _circuitBreakerTrippedUntil = trippedUntil;
-    console.warn(`[AI v2] Circuit breaker TRIPPED! Bypassing Gemini API calls for ${Math.round(cappedDuration / 1000)}s.`);
-  }
-}
 
 async function syncCircuitBreakerWithDB(sb) {
   // In-memory only — DB persistence removed to prevent stale DB lockouts
@@ -255,6 +236,7 @@ async function geminiCompareExams(sourceSyllabus, sourceExamNames, targetExams) 
 
   const CHUNK_SIZE = 5;
   const allResults = [];
+  const chunkPromises = [];
 
   for (let start = 0; start < targetExams.length; start += CHUNK_SIZE) {
     const chunk = targetExams.slice(start, start + CHUNK_SIZE);
@@ -271,16 +253,19 @@ async function geminiCompareExams(sourceSyllabus, sourceExamNames, targetExams) 
         uncached.push(t);
       }
     }
-    allResults.push(...cached);
+    
+    if (cached.length > 0) {
+      allResults.push(...cached);
+    }
 
-    if (uncached.length === 0) continue;
+    if (uncached.length > 0) {
+      chunkPromises.push((async () => {
+        try {
+          const examList = uncached.map(e =>
+            `- ID: ${e.id} | Name: ${e.job_name} | Org: ${e.organization || ''} | Syllabus: ${(e.enrichedSyllabus || e.syllabus || e.job_name || '').substring(0, 2500)}`
+          ).join('\n');
 
-    try {
-      const examList = uncached.map(e =>
-        `- ID: ${e.id} | Name: ${e.job_name} | Org: ${e.organization || ''} | Syllabus: ${(e.enrichedSyllabus || e.syllabus || e.job_name || '').substring(0, 2500)}`
-      ).join('\n');
-
-      const prompt = `You are an expert Indian government exam syllabus analyzer. Your task is to PRECISELY compare syllabi.
+          const prompt = `You are an expert Indian government exam syllabus analyzer. Your task is to PRECISELY compare syllabi.
 
 SOURCE EXAMS: ${sortedNames.join(', ')}
 SOURCE SYLLABUS:
@@ -321,95 +306,98 @@ SCORING RULES:
 - Consider actual exam patterns, not just topic names
 - Return ONLY the JSON array.`;
 
-      let lastErr = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-      const response = await generateContentDynamic(prompt, 'application/json', 45000);
-
-          const text = response.text();
-          let parsed;
-          try {
-            parsed = JSON.parse(text);
-          } catch {
-            const match = text.match(/\[[\s\S]*\]/);
-            if (!match) throw new Error('NO_JSON');
-            parsed = JSON.parse(match[0]);
-          }
-
-          const arr = Array.isArray(parsed) ? parsed : (parsed.results || parsed.exams || []);
-          const validated = arr.filter(item => {
-            if (!item || !item.id) return false;
-            if (typeof item.overlap_percentage !== 'number') {
-              item.overlap_percentage = typeof item.similarity === 'number' ? item.similarity : 0;
+          let lastErr = null;
+          // Set retry attempt limit to 2 for Vercel efficiency
+          for (let attempt = 0; attempt < 2; attempt++) {
+            if (!isGeminiHealthy()) {
+              throw new Error('CIRCUIT_BREAKER_ACTIVE');
             }
-            if (!Array.isArray(item.overlapping_topics)) item.overlapping_topics = item.overlapping_subjects || [];
-            if (!Array.isArray(item.missing_topics)) item.missing_topics = [];
-            if (!Array.isArray(item.overlapping_subjects)) item.overlapping_subjects = [];
-            if (!Array.isArray(item.missing_subjects)) item.missing_subjects = [];
-            if (!Array.isArray(item.extra_preparation_needed)) item.extra_preparation_needed = item.missing_topics.slice(0, 5);
-            if (!item.explanation) item.explanation = `${item.overlap_percentage}% syllabus overlap detected.`;
-            if (!item.difficulty_comparison) item.difficulty_comparison = 'similar';
-            if (!item.study_time_estimate) {
-              item.study_time_estimate = item.overlap_percentage >= 85 ? '1-2 weeks' : item.overlap_percentage >= 70 ? '3-4 weeks' : '6-8 weeks';
+            try {
+              // Concurrently run with tighter timeout of 7000ms
+              const response = await generateContentDynamic(prompt, 'application/json', 7000);
+
+              const text = response.text();
+              let parsed;
+              try {
+                parsed = JSON.parse(text);
+              } catch {
+                const match = text.match(/\[[\s\S]*\]/);
+                if (!match) throw new Error('NO_JSON');
+                parsed = JSON.parse(match[0]);
+              }
+
+              const arr = Array.isArray(parsed) ? parsed : (parsed.results || parsed.exams || []);
+              const validated = arr.filter(item => {
+                if (!item || !item.id) return false;
+                if (typeof item.overlap_percentage !== 'number') {
+                  item.overlap_percentage = typeof item.similarity === 'number' ? item.similarity : 0;
+                }
+                if (!Array.isArray(item.overlapping_topics)) item.overlapping_topics = item.overlapping_subjects || [];
+                if (!Array.isArray(item.missing_topics)) item.missing_topics = [];
+                if (!Array.isArray(item.overlapping_subjects)) item.overlapping_subjects = [];
+                if (!Array.isArray(item.missing_subjects)) item.missing_subjects = [];
+                if (!Array.isArray(item.extra_preparation_needed)) item.extra_preparation_needed = item.missing_topics.slice(0, 5);
+                if (!item.explanation) item.explanation = `${item.overlap_percentage}% syllabus overlap detected.`;
+                if (!item.difficulty_comparison) item.difficulty_comparison = 'similar';
+                if (!item.study_time_estimate) {
+                  item.study_time_estimate = item.overlap_percentage >= 85 ? '1-2 weeks' : item.overlap_percentage >= 70 ? '3-4 weeks' : '6-8 weeks';
+                }
+                if (!Array.isArray(item.subject_wise_overlap)) item.subject_wise_overlap = [];
+                item.subject_wise_overlap = item.subject_wise_overlap.filter(s => s && s.subject && typeof s.overlap_pct === 'number');
+                return true;
+              });
+
+              // Cache results in-memory and persistently in DB
+              const upserts = [];
+              for (const v of validated) {
+                const ck = `cmp:${sortedNames.join('+')}:${v.id}`;
+                _comparisonCache.set(ck, { data: v, ts: Date.now() });
+                upserts.push({ key: ck, data: v, updated_at: new Date().toISOString() });
+              }
+              if (upserts.length > 0) {
+                sb.from('ai_recommendation_cache').upsert(upserts).then(null, err => {
+                  console.error('[AI Cache] Sync error:', err.message);
+                });
+              }
+
+              return validated;
+            } catch (err) {
+              lastErr = err;
+              const msg = (err.message || '').toLowerCase();
+              if (msg.includes('api key') || msg.includes('permission') || msg.includes('invalid') || msg.includes('blocked') || msg.includes('billing')) {
+                tripCircuitBreaker(60000 * 60); // trip for 1 hour on auth/billing errors
+                throw err;
+              }
+              if (msg.includes('429') || msg.includes('quota') || msg.includes('rate') || msg.includes('timed out') || msg.includes('timeout') || msg.includes('resource exhausted')) {
+                console.warn(`[Gemini Compare] Transient error (attempt ${attempt + 1}/2): ${err.message}`);
+                if (attempt < 1) {
+                  await sleep(1000 * (attempt + 1));
+                  continue;
+                }
+              }
+              console.error(`[Gemini Compare] Non-transient error: ${err.message}`);
+              tripCircuitBreaker(30000);
+              break;
             }
-            // Validate subject_wise_overlap from Gemini
-            if (!Array.isArray(item.subject_wise_overlap)) item.subject_wise_overlap = [];
-            item.subject_wise_overlap = item.subject_wise_overlap.filter(s => s && s.subject && typeof s.overlap_pct === 'number');
-            return true;
-          });
-
-          // Cache results in-memory and persistently in DB
-          const upserts = [];
-          for (const v of validated) {
-            const ck = `cmp:${sortedNames.join('+')}:${v.id}`;
-            _comparisonCache.set(ck, { data: v, ts: Date.now() });
-            upserts.push({ key: ck, data: v, updated_at: new Date().toISOString() });
           }
-          if (upserts.length > 0) {
-            sb.from('ai_recommendation_cache').upsert(upserts).then(null, err => {
-              console.error('[AI Cache] Sync error:', err.message);
-            });
-          }
-
-          allResults.push(...validated);
-          break; // success
+          if (lastErr) throw lastErr;
+          return [];
         } catch (err) {
-          lastErr = err;
+          console.error(`[Gemini Compare] Chunk failed: ${err.message}`);
           const msg = (err.message || '').toLowerCase();
-          if (msg.includes('api key') || msg.includes('permission') || msg.includes('invalid') || msg.includes('blocked') || msg.includes('billing')) {
-            tripCircuitBreaker(60000 * 60); // trip for 1 hour on auth/billing errors
-            throw err;
+          if (msg.includes('429') || msg.includes('quota') || msg.includes('rate limit') || msg.includes('resource exhausted')) {
+            tripCircuitBreaker(30000);
           }
-          // For transient errors (timeout, 429, network), retry but don't trip circuit breaker
-          if (msg.includes('429') || msg.includes('quota') || msg.includes('rate') || msg.includes('timed out') || msg.includes('timeout')) {
-            console.warn(`[Gemini Compare] Transient error (attempt ${attempt + 1}/3): ${err.message}`);
-            if (attempt < 2) {
-              await sleep(2000 * (attempt + 1)); // Progressive backoff
-              continue;
-            }
-          }
-          // For other errors, trip with short 60s cooldown and stop retrying this chunk
-          console.error(`[Gemini Compare] Non-transient error: ${err.message}`);
-          tripCircuitBreaker(60000);
-          break; // Stop attempts for this chunk
+          return [];
         }
-      }
-
-      if (!isGeminiHealthy()) {
-        console.warn(`[AI v2] Gemini comparison circuit broken during chunk parsing, skipping remaining chunks.`);
-        break;
-      }
-
-      if (lastErr && allResults.length === 0) {
-        console.error(`[Gemini Compare] Chunk failed: ${lastErr.message}`);
-      }
-    } catch (err) {
-      console.error(`[Gemini Compare] Fatal chunk error: ${err.message}`);
+      })());
     }
+  }
 
-    // Rate limit between chunks
-    if (start + CHUNK_SIZE < targetExams.length) {
-      await sleep(300);
+  if (chunkPromises.length > 0) {
+    const chunkResults = await Promise.all(chunkPromises);
+    for (const res of chunkResults) {
+      allResults.push(...res);
     }
   }
 
@@ -427,9 +415,17 @@ let _activeRequests = 0;
 const MAX_CONCURRENT = 3;
 
 async function getEmbedding(text, examId) {
-  // Leverage state-of-the-art keyless Vertex AI text-embedding-004
+  if (!text) return null;
+  const cacheKey = examId || text.substring(0, 100);
+  if (_embeddingCache.has(cacheKey)) {
+    return _embeddingCache.get(cacheKey);
+  }
   try {
-    return await getEmbeddingDynamic(text);
+    const emb = await getEmbeddingDynamic(text, 4000); // 4s timeout for embedding requests
+    if (emb) {
+      _embeddingCache.set(cacheKey, emb);
+    }
+    return emb;
   } catch (err) {
     console.warn(`[AI v2] Embedding query failed for "${examId}":`, err.message);
     return null;
@@ -932,14 +928,14 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     return b.localScore - a.localScore;
   });
 
-  // Now, take the top candidates (e.g. top 15) to perform deep semantic (embedding) and Gemini comparisons
-  const topCandidatesSubset = candidatesWithLocalScore.slice(0, 15);
-  const remainingCandidatesSubset = candidatesWithLocalScore.slice(15);
+  // Now, take the top candidates (e.g. top 8) to perform deep semantic (embedding) and Gemini comparisons
+  const topCandidatesSubset = candidatesWithLocalScore.slice(0, 8);
+  const remainingCandidatesSubset = candidatesWithLocalScore.slice(8);
 
-  // 7. GEMINI STEP 3: Batch compare top 10 candidates using Gemini
+  // 7. GEMINI STEP 3: Batch compare top candidates using Gemini
   let geminiResults = [];
   try {
-    const geminiCompareCandidates = topCandidatesSubset.slice(0, 10).map(item => item.cand);
+    const geminiCompareCandidates = topCandidatesSubset.map(item => item.cand);
     if (geminiCompareCandidates.length > 0) {
       console.log(`[AI v2] Running Gemini comparison on ${geminiCompareCandidates.length} top candidates...`);
       geminiResults = await geminiCompareExams(combinedSyllabus, sourceExamNames, geminiCompareCandidates);
@@ -954,6 +950,33 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
     geminiMap.set(r.id, r);
   }
 
+  // Fetch embeddings in parallel for the top candidates to dramatically cut latency
+  console.log(`[AI v2] Fetching embeddings in parallel for ${topCandidatesSubset.length} candidates...`);
+  const embeddingPromises = topCandidatesSubset.map(async (item) => {
+    const { cand } = item;
+    const candSyllabusText = cand.enrichedSyllabus || cand.syllabus || '';
+    if (sourceEmbedding && candSyllabusText.length > 20) {
+      try {
+        const emb = await getEmbedding(
+          (candSyllabusText + ' ' + cand.job_name).substring(0, 2000),
+          cand.id
+        );
+        return { id: cand.id, emb };
+      } catch (err) {
+        console.warn(`[AI v2] Candidate embedding query failed for "${cand.job_name}":`, err.message);
+      }
+    }
+    return { id: cand.id, emb: null };
+  });
+
+  const embeddingsResults = await Promise.all(embeddingPromises);
+  const candidateEmbeddingsMap = new Map();
+  for (const r of embeddingsResults) {
+    if (r.emb) {
+      candidateEmbeddingsMap.set(r.id, r.emb);
+    }
+  }
+
   // 8. Score ALL candidates (hybrid: local + Gemini + embeddings)
   const scored = [];
 
@@ -964,17 +987,9 @@ async function getRecommendations(sourceExamIds, userId, filters = {}) {
 
     // Semantic similarity via embeddings (only for top candidates)
     let semSim = 0;
-    const candSyllabusText = cand.enrichedSyllabus || cand.syllabus || '';
-    if (sourceEmbedding && candSyllabusText.length > 20) {
-      try {
-        const candEmb = await getEmbedding(
-          (candSyllabusText + ' ' + cand.job_name).substring(0, 2000),
-          cand.id
-        );
-        if (candEmb) semSim = cosineSimilarity(sourceEmbedding, candEmb);
-      } catch (err) {
-        console.warn(`[AI v2] Candidate embedding query failed for "${cand.job_name}":`, err.message);
-      }
+    const candEmb = candidateEmbeddingsMap.get(cand.id);
+    if (sourceEmbedding && candEmb) {
+      semSim = cosineSimilarity(sourceEmbedding, candEmb);
     }
 
     const { localScore, subjectScore, keywordScore, semanticScore, sharedSubjects } = computeLocalScore(sourceStructured, candStructured, semSim, isSameCat);

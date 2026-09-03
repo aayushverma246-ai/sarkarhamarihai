@@ -28,6 +28,34 @@ const {
   SELECTION_PROCESS_TEMPLATES,
 } = require('../constants');
 
+const auth = require('../middleware/auth');
+
+// Secure hybrid verifier auth middleware
+async function secureVerifierAuth(req, res, next) {
+  const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
+  const authHeader = req.headers.authorization || '';
+
+  // 1. Check if it's using the CRON_SECRET (either in query or header)
+  const secret = req.query.secret || (authHeader.startsWith('Bearer ') && authHeader.split(' ')[1] === cronSecret ? cronSecret : '');
+  if (secret === cronSecret) {
+    return next();
+  }
+
+  // 2. Otherwise, check if it's a valid admin session using the standard auth middleware
+  if (authHeader.startsWith('Bearer ')) {
+    try {
+      await auth(req, res, () => {});
+      if (req.user && req.user.email === 'aayushverma246@gmail.com') {
+        return next();
+      }
+    } catch (_) {
+      // Fall through to 401
+    }
+  }
+
+  return res.status(401).json({ error: 'Unauthorized — Admin access required' });
+}
+
 // ── Last audit report (in-memory) ──────────────────────────────────────────
 let lastAuditReport = null;
 
@@ -40,14 +68,7 @@ const getISTTimestamp = () => {
 };
 
 // ── GET /api/audit/run — Full database audit ───────────────────────────────
-router.get('/run', async (req, res) => {
-  const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
-  const authHeader = req.headers.authorization || '';
-  const secret = req.query.secret || authHeader.replace('Bearer ', '');
-  if (secret !== cronSecret) {
-    return res.status(401).json({ error: 'Unauthorized — provide ?secret=YOUR_CRON_SECRET' });
-  }
-
+router.get('/run', secureVerifierAuth, async (req, res) => {
   const startTime = Date.now();
   const db = getDb();
   const report = {
@@ -250,7 +271,7 @@ router.get('/run', async (req, res) => {
 });
 
 // ── GET /api/audit/report — Returns last audit report ──────────────────────
-router.get('/report', async (req, res) => {
+router.get('/report', secureVerifierAuth, async (req, res) => {
   if (!lastAuditReport) {
     return res.json({
       message: 'No audit has been run yet. Call GET /api/audit/run?secret=YOUR_SECRET to run one.',
@@ -261,14 +282,7 @@ router.get('/report', async (req, res) => {
 });
 
 // ── GET /api/audit/scrape-job — Run scrape for single job ──────────────────
-router.get('/scrape-job', async (req, res) => {
-  const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
-  const authHeader = req.headers.authorization || '';
-  const secret = req.query.secret || authHeader.replace('Bearer ', '');
-  if (secret !== cronSecret && req.query.force !== 'true') {
-    return res.status(401).json({ error: 'Unauthorized — provide ?secret=YOUR_CRON_SECRET' });
-  }
-
+router.get('/scrape-job', secureVerifierAuth, async (req, res) => {
   const { id } = req.query;
   if (!id) {
     // raw text parsing playground
@@ -347,14 +361,7 @@ router.get('/scrape-job', async (req, res) => {
 });
 
 // ── GET /api/audit/scrape-batch — Run batch scraper ──────────────────────
-router.get('/scrape-batch', async (req, res) => {
-  const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
-  const authHeader = req.headers.authorization || '';
-  const secret = req.query.secret || authHeader.replace('Bearer ', '');
-  if (secret !== cronSecret && req.query.force !== 'true') {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
+router.get('/scrape-batch', secureVerifierAuth, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 5, 20);
   const db = getDb();
 
@@ -369,7 +376,7 @@ router.get('/scrape-batch', async (req, res) => {
 });
 
 // ── GET /api/audit/stats — Quick DB stats without modification ─────────────
-router.get('/stats', async (req, res) => {
+router.get('/stats', secureVerifierAuth, async (req, res) => {
   try {
     const db = getDb();
     const total = await db.execute('SELECT COUNT(*) as cnt FROM jobs');
@@ -400,14 +407,7 @@ router.get('/stats', async (req, res) => {
 });
 
 // ── GET /api/audit/deep-audited-sync — Triggers deep autonomous validation & rectification ──
-router.get('/deep-audited-sync', async (req, res) => {
-  const cronSecret = process.env.CRON_SECRET || 'sarkar_cron_key_v1';
-  const authHeader = req.headers.authorization || '';
-  const secret = req.query.secret || authHeader.replace('Bearer ', '');
-  if (secret !== cronSecret && req.query.force !== 'true') {
-    return res.status(401).json({ error: 'Unauthorized — provide ?secret=YOUR_CRON_SECRET' });
-  }
-
+router.get('/deep-audited-sync', secureVerifierAuth, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 5, 20);
   const id = req.query.id || null;
 

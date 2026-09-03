@@ -7,6 +7,7 @@ import Logo from '../assets/logo';
 import GovLoader from '../components/GovLoader';
 import { Capacitor } from '@capacitor/core';
 import { getCachedUser, clearToken } from '../api';
+import { supabase } from '../utils/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Fingerprint, Delete, ArrowRight } from 'lucide-react';
 
@@ -17,6 +18,11 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [viewState, setViewState] = useState<'login' | 'forgot_password'>('login');
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [resetSuccess, setResetSuccess] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
 
   // Mobile specific state
   const [forcePasswordLogin, setForcePasswordLogin] = useState(false);
@@ -44,6 +50,30 @@ export default function LoginPage() {
       navigate('/dashboard');
     } catch (err) {
       // Handled by Redux select
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError('');
+    setResetSuccess('');
+    setResetLoading(true);
+    try {
+      const isNative = Capacitor.isNativePlatform();
+      const redirectUrl = isNative
+        ? 'https://sarkarhamarihai.app/auth/callback?platform=mobile'
+        : window.location.origin + '/auth/callback';
+
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+        redirectTo: redirectUrl
+      });
+
+      if (error) throw error;
+      setResetSuccess('Recovery link sent! Please check your email inbox.');
+    } catch (err: any) {
+      setResetError(err.message || 'Failed to send recovery email. Please try again.');
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -327,6 +357,91 @@ export default function LoginPage() {
                 </div>
               </div>
             </motion.div>
+          ) : viewState === 'forgot_password' ? (
+            // ==========================================
+            // FORGOT PASSWORD SCREEN
+            // ==========================================
+            <motion.div
+              key="forgotpasswordform"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="flex-1 flex flex-col justify-between z-10 pt-4"
+            >
+              {/* Header */}
+              <div className="text-center pt-2">
+                <div className="mx-auto w-10 h-10 flex items-center justify-center relative mb-3">
+                  <div className="absolute inset-0 bg-red-600 blur-xl opacity-20 rounded-full" />
+                  <Logo size={32} className="text-red-500 relative z-10" />
+                </div>
+                <h1 className="text-xl font-black tracking-[0.2em] text-white font-space uppercase">
+                  RESET ACCESS KEY
+                </h1>
+                <p className="text-[8px] text-red-500 tracking-[0.3em] font-mono uppercase mt-0.5">
+                  GOVERNMENT EXAMS PORTAL / ACCOUNT RECOVERY
+                </p>
+              </div>
+
+              {/* Form Input Blocks */}
+              <div className="w-full max-w-sm mx-auto px-2 space-y-4">
+                {resetError && (
+                  <div className="border border-red-500/30 bg-red-950/20 text-red-400 text-[10px] tracking-widest text-center font-mono py-3 uppercase">
+                    {resetError}
+                  </div>
+                )}
+                {resetSuccess && (
+                  <div className="border border-emerald-500/30 bg-emerald-950/20 text-emerald-400 text-[10px] tracking-widest text-center font-mono py-3 uppercase">
+                    {resetSuccess}
+                  </div>
+                )}
+
+                <form onSubmit={handleResetPassword} className="space-y-4">
+                  <div>
+                    <label className="block text-[8px] text-gray-500 font-mono tracking-widest uppercase mb-1.5 ml-1">
+                      USER EMAIL IDENTIFICATION
+                    </label>
+                    <input
+                      type="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      required
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      className="w-full px-4 py-3 bg-white/[0.02] border border-white/10 text-white font-mono text-xs focus:border-red-500/50 outline-none transition-all placeholder-gray-800"
+                      style={{ borderRadius: '0px' }}
+                      placeholder="ENTER EMAIL ADDRESS"
+                    />
+                  </div>
+
+                  <button
+                     type="submit"
+                     disabled={resetLoading}
+                     className="w-full py-3.5 bg-red-700 hover:bg-red-600 text-white font-mono text-xs font-bold tracking-widest transition-all disabled:opacity-50 flex items-center justify-center gap-2 mt-4 active:scale-[0.98] shadow-lg shadow-red-950/20 border border-red-600/30"
+                     style={{ borderRadius: '0px' }}
+                  >
+                    {resetLoading ? 'SENDING...' : 'SEND RESET LINK'} <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </form>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewState('login');
+                    setResetError('');
+                    setResetSuccess('');
+                  }}
+                  className="w-full py-3.5 border border-white/10 hover:border-white/20 bg-white/[0.01] hover:bg-white/[0.03] text-gray-300 font-mono text-[10px] tracking-widest transition-all flex items-center justify-center gap-2.5 active:scale-[0.98]"
+                  style={{ borderRadius: '0px' }}
+                >
+                  BACK TO SIGN IN
+                </button>
+              </div>
+
+              <div className="pb-4 pt-6 text-center text-[10px] text-gray-600 font-mono tracking-widest invisible">
+                SPACER
+              </div>
+            </motion.div>
           ) : (
             // ==========================================
             // FULL PASSWORD LOGIN SCREEN
@@ -379,9 +494,18 @@ export default function LoginPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[8px] text-gray-500 font-mono tracking-widest uppercase mb-1.5 ml-1">
-                      USER SECURE ACCESS KEY
-                    </label>
+                    <div className="flex justify-between items-center mb-1.5 ml-1">
+                      <label className="block text-[8px] text-gray-500 font-mono tracking-widest uppercase">
+                        USER SECURE ACCESS KEY
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setViewState('forgot_password')}
+                        className="text-[8px] text-red-500 hover:text-red-400 font-mono tracking-widest uppercase font-bold"
+                      >
+                        FORGOT PASSWORD?
+                      </button>
+                    </div>
                     <input
                       type="password"
                       value={password}
@@ -509,123 +633,188 @@ export default function LoginPage() {
 
       {/* Form section */}
       <div className="animate-slideUp w-full max-w-md mx-auto px-5 pb-12 relative z-10">
-        <div className="bg-[#0a0a0a]/80 border border-white/10 p-8 sm:p-10 backdrop-blur-2xl relative shadow-2xl rounded-3xl">
-          {/* Top border highlight */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-[1px] bg-gradient-to-r from-transparent via-red-500/50 to-transparent" />
+        {viewState === 'forgot_password' ? (
+          <div className="bg-[#0a0a0a]/80 border border-white/10 p-8 sm:p-10 backdrop-blur-2xl relative shadow-2xl rounded-3xl animate-scaleIn">
+            {/* Top border highlight */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-[1px] bg-gradient-to-r from-transparent via-red-500/50 to-transparent" />
 
-          {error && (
-            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 text-red-400 text-sm tracking-wide text-center font-medium rounded-xl">
-              {error}
-            </div>
-          )}
+            <h2 className="text-xl font-medium tracking-tight text-white text-center mb-2">Reset Password</h2>
+            <p className="text-gray-400 text-center text-xs mb-6">Enter your email to receive a password reset link.</p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs text-gray-400 mb-2 font-medium tracking-wide ml-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoCapitalize="off"
-                autoCorrect="off"
-                className="w-full px-4 py-3.5 bg-white/5 border border-white/10 text-gray-100 focus:border-red-500/50 focus:bg-white/10 outline-none transition-all text-sm placeholder-gray-600 rounded-xl font-medium shadow-inner"
-                placeholder="email@example.com"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-2 font-medium tracking-wide ml-1">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="w-full px-4 py-3.5 bg-white/5 border border-white/10 text-gray-100 focus:border-red-500/50 focus:bg-white/10 outline-none transition-all text-sm placeholder-gray-600 rounded-xl font-medium shadow-inner"
-                placeholder="••••••••"
-              />
-            </div>
+            {resetError && (
+              <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 text-red-400 text-sm tracking-wide text-center font-medium rounded-xl">
+                {resetError}
+              </div>
+            )}
+            {resetSuccess && (
+              <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm tracking-wide text-center font-medium rounded-xl">
+                {resetSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div>
+                <label className="block text-xs text-gray-400 mb-2 font-medium tracking-wide ml-1">Email</label>
+                <input
+                  type="email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  required
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  className="w-full px-4 py-3.5 bg-white/5 border border-white/10 text-gray-100 focus:border-red-500/50 focus:bg-white/10 outline-none transition-all text-sm placeholder-gray-600 rounded-xl font-medium shadow-inner"
+                  placeholder="email@example.com"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={resetLoading}
+                className="w-full py-4 mt-2 bg-red-600 hover:bg-red-500 text-white font-semibold text-[15px] transition-all disabled:opacity-50 shadow-lg hover:shadow-red-500/20 active:scale-[0.98] rounded-full"
+              >
+                {resetLoading ? 'Sending...' : 'Send Reset Link'}
+              </button>
+            </form>
+
             <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-4 mt-2 bg-red-600 hover:bg-red-500 text-white font-semibold text-[15px] transition-all disabled:opacity-50 shadow-lg hover:shadow-red-500/20 active:scale-[0.98] rounded-full"
+              type="button"
+              onClick={() => {
+                setViewState('login');
+                setResetError('');
+                setResetSuccess('');
+              }}
+              className="w-full py-3.5 mt-4 bg-transparent text-gray-500 hover:text-gray-300 font-medium text-sm transition-all active:scale-[0.98] rounded-xl hover:bg-white/5"
             >
-              {loading ? 'Authenticating...' : 'Sign In'}
+              Back to Sign In
             </button>
-          </form>
-
-          <div className="flex items-center gap-4 my-6">
-            <div className="flex-1 h-px bg-white/5"></div>
-            <span className="text-xs text-gray-500 font-medium">or</span>
-            <div className="flex-1 h-px bg-white/5"></div>
           </div>
+        ) : (
+          <div className="bg-[#0a0a0a]/80 border border-white/10 p-8 sm:p-10 backdrop-blur-2xl relative shadow-2xl rounded-3xl">
+            {/* Top border highlight */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-[1px] bg-gradient-to-r from-transparent via-red-500/50 to-transparent" />
 
-          <button
-            onClick={async () => {
-              dispatch({ type: 'AUTH_START' });
-              try {
-                const { supabase } = await import('../utils/supabase');
-                const isNative = Capacitor.isNativePlatform();
-                const redirectUrl = isNative
-                  ? 'https://sarkarhamarihai.app/auth/callback?platform=mobile'
-                  : window.location.origin + '/auth/callback';
-                
-                if (isNative) {
-                  // On native mobile, skip WebView navigation and request OAuth URL to launch external browser
-                  const { data, error } = await supabase.auth.signInWithOAuth({
-                    provider: 'google',
-                    options: {
-                      redirectTo: redirectUrl,
-                      skipBrowserRedirect: true
+            {error && (
+              <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 text-red-400 text-sm tracking-wide text-center font-medium rounded-xl">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs text-gray-400 mb-2 font-medium tracking-wide ml-1">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  className="w-full px-4 py-3.5 bg-white/5 border border-white/10 text-gray-100 focus:border-red-500/50 focus:bg-white/10 outline-none transition-all text-sm placeholder-gray-600 rounded-xl font-medium shadow-inner"
+                  placeholder="email@example.com"
+                />
+              </div>
+              <div>
+                <div className="flex justify-between items-center mb-2 ml-1">
+                  <label className="block text-xs text-gray-400 font-medium tracking-wide">Password</label>
+                  <button
+                    type="button"
+                    onClick={() => setViewState('forgot_password')}
+                    className="text-xs text-red-500 hover:text-red-400 font-medium transition-colors"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full px-4 py-3.5 bg-white/5 border border-white/10 text-gray-100 focus:border-red-500/50 focus:bg-white/10 outline-none transition-all text-sm placeholder-gray-600 rounded-xl font-medium shadow-inner"
+                  placeholder="••••••••"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-4 mt-2 bg-red-600 hover:bg-red-500 text-white font-semibold text-[15px] transition-all disabled:opacity-50 shadow-lg hover:shadow-red-500/20 active:scale-[0.98] rounded-full"
+              >
+                {loading ? 'Authenticating...' : 'Sign In'}
+              </button>
+            </form>
+
+            <div className="flex items-center gap-4 my-6">
+              <div className="flex-1 h-px bg-white/5"></div>
+              <span className="text-xs text-gray-500 font-medium">or</span>
+              <div className="flex-1 h-px bg-white/5"></div>
+            </div>
+
+            <button
+              onClick={async () => {
+                dispatch({ type: 'AUTH_START' });
+                try {
+                  const { supabase } = await import('../utils/supabase');
+                  const isNative = Capacitor.isNativePlatform();
+                  const redirectUrl = isNative
+                    ? 'https://sarkarhamarihai.app/auth/callback?platform=mobile'
+                    : window.location.origin + '/auth/callback';
+                  
+                  if (isNative) {
+                    // On native mobile, skip WebView navigation and request OAuth URL to launch external browser
+                    const { data, error } = await supabase.auth.signInWithOAuth({
+                      provider: 'google',
+                      options: {
+                        redirectTo: redirectUrl,
+                        skipBrowserRedirect: true
+                      }
+                    });
+                    
+                    if (error) throw error;
+                    
+                    if (data?.url) {
+                      // Open in the system's secure browser Custom Tab
+                      const { Browser } = await import('@capacitor/browser');
+                      await Browser.open({ url: data.url, presentationStyle: 'popover' });
+                    } else {
+                      throw new Error('Could not retrieve Google OAuth login URL.');
                     }
-                  });
-                  
-                  if (error) throw error;
-                  
-                  if (data?.url) {
-                    // Open in the system's secure browser Custom Tab
-                    const { Browser } = await import('@capacitor/browser');
-                    await Browser.open({ url: data.url, presentationStyle: 'popover' });
                   } else {
-                    throw new Error('Could not retrieve Google OAuth login URL.');
+                    // On standard web browser
+                    const { error } = await supabase.auth.signInWithOAuth({
+                      provider: 'google',
+                      options: { redirectTo: redirectUrl }
+                    });
+                    if (error) throw error;
                   }
-                } else {
-                  // On standard web browser
-                  const { error } = await supabase.auth.signInWithOAuth({
-                    provider: 'google',
-                    options: { redirectTo: redirectUrl }
-                  });
-                  if (error) throw error;
+                } catch (err: any) {
+                  dispatch({ type: 'AUTH_FAIL', payload: err.message || 'Google authentication failed' });
                 }
-              } catch (err: any) {
-                dispatch({ type: 'AUTH_FAIL', payload: err.message || 'Google authentication failed' });
-              }
-            }}
-            disabled={loading}
-            className="w-full py-3.5 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-gray-200 font-medium text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-3 mb-3 active:scale-[0.98] rounded-xl shadow-sm"
-          >
-            <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
-              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-              <path fill="none" d="M0 0h48v48H0z" />
-            </svg>
-            Continue with Google
-          </button>
+              }}
+              disabled={loading}
+              className="w-full py-3.5 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-gray-200 font-medium text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-3 mb-3 active:scale-[0.98] rounded-xl shadow-sm"
+            >
+              <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                <path fill="none" d="M0 0h48v48H0z" />
+              </svg>
+              Continue with Google
+            </button>
 
-          <button
-            onClick={handleGuestLogin}
-            disabled={loading}
-            className="w-full py-3.5 bg-transparent text-gray-500 hover:text-gray-300 font-medium text-sm transition-all disabled:opacity-50 active:scale-[0.98] rounded-xl hover:bg-white/5"
-          >
-            Continue as Guest
-          </button>
+            <button
+              onClick={handleGuestLogin}
+              disabled={loading}
+              className="w-full py-3.5 bg-transparent text-gray-500 hover:text-gray-300 font-medium text-sm transition-all disabled:opacity-50 active:scale-[0.98] rounded-xl hover:bg-white/5"
+            >
+              Continue as Guest
+            </button>
 
-          <p className="mt-8 text-center text-sm text-gray-500 font-medium">
-            New here?{' '}
-            <Link to="/signup" className="text-red-500 font-semibold hover:text-red-400 transition-colors">Create an account</Link>
-          </p>
-        </div>
+            <p className="mt-8 text-center text-sm text-gray-500 font-medium">
+              New here?{' '}
+              <Link to="/signup" className="text-red-500 font-semibold hover:text-red-400 transition-colors">Create an account</Link>
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

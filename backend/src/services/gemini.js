@@ -103,6 +103,22 @@ const sleep = ms => new Promise(res => setTimeout(res, ms));
 
 let oldestUserCreatedAt = null;
 
+let _circuitBreakerTrippedUntil = 0;
+
+function isGeminiHealthy() {
+  return Date.now() > _circuitBreakerTrippedUntil;
+}
+
+function tripCircuitBreaker(durationMs = 30000) {
+  // Cap max circuit breaker trip to 30 seconds to prevent prolonged lockouts
+  const cappedDuration = Math.min(durationMs, 30000);
+  const trippedUntil = Date.now() + cappedDuration;
+  if (trippedUntil > _circuitBreakerTrippedUntil) {
+    _circuitBreakerTrippedUntil = trippedUntil;
+    console.warn(`[AI] Circuit breaker TRIPPED! Bypassing Gemini API calls for ${Math.round(cappedDuration / 1000)}s.`);
+  }
+}
+
 /**
  * Dynamic trial checker (kept for backward compatibility):
  */
@@ -115,8 +131,10 @@ async function isWithinVertexTrial() {
  * Returns an object with a .text() method for backward compatibility.
  */
 async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs = 30000) {
+  const isHealthy = isGeminiHealthy();
+
   // ── Try Gemini first ──
-  if (genAI) {
+  if (genAI && isHealthy) {
     const config = {};
     if (responseMimeType) {
       config.responseMimeType = responseMimeType;
@@ -153,6 +171,11 @@ async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs
         console.error('[AI] Current key prefix:', apiKey ? apiKey.substring(0, 10) + '...' : 'NONE');
       }
 
+      // Trip circuit breaker on rate limit / resource exhaustion
+      if (isTransient || isKeyError) {
+        tripCircuitBreaker(30000);
+      }
+
       // ── Fallback to NVIDIA GLM 5.2 on transient/quota/key errors ──
       if ((isTransient || isKeyError) && NVIDIA_API_KEY) {
         console.warn(`[AI] Gemini failed (${err.message}). Falling back to NVIDIA GLM 5.2...`);
@@ -168,13 +191,13 @@ async function generateContentDynamic(prompt, responseMimeType = null, timeoutMs
     }
   }
 
-  // ── No Gemini configured — try NVIDIA directly ──
+  // ── No Gemini configured or unhealthy — try NVIDIA directly ──
   if (NVIDIA_API_KEY) {
-    console.log('[AI] No Gemini key configured. Using NVIDIA GLM 5.2 directly.');
+    console.log('[AI] Gemini unavailable or unhealthy. Using NVIDIA GLM 5.2 directly.');
     return await callNvidiaGlm52(prompt, responseMimeType, Math.min(timeoutMs, 20000));
   }
 
-  throw new Error("No AI provider configured. Please supply GEMINI_API_KEY_NEW or NVIDIA_API_KEY environment variable.");
+  throw new Error("No AI provider configured or healthy. Please supply GEMINI_API_KEY_NEW or NVIDIA_API_KEY environment variable.");
 }
 
 /**
@@ -185,7 +208,7 @@ async function getEmbeddingDynamic(text, timeoutMs = 10000) {
   const cleanText = text.replace(/\s+/g, ' ').trim().substring(0, 2048);
   if (!cleanText) return null;
 
-  if (!genAI) return null;
+  if (!genAI || !isGeminiHealthy()) return null;
 
   try {
     const result = await withTimeout(
@@ -211,8 +234,14 @@ async function getEmbeddingDynamic(text, timeoutMs = 10000) {
 /**
  * UNIVERSAL RETRY — handles ALL transient errors (429, 500, network, timeout, content filter)
  */
+const IS_VERCEL = process.env.VERCEL === '1';
+
 async function callWithRetry(fn, retries = 3, delay = 2000) {
-  for (let i = 0; i < retries; i++) {
+  const maxRetries = IS_VERCEL ? 1 : retries;
+  const initialDelay = IS_VERCEL ? 1000 : delay;
+
+  let currentDelay = initialDelay;
+  for (let i = 0; i <= maxRetries; i++) {
     try {
       return await fn();
     } catch (err) {
@@ -220,13 +249,19 @@ async function callWithRetry(fn, retries = 3, delay = 2000) {
       const isPermanent = msg.includes('api key') || msg.includes('not found') || msg.includes('permission') || msg.includes('invalid') || msg.includes('blocked') || msg.includes('billing');
       if (isPermanent) throw err;
 
-      if (i < retries - 1) {
-        const isRateLimit = msg.includes('429') || msg.includes('quota') || msg.includes('rate limit');
-        const waitTime = isRateLimit ? delay * 2 : delay;
-        console.log(`[AI] Retrying after error: ${err.message}. Retrying in ${waitTime}ms (${i + 1}/${retries})`);
+      if (i < maxRetries) {
+        const isRateLimit = msg.includes('429') || msg.includes('quota') || msg.includes('rate limit') || msg.includes('resource exhausted');
+        const waitTime = isRateLimit ? currentDelay * 1.5 : currentDelay;
+        console.log(`[AI] Retrying after error: ${err.message}. Retrying in ${waitTime}ms (${i + 1}/${maxRetries})`);
         await sleep(waitTime);
-        delay = Math.min(delay * 2, 8000);
+        currentDelay = Math.min(currentDelay * 2, 4000);
         continue;
+      }
+
+      // Trip circuit breaker if final attempt failed due to rate limits
+      const isRateLimit = msg.includes('429') || msg.includes('quota') || msg.includes('rate limit') || msg.includes('resource exhausted');
+      if (isRateLimit) {
+        tripCircuitBreaker(30000);
       }
       throw err;
     }
@@ -907,5 +942,7 @@ module.exports = {
   getEmbeddingDynamic,
   normalizeSyllabus,
   estimateLiveData,
-  isWithinVertexTrial
+  isWithinVertexTrial,
+  isGeminiHealthy,
+  tripCircuitBreaker
 };

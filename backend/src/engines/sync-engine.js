@@ -141,6 +141,14 @@ class SyncEngine {
           continue;
         }
 
+        // CRITICAL PROTECTION: Do not let seeder/lower authority incoming records overwrite healed or deep_scraped records
+        const isExistingHealed = existing.discovery_source === 'healed' || existing.discovery_source === 'deep_scraped';
+        const isIncomingSeeder = !incoming.discovery_source || incoming.discovery_source === 'seeder';
+        if (isExistingHealed && isIncomingSeeder) {
+          this.stats.unchanged++;
+          continue;
+        }
+
         // Detect field-level changes
         const changes = detectFieldChanges(existing, incoming);
         if (changes.length > 0) {
