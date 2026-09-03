@@ -46,7 +46,7 @@ if (apiKey) {
 
 // ── NVIDIA GLM 5.2 Fallback Provider ──────────────────────────────────────────
 const NVIDIA_API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || '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';
+const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || '';
 const NVIDIA_MODEL = 'meta/llama-3.1-8b-instruct';
 
 if (NVIDIA_API_KEY) {

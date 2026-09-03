@@ -17,7 +17,7 @@ const isDryRun = process.argv.includes('--dry-run');
 
 // NVIDIA API credentials for Llama 3.1
 const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const NVIDIA_KEY = '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';
+const NVIDIA_KEY = process.env.NVIDIA_API_KEY || '';
 const LLAMA_MODEL = 'meta/llama-3.1-8b-instruct';
 
 const genericDomains = [

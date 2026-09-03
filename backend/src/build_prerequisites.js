@@ -1,7 +1,7 @@
 const { getDb, initDb } = require('./db');
 const axios = require('axios');
 
-const NV_API_KEY = "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";
+const NV_API_KEY = process.env.NVIDIA_API_KEY || "";
 
 // ══════════════════════════════════════════════════════════════════════
 // COMPREHENSIVE DOMAIN SYLLABUS MAP — Expert-curated, no API needed
