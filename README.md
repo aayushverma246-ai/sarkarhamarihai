@@ -62,7 +62,7 @@ SarkarHamariHai is a secure, high-performance aggregator for competitive exams a
 - **Direct Redirection:** Maps source links directly to verified PDF notifications, websites, and application portals.
 
 ### 7. Performance Optimized Data Transport (`/all-minimal`)
-- **Lightweight Serializer:** Compresses massive dataset payloads by serializing data into index arrays, dropping JSON response sizes by over 75% for fast client-side loading and filtering.
+- **Lightweight Serializer:** Compresses massive dataset payloads by serializing data into index arrays, dropping JSON response sizes by ~49% for fast client-side loading and filtering.
 
 ### 8. Localized Multi-Language Interface
 - Supports full translation maps across **11 major Indian languages**:
