@@ -21,12 +21,6 @@ router.get('/live-stats/:id?', async (req, res) => {
 
         const stats = await estimateLiveData(job.job_name, job.organization);
 
-        // Update DB
-        await db.execute({
-            sql: 'UPDATE jobs SET vacancies = ?, applicants_count = ? WHERE id = ?',
-            args: [stats.vacancies, stats.applicants_count, job.id]
-        });
-
         return res.json(stats);
     } catch (err) {
         console.error('Exam live stats API error:', err);

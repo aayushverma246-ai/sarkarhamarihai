@@ -294,8 +294,8 @@ async function batchSyllabusMatch(sourceSyllabus, targetExams) {
     if (geminiResult && geminiResult.length > 0) {
       allResults.push(...geminiResult);
     } else {
-      // INVISIBLE FALLBACK — generates highly structured mock responses so user experience is never blocked
-      const fallback = generateAILikeResponse(sourceSyllabus, chunk);
+      // Deterministic heuristic fallback — generates structured fallback responses so user experience is never blocked
+      const fallback = generateHeuristicFallbackResponse(sourceSyllabus, chunk);
       allResults.push(...fallback);
     }
 
@@ -381,9 +381,9 @@ RULES:
 }
 
 /**
- * INVISIBLE AI-LIKE FALLBACK
+ * Deterministic heuristic fallback
  */
-function generateAILikeResponse(sourceSyllabus, targets) {
+function generateHeuristicFallbackResponse(sourceSyllabus, targets) {
   const sourceText = (sourceSyllabus || '').toLowerCase();
   const sourceWords = sourceText.split(/[^a-zA-Z]+/).filter(w => w.length > 3);
   const sourceSet = new Set(sourceWords);
@@ -918,7 +918,7 @@ No extra text.`;
     return JSON.parse(cleaned);
   } catch (err) {
     console.error('Live data estimation error:', err.message);
-    return { vacancies: Math.floor(Math.random() * 5000), applicants_count: Math.floor(Math.random() * 500000), last_updated: new Date().toISOString() };
+    return { vacancies: null, applicants_count: null, last_updated: new Date().toISOString(), status: 'unavailable' };
   }
 }
 

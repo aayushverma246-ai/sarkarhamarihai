@@ -3,21 +3,22 @@ const router = express.Router();
 const { compareSyllabi, batchCompareSyllabi } = require('../services/gemini');
 const { getDb } = require('../db');
 const { v4: uuidv4 } = require('uuid');
+const auth = require('../middleware/auth');
 
 /**
  * POST /api/syllabus/match
  * Rebuilds syllabus matching logic with Gemini and caching.
  */
-/**
- * POST /api/syllabus/match
- * Rebuilds syllabus matching logic with Gemini and caching.
- */
-router.post('/match', async (req, res) => {
+router.post('/match', auth, async (req, res) => {
     try {
         const { appliedExams, allExams } = req.body;
 
         if (!appliedExams || !Array.isArray(appliedExams) || !allExams || !Array.isArray(allExams)) {
             return res.status(400).json({ error: "Invalid request format. Expecting appliedExams and allExams arrays." });
+        }
+
+        if (appliedExams.length > 50 || allExams.length > 500) {
+            return res.status(400).json({ error: "Payload too large. Maximum 50 appliedExams and 500 allExams allowed." });
         }
 
         const db = getDb();

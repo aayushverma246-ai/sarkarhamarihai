@@ -26,14 +26,15 @@
 
 ## What is this?
 
-SarkarHamariHai is a secure, high-performance aggregator for competitive exams and government careers across India (covering UPSC, SSC, Railways, Banking, Defense, Teaching, and State PSCs). It aggregates verified listing details, filters out generic redirect links, and helps aspirants focus on preparation through custom-tailored syllabus mappings, study trackers, and daily schedulers.
+SarkarHamariHai is a secure, high-performance aggregator for competitive exams and government careers across India (covering UPSC, SSC, Railways, Banking, Defense, Teaching, and State PSCs). It aggregates job notices from official sources, links directly to government domain portals, and provides baseline seed and template records for structured syllabus mapping, study tracking, and preparation scheduling.
 
 ---
 
 ## Core Product Features
 
 ### 1. Large-Scale Exam Catalog
-- **17,000+ Indexed Records:** Houses a comprehensive database of competitive government exams from official sources, categorized into 22 canonical sectors.
+- **17,000+ Database Records:** Houses a comprehensive catalog of competitive government exams categorized into canonical sectors. The dataset combines indexed/aggregated job listings, official recruitment notices (such as UPSC, SSC, and Railway notifications), and structured seed/template exam records.
+- **Data Provenance & Domain Resolution:** Verified entries are mapped directly to official government portals (*.gov.in / *.nic.in), while baseline seed entries provide structured syllabus and preparation parameters across all 28 states and Union Territories.
 - **On-the-Fly Category Correction:** Re-classifies tagging errors using smart regex overrides (e.g. correctly re-tagging State PSC civil service exams from UPSC, classifying Teaching/Police/Engineering/Healthcare/Judiciary based on title keywords).
 - **Inferred Regional State Mapping:** Automatically extracts regional state identifiers from titles/organizations, overriding general "All India" tags on state-specific posts.
 
