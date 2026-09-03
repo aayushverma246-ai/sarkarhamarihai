@@ -2,6 +2,17 @@ import * as types from '../actionTypes';
 import { api, setToken, setCachedUser, clearToken } from '../../api';
 import { supabase } from '../../utils/supabase';
 
+function getApiBaseUrl(): string {
+    const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
+    if (isNative) return 'https://sarkarhamarihai.app/api';
+    const envUrl = (import.meta as any).env.VITE_API_URL;
+    if (envUrl) return envUrl;
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        return '/api';
+    }
+    return 'http://localhost:3001/api';
+}
+
 // ── Supabase Auth-based Action Creators ──────────────────────────────
 
 export const loginAction = (email: string, password: string) => async (dispatch: any) => {
@@ -14,7 +25,7 @@ export const loginAction = (email: string, password: string) => async (dispatch:
         if (error && (error.message.includes('Invalid login credentials') || error.message.includes('Email not confirmed'))) {
             try {
                 const legacyRes = await fetch(
-                    ((import.meta as any).env.VITE_API_URL || 'http://localhost:3001/api') + '/auth/legacy-login',
+                    getApiBaseUrl() + '/auth/legacy-login',
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -91,10 +102,7 @@ export const loginAction = (email: string, password: string) => async (dispatch:
 export const guestLoginAction = () => async (dispatch: any) => {
     dispatch({ type: types.AUTH_START });
     try {
-        const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
-        const baseUrl = isNative
-            ? 'https://sarkarhamarihai.app/api'
-            : ((import.meta as any).env.VITE_API_URL || 'http://localhost:3001/api');
+        const baseUrl = getApiBaseUrl();
 
         const res = await fetch(`${baseUrl}/auth/guest`, {
             method: 'POST',

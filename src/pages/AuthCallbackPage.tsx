@@ -79,17 +79,32 @@ export default function AuthCallbackPage() {
                 } catch { /* ignore */ }
 
                 let user;
-                if (pendingProfile && pendingProfile.full_name) {
-                    // Use the saved profile data from signup form
-                    const result = await api.setupProfile(pendingProfile);
-                    user = result.user;
-                    localStorage.removeItem('sarkar_pending_profile');
-                } else {
-                    // No pending profile — just ensure a profile row exists
-                    const result = await api.ensureProfile();
-                    user = result.user;
+                try {
+                    if (pendingProfile && pendingProfile.full_name) {
+                        const result = await api.setupProfile(pendingProfile);
+                        user = result?.user;
+                        localStorage.removeItem('sarkar_pending_profile');
+                    } else {
+                        const result = await api.ensureProfile();
+                        user = result?.user;
+                    }
+                } catch (apiErr) {
+                    console.warn('Profile sync warning (falling back to session user):', apiErr);
                 }
-                
+
+                if (!user && session?.user) {
+                    user = {
+                        id: session.user.id,
+                        email: session.user.email || '',
+                        full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+                        age: 22,
+                        category: 'General',
+                        state: 'All India',
+                        qualification_type: 'Graduation',
+                        qualification_status: 'Completed',
+                    };
+                }
+
                 if (mounted) {
                     setCachedUser(user);
                     if (user && user.age === 0 && !user.email?.startsWith('guest@')) {

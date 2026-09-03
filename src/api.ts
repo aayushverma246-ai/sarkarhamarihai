@@ -17,7 +17,14 @@ function getApiBase(): string {
         return 'https://sarkarhamarihai.app/api';
     }
 
-    return envUrl || 'http://localhost:3001/api';
+    if (envUrl) return envUrl;
+
+    // In web browser: if running on production (non-localhost), use relative '/api'
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        return '/api';
+    }
+
+    return 'http://localhost:3001/api';
 }
 
 const API_BASE: string = getApiBase();

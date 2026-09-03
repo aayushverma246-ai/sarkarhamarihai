@@ -30,6 +30,17 @@ function computeFormStatus(job: Job): string {
   return 'LIVE';
 }
 
+function getApiBaseUrl(): string {
+    const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
+    if (isNative) return 'https://sarkarhamarihai.app/api';
+    const envUrl = (import.meta as any).env.VITE_API_URL;
+    if (envUrl) return envUrl;
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        return '/api';
+    }
+    return 'http://localhost:3001/api';
+}
+
 export default function AdminPage() {
   const navigate = useNavigate();
   const cached = getCachedUser();
@@ -70,7 +81,7 @@ export default function AdminPage() {
     try {
       const jobId = form.id;
       if (!jobId) throw new Error('Job ID is required');
-      const res = await fetch('http://localhost:3001/api/admin/jobs', {
+      const res = await fetch(getApiBaseUrl() + '/admin/jobs', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

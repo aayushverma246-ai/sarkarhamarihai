@@ -1,7 +1,18 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../utils/supabase';
 
-const API_BASE: string = (import.meta as any).env.VITE_API_URL || 'http://localhost:3001/api';
+function getApiBaseUrl(): string {
+    const isNative = typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform();
+    if (isNative) return 'https://sarkarhamarihai.app/api';
+    const envUrl = (import.meta as any).env.VITE_API_URL;
+    if (envUrl) return envUrl;
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        return '/api';
+    }
+    return 'http://localhost:3001/api';
+}
+
+const API_BASE: string = getApiBaseUrl();
 
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const { data: { session } } = await supabase.auth.getSession();
