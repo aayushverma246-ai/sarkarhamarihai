@@ -537,6 +537,7 @@ export default function LoginPage() {
                 {/* Alternative Logins */}
                 <div className="space-y-2">
                   <button
+                    type="button"
                     onClick={async () => {
                       dispatch({ type: 'AUTH_START' });
                       try {
@@ -559,7 +560,12 @@ export default function LoginPage() {
                           throw new Error('Google auth failure.');
                         }
                       } catch (err: any) {
-                        dispatch({ type: 'AUTH_FAIL', payload: err.message || 'Google authentication failed' });
+                        const msg = err?.message || '';
+                        if (msg.includes('Failed to fetch') || err?.name === 'TypeError' || err?.name === 'AbortError') {
+                          console.log('OAuth redirect initiated');
+                          return;
+                        }
+                        dispatch({ type: 'AUTH_FAIL', payload: msg || 'Google authentication failed' });
                       }
                     }}
                     disabled={loading}
@@ -748,6 +754,7 @@ export default function LoginPage() {
             </div>
 
             <button
+              type="button"
               onClick={async () => {
                 dispatch({ type: 'AUTH_START' });
                 try {
@@ -785,7 +792,12 @@ export default function LoginPage() {
                     if (error) throw error;
                   }
                 } catch (err: any) {
-                  dispatch({ type: 'AUTH_FAIL', payload: err.message || 'Google authentication failed' });
+                  const msg = err?.message || '';
+                  if (msg.includes('Failed to fetch') || err?.name === 'TypeError' || err?.name === 'AbortError') {
+                    console.log('OAuth redirect initiated');
+                    return;
+                  }
+                  dispatch({ type: 'AUTH_FAIL', payload: msg || 'Google authentication failed' });
                 }
               }}
               disabled={loading}

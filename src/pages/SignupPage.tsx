@@ -309,6 +309,7 @@ export default function SignupPage() {
           </div>
 
           <button
+            type="button"
             onClick={async () => {
               setLoading(true);
               setError('');
@@ -342,7 +343,12 @@ export default function SignupPage() {
                 }
               } catch (err: any) {
                 console.error('Google signup error:', err);
-                setError(err.message || 'Google authentication failed.');
+                const msg = err?.message || '';
+                if (msg.includes('Failed to fetch') || err?.name === 'TypeError' || err?.name === 'AbortError') {
+                  console.log('OAuth redirect initiated');
+                  return;
+                }
+                setError(msg || 'Google authentication failed.');
               } finally {
                 setLoading(false);
               }
