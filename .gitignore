@@ -40,7 +40,7 @@ yarn-error.log*
 *.db
 *.db-journal
 *.sqlite
-data/
+/data/
 
 # Android / Mobile
 android/
