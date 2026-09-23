@@ -14,6 +14,10 @@
 </p>
 
 <p align="center">
+  🎥 <strong><a href="https://drive.google.com/file/d/1Dzkk-f6QcQus15XhJjrvlebGEBeIFKAZ/view?usp=sharing">Watch Product Demo</a></strong>
+</p>
+
+<p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge" alt="MIT License" /></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-61dafb.svg?style=for-the-badge&logo=react&logoColor=white" alt="React 19" /></a>
   <a href="https://tailwindcss.com/"><img src="https://img.shields.io/badge/Tailwind-v4-38bdf8.svg?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind v4" /></a>
